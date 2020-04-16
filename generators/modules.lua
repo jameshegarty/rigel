@@ -576,6 +576,7 @@ modules.waitOnInput = memoize(function( f, X )
   err( type(f.stateful)=="boolean", "Missing stateful annotation for fn "..f.kind)
   res.stateful = f.stateful
   res.delay = f.delay
+  res.RVDelay = f.RVDelay
   res.name = "WaitOnInput_"..f.name
   res.inputBurstiness = f.inputBurstiness
   res.outputBurstiness = f.outputBurstiness
@@ -914,9 +915,10 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   err(f.delay==math.floor(f.delay),"delay is fractional ?!, "..f.kind)
 
   if f.RVDelay~=nil then
-    res.delay = f.RVDelay
+    res.delay = f.RVDelay + f.delay
   else
-    res.delay = math.max(1, f.delay)
+    --res.delay = math.max(1, f.delay)
+    res.delay = f.delay
   end
   
   err(type(f.stateful)=="boolean", "Missing stateful annotation, "..f.kind)
@@ -2940,7 +2942,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
     res.inputBurstiness = 0
     res.outputBurstiness = 0
     res.delay = 0
-    res.RVDelay = math.max(outputRate,1)/math.max(inputRate,1)
+    res.RVDelay = (math.max(outputRate,1)/math.max(inputRate,1))-1
   end
   
   
@@ -3559,7 +3561,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
 
   if f.RVDelay~=nil then
     -- not sure why this should be needed, but whatever...
-    res.delay = f.RVDelay
+    res.delay = f.RVDelay+f.delay
   else
     res.delay = f.delay
   end
@@ -4888,7 +4890,12 @@ local function insertFIFOs( out, delayTable, moduleName )
         assert( #orig.inputs==1 )
         err( type(delayTable[orig.inputs[1]])=="number", "missing delay for: ",orig.inputs[1] )
         assert( type(delayTable[orig])=="number" )
-        local iDelayThis = delayTable[orig]-orig.fn.delay
+
+        local extraDelayForFIFOs = 0
+        if n.fn.inputBurstiness>0 then extraDelayForFIFOs = extraDelayForFIFOs + 1 end
+        if n.fn.outputBurstiness>0 then extraDelayForFIFOs = extraDelayForFIFOs + 1 end
+        
+        local iDelayThis = delayTable[orig] - orig.fn.delay - extraDelayForFIFOs
         err( delayTable[orig.inputs[1]] == iDelayThis, "NYI - input to fn requires delay buffer! inp:",delayTable[orig.inputs[1]]," this:",iDelayThis," del ",delayTable[orig]," fn ",orig.fn.delay,orig, orig.fn )
                
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
@@ -4911,7 +4918,7 @@ local function insertFIFOs( out, delayTable, moduleName )
             OFIFO = C.fifo( n.type:deInterface(), n.fn.outputBurstiness, nil, nil, nil, nil,  NAME )
           end
         else
-          IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, delayTable[orig]-n.fn.delay, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
+          IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, delayTable[orig] - n.fn.delay - extraDelayForFIFOs, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
           OFIFO = C.fifoWithMonitor( n.type:deInterface(), n.fn.outputBurstiness, delayTable[orig], n.fn.delay, n.rate, false, NAME, n.fn.name, moduleName )
         end
 
@@ -5031,15 +5038,16 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
           fn = n.inst.module
         end
 
+        -- if we have burstiness, we need to add a fifo, which will introduce extra delay!
         local extra = 0
         if fn.inputType:isRV() and fn.inputBurstiness>0 then extra = extra+1 end
         if fn.outputType:isRV() and fn.outputBurstiness>0 then extra = extra+1 end
         
         if fn.inputType==types.Interface() or (fn.inputType:isrv() and fn.inputType:extractData():verilogBits()==0) then
-          res = fn.delay
+          res = fn.delay+extra
         else
           err(fn.delay~=nil,"Error: fn "..fn.name.." is missing delay? "..tostring(fn.inputType).." "..tostring(fn.outputType))
-          res = inputs[1] + fn.delay
+          res = inputs[1] + fn.delay + extra
         end
       elseif n.kind=="applyMethod" then
         if n.inst.module.functions[n.fnname].inputType==types.null() or n.inst.module.functions[n.fnname].inputType:isInil() then

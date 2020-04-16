@@ -42,6 +42,38 @@ $(BUILDDIR)/moduleparams_downsample.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	touch $(BUILDDIR)/moduleparams_downsample.correct.txt
 
 #################
+$(BUILDDIR)/moduleparams_downsamplex.compiles.txt: moduleparams_downsamplex.lua
+	../rigelTerra moduleparams_downsamplex.lua
+
+$(BUILDDIR)/moduleparams_downsamplex.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	# no extra checks
+	touch $(BUILDDIR)/moduleparams_downsamplex.correct.txt
+
+#################
+$(BUILDDIR)/moduleparams_downsampley.compiles.txt: moduleparams_downsampley.lua
+	../rigelTerra moduleparams_downsampley.lua
+
+$(BUILDDIR)/moduleparams_downsampley.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	# no extra checks
+	touch $(BUILDDIR)/moduleparams_downsampley.correct.txt
+
+#################
+$(BUILDDIR)/moduleparams_changerate.compiles.txt: moduleparams_changerate.lua
+	../rigelTerra moduleparams_changerate.lua
+
+$(BUILDDIR)/moduleparams_changerate.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	# no extra checks
+	touch $(BUILDDIR)/moduleparams_changerate.correct.txt
+
+#################
+$(BUILDDIR)/moduleparams_cropseq.compiles.txt: moduleparams_cropseq.lua
+	../rigelTerra moduleparams_cropseq.lua
+
+$(BUILDDIR)/moduleparams_cropseq.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	# no extra checks
+	touch $(BUILDDIR)/moduleparams_cropseq.correct.txt
+
+#################
 $(BUILDDIR)/fixedtest.compiles.txt: fixedtest.lua
 	../rigelTerra fixedtest.lua
 

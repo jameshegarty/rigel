@@ -951,14 +951,14 @@ break
   --print("sim result, FIFOMax:",M1," Delay:",D1,name)
   if D1==0 then
     common.err( minFIFOSize1>=0, "min fifo size was <0! ", minFIFOSize1, " max:",M1," inputSide:",inputSide," rate:",rate," ",name )
-    return 0, M1
+    return 0, M1+1
   end
 
   local M2, minFIFOSize2, D2 = simulate( D1 )
   --print("sim result 2, FIFOMax:",M2," delay:",D2,name)
   assert( D2==0 )
   common.err( minFIFOSize2>=0, "min fifo size was <0! ", minFIFOSize1, name )
-  return D1, M2
+  return D1, M2+1
 end
 
 return common

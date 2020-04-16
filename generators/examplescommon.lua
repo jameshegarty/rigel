@@ -1162,7 +1162,7 @@ C.fifoWithMonitor = memoize(function( ty, size, delay, internalDelay, rate, inpu
 
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
-    s.functions.startMonitorTrigger = S.lambdaTab{name="startMonitorTrigger", input=S.parameter("startMonitorTrigger",types.bool()) }
+    s:addFunction(S.lambdaTab{name="startMonitorTrigger", input=S.parameter("startMonitorTrigger",types.bool()) })
                                              
     local N = Uniform(rate[1][1]):toNumber()
     local D = Uniform(rate[1][2]):toNumber()
@@ -1226,14 +1226,34 @@ reg anyValidsSeen = 1'b0;
 
 // we always start ready
 wire throttle;
+
+integer f;
+
+initial begin
+  f = $fopen("out/TRACE_]]..fnName..J.sel(inputSide,"_I","_O")..[[.csv","w");
+  $fwrite(f,"#]]..tostring(rate)..[[ size:]]..tostring(size)..[[ delay:]]..tostring(delay)..[[\n");
+  $fwrite(f,"cyclesSinc,   RefCount, mon]]..J.sel(inputSide,"I","O")..[[Cont,   mon]]..J.sel(inputSide,"O","I")..[[Cont,  fifoSize, throttle, readyDS, error\n");
+end
+
+always @(posedge CLK) begin
+  if (monitorStarted || startMonitorTrigger) begin
+    $fwrite(f,"%d, %d,%d,%d,%d,        %d,        %d,      %d\n",cyclesSinceStart, monitorReferenceCount, monitor]]..J.sel(inputSide,"In","Out")..[[putCount, monitor]]..J.sel(inputSide,"Out","In")..[[putCount, fifoSize,throttle,]]..res:vOutputReady()..","..J.sel(inputSide,"monitorReferenceCount!=monitorInputCount","monitorReferenceCount!=monitorOutputCount")..[[);
+  end
+end
+
+
 ]]
 
-    if inputSide then
-      verilog = verilog.."assign throttle = (monitorReferenceCount!=monitorReferenceCountLast)  || monitorReferenceCount==32'd0;\n"
+    if rigel.THROTTLE_FIFOS==false then
+      verilog = verilog.."assign throttle = 1'b1;\n"
     else
-      verilog = verilog.."assign throttle = monitorReferenceCount!=monitorReferenceCountLast;\n"
+      if inputSide then
+        verilog = verilog.."assign throttle = (monitorReferenceCount!=monitorReferenceCountLast)  || monitorReferenceCount==32'd0;\n"
+      else
+        verilog = verilog.."assign throttle = monitorReferenceCount!=monitorReferenceCountLast;\n"
+      end
     end
-
+    
     if size==0 then
       verilog = verilog.."assign "..res:vInputReady().." = "..res:vOutputReady()..";\n"
       verilog = verilog.."assign "..res:vOutput().." = "..res:vInput()..";\n"
@@ -1339,7 +1359,6 @@ else
 end
 
 verilog = verilog..[[
-  if( killNextCyc ) begin $finish(); end
 
   if( reset ) begin
     monitorStarted <= 1'b0;
@@ -1355,6 +1374,11 @@ verilog = verilog..[[
     errorOutputDrained <= 1'b0;
     fifoSize <= 32'd0;
     fifoMax <= 32'd0;
+  if( killNextCyc ) begin 
+$display("KILLnextcyc");
+$finish(); 
+end
+
 //    $display("FIFOWithMonitor Reset");
   end else begin
     if( monitorStarted || startMonitorTrigger ) begin
