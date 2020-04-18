@@ -1,3 +1,6 @@
+# make sure we use bash shell - to make the hacky runtime timers work
+SHELL = /bin/bash
+
 SRCS = $(wildcard *.lua)
 SRCS := $(filter-out moduleparams_core.lua,$(SRCS))
 
