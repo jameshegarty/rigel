@@ -9,7 +9,7 @@ types.export()
 local SDF = require "sdf"
 local Zynq = require "generators.zynq"
 
-R.MONITOR_FIFOS = false
+R.MONITOR_FIFOS = true
 
 local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
 

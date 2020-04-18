@@ -3848,6 +3848,8 @@ assign store_ready = size < 32'd]]..size..[[;
 wire hasData;
 assign hasData = size>32'd0;
 
+wire reading;
+
 ]] )
         if brammode then
           -- brams have a 1 cycle delay on read! we always queue up the next address asap, but if FIFO is empty, we do need to wait one cycle
@@ -3857,6 +3859,11 @@ assign hasData = size>32'd0;
           --
           -- another way to say this: readAddr is the address we want to read _this_ cycle. But ram will be a cycle behind. So if addr X is readAddr
           -- this cycle, X must have been the ram_readAddr the last time RE was true.
+          --
+          -- to accomlish this, we have readAddrNext, which is basically running one ahead of readAddr, and is the next addr we need to queue up
+          -- this is tricky to implement, b/c readAddrNext has to behave the same as readAddr (has to wrap the same, and FIFO size check has to happen the same way!)
+          --
+          -- but: if you pretend readAddrNext basically follows the same rules as readAddr, it's just one ahead, the logic isn't actually too complex
           table.insert(verilog,[[
 reg [31:0] readAddrNext;
 wire preloading; // this is basically like reading, but runs ahead
@@ -3865,33 +3872,34 @@ assign hasDataNext = (writeAddr-readAddrNext)>32'd0;
 assign preloading = hasDataNext && (load_ready_downstream || preloaded==1'b0);
 reg preloaded;
 wire load_valid;
-reg hasDataPrev;
 always @(posedge CLK) begin
   if ( reset ) begin
     preloaded <= 1'b0;
     readAddrNext <= 32'd0;
-    hasDataPrev <= 1'b0;
   end else begin
-    if( preloading ) begin
-      if ( readAddrNext==32'd]]..(allocatedItems-1)..[[) begin // we need to wrap around
-        readAddrNext <= 32'd0;
+    if ( readAddr==32'd]]..(allocatedItems-1)..[[ && reading ) begin // time for pointers to wrap
+      if( preloading ) begin
+        readAddrNext <= readAddrNext - 32'd]]..(allocatedItems-1)..[[; 
+        preloaded <= 1'b1;
       end else begin
-        readAddrNext <= readAddrNext + 32'd1;
+        readAddrNext <= readAddrNext - 32'd]]..allocatedItems..[[; 
+        preloaded <= 1'b0;
       end
+    end else if( preloading ) begin
+      readAddrNext <= readAddrNext + 32'd1;
       preloaded <= 1'b1;
     end else if (load_ready_downstream) begin
       // if load_ready_downstream is true, and somehow we aren't preloading, that means preload failed
       // ie: we need to introduce a cycle of delay
       preloaded <= 1'b0;
     end
-    hasDataPrev <= hasData;
   end
 //$display("FIFO ]]..size..[[ size:%d preloaded:%d preloading:%d ram_RE:%d readAddr:%3d ram_readAddr:%3d writeAddr:%3d load_valid:%d readDS:%d data:%d\n",size,preloaded, preloading, ram_RE, readAddr, ram_readAddr, writeAddr, load_valid, load_ready_downstream, load_output[]]..(A:extractData():verilogBits()-1)..[[:0]  );
 end
 
-assign ram_RE = load_ready_downstream || ( preloaded==1'b0 );
+assign ram_RE = preloading; //load_ready_downstream || ( preloaded==1'b0 );
 assign ram_readAddr = readAddrNext[]]..(addrBits-1)..[[:0];
-assign load_valid = hasDataPrev && preloaded; // ram buffer slot contains readAddrNext-1 = readAddr
+assign load_valid = preloaded; // ram buffer slot contains readAddr
 ]])
         else
           table.insert(verilog,[[wire load_valid;
@@ -3903,8 +3911,7 @@ assign ram_readAddr = readAddr[]]..(addrBits-1)..[[:0];
         end
 
         table.insert(verilog,[[assign load_output = {load_valid,ram_readOut};
-wire reading;
-assign reading = (size>32'd0) && load_ready_downstream;
+assign reading = load_valid && load_ready_downstream;
 
 
 wire store_valid;
