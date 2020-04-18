@@ -142,8 +142,9 @@ int main(int argc, char** argv) {
       //    }
     
     if(ready){
-      //if( validInCnt>=inPackets || (iThrottle==false && MONITOR_FIFOS)){ // either we're done, or throttled
-      if( validInCnt>=inPackets){
+      // only send tokens in when we expect them
+      if( validInCnt>=inPackets || (iThrottle==false && MONITOR_FIFOS)){ // either we're done, or throttled
+      //if( validInCnt>=inPackets){
         setValid(&(top->process_input),inbpp*inP,false);
       }else{
         setData(&(top->process_input),inbpp*inP,infile);
@@ -152,9 +153,8 @@ int main(int argc, char** argv) {
       }
     }
 
-    if( iThrottle != top->ready && MONITOR_FIFOS ){
+    if( iThrottle && top->ready==false && MONITOR_FIFOS ){
       printf("Error: DUT input ready wasn't as expected in cycle %lu. expected:%d ready:%d rate:%d/%d delay:%d\n", totalCycles, iThrottle,top->ready,inN, inD, delay);
-      //kill = 2;
       kill = true;
     }
 
@@ -169,7 +169,6 @@ int main(int argc, char** argv) {
 
     if( outValid!=oThrottle && MONITOR_FIFOS ){
       printf("Error: DUT output valid was not as expected! expected:%d valid:%d in cycle:%lu delay:%d validCount:%d/%d\n", oThrottle, outValid, totalCycles, delay, validcnt, outPackets );
-      //kill = 2;
       kill = true;
     }
     
@@ -189,17 +188,13 @@ int main(int argc, char** argv) {
       printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d validOutputsSeen %d\n",(unsigned int)totalCycles,outPackets,validcnt);
       exit(1);
     }
-
-    //    if(kill>0){
-    //      kill--;
-    //    }else if(kill==0){
-    //      exit(1);
-    //    }
   }
 
   printf("Verilator Cycles: %d\n", (int)totalCycles);
 
-  if(kill){exit(1);}
+  if(kill){
+    exit(1);
+  }
   
   // dumb hack: put it back into reset, to signal fifos to print errors on being too large
   CLK = true;

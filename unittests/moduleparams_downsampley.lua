@@ -18,6 +18,6 @@ end
 
 runTests( configs, meta )
 
-file = io.open("out/moduleparams_downsample.compiles.txt", "w")
+file = io.open("out/moduleparams_downsampley.compiles.txt", "w")
 file:write("Hello World")
 file:close()

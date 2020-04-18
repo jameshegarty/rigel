@@ -585,7 +585,8 @@ modules.waitOnInput = memoize(function( f, X )
 
   function res.makeSystolic()
     assert( S.isModule(f.systolicModule) )
-    return waitOnInputSystolic( f.systolicModule, {"process"},{} )
+    local sm = waitOnInputSystolic( f.systolicModule, {"process"},{} )
+    return sm
   end
 
   return rigel.newFunction(res)
@@ -2810,7 +2811,6 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   res.sdfInput, res.sdfOutput = SDF{ (W*H)/Tf, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/Tf}, SDF{1,1}
   res.name = verilogSanitize("PadSeq_"..tostring(A).."_W"..W.."_H"..H.."_L"..L.."_R"..tostring(R_orig).."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
 
-  res.outputBurstiness = 1 -- hack: module starts up at time=0, regardless of when triggered. Do this to throttle it.
 
   local R_n = R:toNumber()
   local padSim = function()
@@ -2829,6 +2829,8 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
 
   res.delay = 0
   res.RVDelay, res.inputBurstiness = J.simulateFIFO( padSim, res.sdfInput, res.name, true, (W*H)/math.max(T,1) )
+  --res.inputBurestiness = res.inputBurstiness + 1
+  res.outputBurstiness = 1 -- hack: module starts up at time=0, regardless of when triggered. Do this to throttle it.
   
   if terralib~=nil then res.terraModule = MT.padSeq( res, A, W, H, T, L, R, B, Top, Value ) end
 
@@ -2840,13 +2842,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
     local printInst
     --if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( types.tuple{types.uint(16),types.uint(16),types.bool()}, "x %d y %d ready %d", true ):instantiate("printInst") ) end
     
-    local pinp
---    if T==0 then
-      pinp = S.parameter("process_input", res.inputType:lower() )
---    else
---      pinp = S.parameter("process_input", res.inputType.over.over )
---    end
-    
+    local pinp = S.parameter("process_input", res.inputType:lower() )
     local pvalid = S.parameter("process_valid", types.bool() )
     
     local C1 = S.ge( posX:get(), S.constant(L,types.uint(32)))
@@ -3849,30 +3845,67 @@ reg [31:0] writeAddr;
 wire [31:0] size;
 assign size = writeAddr-readAddr;
 assign store_ready = size < 32'd]]..size..[[;
+wire hasData;
+assign hasData = size>32'd0;
+
 ]] )
         if brammode then
-            -- brams have a 1 cycle delay on read! we always queue up the next address asap, but if FIFO is empty, we do need to wait one cycle
+          -- brams have a 1 cycle delay on read! we always queue up the next address asap, but if FIFO is empty, we do need to wait one cycle
+
+          -- if bram is 'preloaded', this means that BRAM address is one ahead of actual readAddr, but ReadEnable hasn't been flipped yet
+          -- this means output port of BRAM contains the next token we need (available immediately), and next cycle the next one is available
+          --
+          -- another way to say this: readAddr is the address we want to read _this_ cycle. But ram will be a cycle behind. So if addr X is readAddr
+          -- this cycle, X must have been the ram_readAddr the last time RE was true.
           table.insert(verilog,[[
-reg load_valid;
+reg [31:0] readAddrNext;
+wire preloading; // this is basically like reading, but runs ahead
+wire hasDataNext;
+assign hasDataNext = (writeAddr-readAddrNext)>32'd0;
+assign preloading = hasDataNext && (load_ready_downstream || preloaded==1'b0);
+reg preloaded;
+wire load_valid;
+reg hasDataPrev;
 always @(posedge CLK) begin
-  if (load_ready_downstream) begin
-    load_valid <= size>32'd0;
+  if ( reset ) begin
+    preloaded <= 1'b0;
+    readAddrNext <= 32'd0;
+    hasDataPrev <= 1'b0;
+  end else begin
+    if( preloading ) begin
+      if ( readAddrNext==32'd]]..(allocatedItems-1)..[[) begin // we need to wrap around
+        readAddrNext <= 32'd0;
+      end else begin
+        readAddrNext <= readAddrNext + 32'd1;
+      end
+      preloaded <= 1'b1;
+    end else if (load_ready_downstream) begin
+      // if load_ready_downstream is true, and somehow we aren't preloading, that means preload failed
+      // ie: we need to introduce a cycle of delay
+      preloaded <= 1'b0;
+    end
+    hasDataPrev <= hasData;
   end
+//$display("FIFO ]]..size..[[ size:%d preloaded:%d preloading:%d ram_RE:%d readAddr:%3d ram_readAddr:%3d writeAddr:%3d load_valid:%d readDS:%d data:%d\n",size,preloaded, preloading, ram_RE, readAddr, ram_readAddr, writeAddr, load_valid, load_ready_downstream, load_output[]]..(A:extractData():verilogBits()-1)..[[:0]  );
 end
+
+assign ram_RE = load_ready_downstream || ( preloaded==1'b0 );
+assign ram_readAddr = readAddrNext[]]..(addrBits-1)..[[:0];
+assign load_valid = hasDataPrev && preloaded; // ram buffer slot contains readAddrNext-1 = readAddr
 ]])
         else
           table.insert(verilog,[[wire load_valid;
 assign load_valid = size>32'd0;
+assign ram_RE = load_ready_downstream;
+assign ram_readAddr = readAddr[]]..(addrBits-1)..[[:0];
+
 ]])
         end
 
         table.insert(verilog,[[assign load_output = {load_valid,ram_readOut};
-
 wire reading;
 assign reading = (size>32'd0) && load_ready_downstream;
 
-assign ram_RE = load_ready_downstream;
-assign ram_readAddr = readAddr[]]..(addrBits-1)..[[:0];
 
 wire store_valid;
 assign store_valid = store_input[]]..(A:lower():verilogBits())..[[];
@@ -3888,7 +3921,6 @@ always @(posedge CLK) begin
   if (reset) begin
     readAddr <= 32'd0;    
     writeAddr <= 32'd0;
-    ]]..J.sel(brammode,"load_valid<=1'b0;\n","")..[[
   end else begin
     if ( readAddr==32'd]]..(allocatedItems-1)..[[ && reading ) begin // we need to wrap around
       readAddr <= 32'd0;
@@ -4860,6 +4892,17 @@ local function allocateFIFOs(out)
   return out
 end
 
+local function FIFOSizeToDelay( fifoSize )
+  if fifoSize==0 then
+    return 0
+  elseif fifoSize<=128 then
+    -- takes one cycle to store, 0 to load
+    return 1
+  else
+    -- takes one cycle to store, 1 cycle to load
+    return 2
+  end
+end
 
 local function insertFIFOs( out, delayTable, moduleName )
   local C = require "generators.examplescommon"
@@ -4891,9 +4934,7 @@ local function insertFIFOs( out, delayTable, moduleName )
         err( type(delayTable[orig.inputs[1]])=="number", "missing delay for: ",orig.inputs[1] )
         assert( type(delayTable[orig])=="number" )
 
-        local extraDelayForFIFOs = 0
-        if n.fn.inputBurstiness>0 then extraDelayForFIFOs = extraDelayForFIFOs + 1 end
-        if n.fn.outputBurstiness>0 then extraDelayForFIFOs = extraDelayForFIFOs + 1 end
+        local extraDelayForFIFOs = FIFOSizeToDelay( n.fn.inputBurstiness ) + FIFOSizeToDelay( n.fn.outputBurstiness )
         
         local iDelayThis = delayTable[orig] - orig.fn.delay - extraDelayForFIFOs
         err( delayTable[orig.inputs[1]] == iDelayThis, "NYI - input to fn requires delay buffer! inp:",delayTable[orig.inputs[1]]," this:",iDelayThis," del ",delayTable[orig]," fn ",orig.fn.delay,orig, orig.fn )
@@ -4912,14 +4953,14 @@ local function insertFIFOs( out, delayTable, moduleName )
         local IFIFO, OFIFO
         if rigel.MONITOR_FIFOS==false then
           if n.fn.inputBurstiness>0 then
-            IFIFO = C.fifo( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, nil, nil, nil,nil,  NAME )
+            IFIFO = C.fifo( n.inputs[1].type:deInterface(), n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness ), nil, nil, nil,nil,  NAME )
           end
           if n.fn.outputBurstiness>0 then
-            OFIFO = C.fifo( n.type:deInterface(), n.fn.outputBurstiness, nil, nil, nil, nil,  NAME )
+            OFIFO = C.fifo( n.type:deInterface(), n.fn.outputBurstiness + FIFOSizeToDelay( n.fn.outputBurstiness ), nil, nil, nil, nil,  NAME )
           end
         else
-          IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness, delayTable[orig] - n.fn.delay - extraDelayForFIFOs, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
-          OFIFO = C.fifoWithMonitor( n.type:deInterface(), n.fn.outputBurstiness, delayTable[orig], n.fn.delay, n.rate, false, NAME, n.fn.name, moduleName )
+          IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness ), delayTable[orig] - n.fn.delay - extraDelayForFIFOs, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
+          OFIFO = C.fifoWithMonitor( n.type:deInterface(), n.fn.outputBurstiness + FIFOSizeToDelay( n.fn.outputBurstiness ), delayTable[orig], n.fn.delay, n.rate, false, NAME, n.fn.name, moduleName )
         end
 
         res = n.inputs[1]
@@ -4928,6 +4969,11 @@ local function insertFIFOs( out, delayTable, moduleName )
 --          print("IFIFO ",n.fn.inputBurstiness, n.fn.inputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay,  n.fn.name)
           fifoBits = fifoBits + bts
           res = rigel.apply( J.sanitize(n.name.."_IFIFO"), IFIFO, res )
+
+--          local G = require "generators.core"
+--          if bts>0 then
+--            res = G.Print{"IF",rigel.Unoptimized}(res)
+--          end
         end
         res = rigel.apply( n.name, n.fn, res )
         if OFIFO~=nil then
@@ -5040,8 +5086,8 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
 
         -- if we have burstiness, we need to add a fifo, which will introduce extra delay!
         local extra = 0
-        if fn.inputType:isRV() and fn.inputBurstiness>0 then extra = extra+1 end
-        if fn.outputType:isRV() and fn.outputBurstiness>0 then extra = extra+1 end
+        if fn.inputType:isRV() then extra = extra + FIFOSizeToDelay(fn.inputBurstiness) end
+        if fn.outputType:isRV() then extra = extra + FIFOSizeToDelay(fn.outputBurstiness) end
         
         if fn.inputType==types.Interface() or (fn.inputType:isrv() and fn.inputType:extractData():verilogBits()==0) then
           res = fn.delay+extra

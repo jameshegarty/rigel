@@ -5,7 +5,7 @@ BUILDDIR ?= out
 
 define MyRule
 $(BUILDDIR)/%.$(1).bit: $(BUILDDIR)/%.v
-	{ time -p $(MKPATH)/$(1)/compile $(shell pwd)/$(BUILDDIR)/$$*.v $(BUILDDIR)/$$*.metadata.lua $(shell pwd)/$(BUILDDIR)/$$*_$(1) $(shell pwd)/$(BUILDDIR)/$$*.$(1).bit; } 2>&1 | tee $(BUILDDIR)/$$*.compiletimeraw.txt
+	{ time -p $(MKPATH)/$(1)/compile $(shell pwd)/$(BUILDDIR)/$$*.v $(BUILDDIR)/$$*.metadata.lua $(shell pwd)/$(BUILDDIR)/$$*_$(1) $(shell pwd)/$(BUILDDIR)/$$*.$(1).bit; } 2>&1 | tee $(BUILDDIR)/$$*.compiletimeraw.txt; exit $$$${PIPESTATUS[0]}
 	printf '$$*,' > $(BUILDDIR)/$$*.compiletime.txt
 	cat $(BUILDDIR)/$$*.compiletimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$$*.compiletime.txt
 	rm $(BUILDDIR)/$$*.compiletimeraw.txt
@@ -27,7 +27,7 @@ $(BUILDDIR)/%.$(1).cyclescorrect.txt : $(BUILDDIR)/%.$(1).bmp
 	$(LUA) ../misc/approxnumdiff.lua $(BUILDDIR)/$$*.$(1).cycles.txt $(GOLDSTRPRE)$$*.$(1).cycles.txt $$@ 0.05 smallerIsBetter
 
 $(BUILDDIR)/%.$(1).raw: $(BUILDDIR)/%.$(1).bit
-	{ time -p $(MKPATH)/$(1)/run $(shell pwd)/$(BUILDDIR)/$$*.$(1).bit $(shell pwd)/$(BUILDDIR)/$$*.metadata.lua $(shell pwd)/$(BUILDDIR)/$$*.$(1).raw $(shell pwd)/$(BUILDDIR)/$$*.$(!); } 2>&1 | tee $(BUILDDIR)/$$*.runtimeraw.txt
+	{ time -p $(MKPATH)/$(1)/run $(shell pwd)/$(BUILDDIR)/$$*.$(1).bit $(shell pwd)/$(BUILDDIR)/$$*.metadata.lua $(shell pwd)/$(BUILDDIR)/$$*.$(1).raw $(shell pwd)/$(BUILDDIR)/$$*.$(!); } 2>&1 | tee $(BUILDDIR)/$$*.runtimeraw.txt; exit $$$${PIPESTATUS[0]}
 	printf '$$*,' > $(BUILDDIR)/$$*.runtime.txt
 	cat $(BUILDDIR)/$$*.runtimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$$*.runtime.txt
 	rm $(BUILDDIR)/$$*.runtimeraw.txt

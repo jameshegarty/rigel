@@ -850,7 +850,7 @@ endmodule
   local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.HandshakeTrigger, outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,(Nbytes/8)}}, sdfOutput={{1,1}}, instanceMap=instanceMap, delay=10, inputBurstiness=2 }
 
   -- hack: have it throttle outputs
-  res.outputBurstiness = 128
+  res.outputBurstiness = 126
   
   if terralib~=nil then
     res.makeTerra = function() return  SOCMT.axiBurstReadN( res, Nbytes, address, readFn ) end

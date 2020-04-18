@@ -74,6 +74,14 @@ $(BUILDDIR)/moduleparams_cropseq.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	touch $(BUILDDIR)/moduleparams_cropseq.correct.txt
 
 #################
+$(BUILDDIR)/moduleparams_padseq.compiles.txt: moduleparams_padseq.lua
+	../rigelTerra moduleparams_padseq.lua
+
+$(BUILDDIR)/moduleparams_padseq.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	# no extra checks
+	touch $(BUILDDIR)/moduleparams_padseq.correct.txt
+
+#################
 $(BUILDDIR)/fixedtest.compiles.txt: fixedtest.lua
 	../rigelTerra fixedtest.lua
 
