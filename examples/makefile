@@ -355,10 +355,10 @@ clean:
 
 # this crazyness is to be able to write the output (runtime from time) to a file AND to stdout, and exit correctly :o
 $(BUILDDIR)/%.v: %.lua
-	{ time -p $(LUA) $< verilator; } 2>&1 | tee $(BUILDDIR)/$*.compiletimeraw.txt; exit "$${PIPESTATUS[0]}"
-	printf '$*,' > $(BUILDDIR)/$*.compiletime.txt
-	cat $(BUILDDIR)/$*.compiletimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.compiletime.txt
-	rm $(BUILDDIR)/$*.compiletimeraw.txt
+	{ time -p $(LUA) $< verilator; } 2>&1 | tee $(BUILDDIR)/$*.luatimeraw.txt; exit "$${PIPESTATUS[0]}"
+	printf '$*,' > $(BUILDDIR)/$*.luatime.txt
+	cat $(BUILDDIR)/$*.luatimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.luatime.txt
+	rm $(BUILDDIR)/$*.luatimeraw.txt
 	# keep copy for future reference
 	mkdir -p $(BUILDDIR)/$*_build
 	cp $(BUILDDIR)/$*.v $(BUILDDIR)/$*_build
@@ -378,10 +378,10 @@ $(BUILDDIR)/%.coverage.txt: %.lua
 	touch $@
 
 $(BUILDDIR)/%.terra.raw: %.lua
-	{ time -p $(TERRA) $< terra; } 2> $(BUILDDIR)/$*.terra.compiletimeraw.txt
-	printf '$*,' > $(BUILDDIR)/$*.terra.compiletime.txt
-	cat $(BUILDDIR)/$*.terra.compiletimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.terra.compiletime.txt
-	rm $(BUILDDIR)/$*.terra.compiletimeraw.txt
+	{ time -p $(TERRA) $< terra; } 2>&1 | tee $(BUILDDIR)/$*.terra.terratimeraw.txt; exit "$${PIPESTATUS[0]}"
+	printf '$*,' > $(BUILDDIR)/$*.terra.terratime.txt
+	cat $(BUILDDIR)/$*.terra.terratimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.terra.terratime.txt
+	rm $(BUILDDIR)/$*.terra.terratimeraw.txt
 	# keep copy for future reference
 	mkdir -p $(BUILDDIR)/$*_build
 	#- cp $(BUILDDIR)/$*.cycles.txt $(BUILDDIR)/build_$*

@@ -17,8 +17,13 @@ if terralib~=nil then CT=require("generators.examplescommonTerra") end
 local C = {}
 
 C.identity = memoize(function(A)
-  err( types.isBasic(A),"C.identity: type should be basic, but is: "..tostring(A) )
-  local identity = RM.lift( "identity_"..J.verilogSanitize(tostring(A)), A, A, 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
+  err( A:isSchedule(),"C.identity: type should be schedule type, but is: "..tostring(A) )
+  local identity = RM.lift( "identity_"..J.verilogSanitize(tostring(A)), A:lower(), A:lower(), 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
+
+  assert( identity.inputType == types.rv(A:lower()) )
+  assert( identity.outputType == types.rv(A:lower()) )
+  identity.inputType = types.rv(A)
+  identity.outputType = types.rv(A)
   return identity
 end)
 
@@ -1323,12 +1328,12 @@ integer f;
 initial begin
   f = $fopen("out/TRACE_]]..fnName..J.sel(inputSide,"_I","_O")..[[.csv","w");
   $fwrite(f,"#]]..tostring(rate)..[[ size:]]..tostring(size)..[[ delay:]]..tostring(delay)..[[\n");
-  $fwrite(f,"cyclesSinc,   RefCount,  mon]]..J.sel(inputSide,"I","O")..[[Cont,  mon]]..J.sel(inputSide,"O","I")..[[Cont,  fifoSize, throttle,  readyDS, vaOut, error\n");
+  $fwrite(f,"cyclesSinc,   RefCount,  mon]]..J.sel(inputSide,"I","O")..[[Cont,  mon]]..J.sel(inputSide,"O","I")..[[Cont,  fifoSize, throttle,  readyUS,    valIn,  readyDS, vaOut, error\n");
 end
 
 always @(posedge CLK) begin
   if (monitorStarted || startMonitorTrigger) begin
-    $fwrite(f,"%d, %d,%d,%d,%d,        %d,        %d,      %d,        %d\n",cyclesSinceStart, monitorReferenceCount, monitor]]..J.sel(inputSide,"In","Out")..[[putCount, monitor]]..J.sel(inputSide,"Out","In")..[[putCount, fifoSize,throttle,]]..res:vOutputReady()..","..res:vOutputValid()..","..J.sel(inputSide,"monitorReferenceCount!=monitorInputCount","monitorReferenceCount!=monitorOutputCount")..[[);
+    $fwrite(f,"%d, %d,%d,%d,%d,        %d,        %d,        %d,        %d,      %d,        %d\n",cyclesSinceStart, monitorReferenceCount, monitor]]..J.sel(inputSide,"In","Out")..[[putCount, monitor]]..J.sel(inputSide,"Out","In")..[[putCount, fifoSize,throttle,]]..res:vInputReady()..","..res:vInputValid()..","..res:vOutputReady()..","..res:vOutputValid()..","..J.sel(inputSide,"monitorReferenceCount!=monitorInputCount","monitorReferenceCount!=monitorOutputCount")..[[);
   end
 end
 

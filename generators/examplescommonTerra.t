@@ -15,7 +15,7 @@ local ready = macro(function(i) return `i._2 end)
 CT={}
 
 function CT.identity(A)
-  return terra( a : &A:toTerraType(), out : &A:toTerraType() )
+  return terra( a : &A:lower():toTerraType(), out : &A:lower():toTerraType() )
     @out = @a
   end
 end

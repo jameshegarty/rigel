@@ -4,23 +4,46 @@
 #include "harness.h"
 #include VERILATORFILE
 
-bool calcThrottle( bool isInput, unsigned int N, unsigned int D, unsigned int delay, unsigned int cycles ){
-  float vLast = ceilf( (float(N)/float(D))*(float(cycles)-float(delay)) );
-  if(vLast<0.f){vLast=0.f;}
-  float vf = (float(N)/float(D))*(float(cycles)-float(delay)+1.f);
-  float v = ceilf( vf );
-  if(v<0.f){v=0.f;}
-  
-  unsigned int viLast = vLast;
-  unsigned int vi = v;
+int intCeil(int N, int D){
+  int w = N/D;
+  int r = N%D;
+  assert( w*D+r == N ); // I think this is always true...
+  return w + (r>0?1:0);
+}
 
+bool calcThrottle( bool isInput, int N, int D, int delay, int cycles ){
+  //float vLast = ceilf( (float(N)/float(D))*(float(cycles)-float(delay)) );
+  int vLastN = N*(cycles-delay);
+  int vLastD = D;
+  if(vLastN<0.f){vLastN=0;}
+  int viLast = intCeil(vLastN,vLastD);
+  
+  //float vf = (float(N)/float(D))*(float(cycles)-float(delay)+1.f);
+  //float v = ceilf( vf );
+  //if(v<0.f){v=0.f;}
+  int vN = N*(cycles-delay+1);
+  int vD = D;
+  if(vN<0.f){vN=0;}
+  int vi = intCeil(vN,vD);
+
+  
+  //  unsigned int viLast = vLast;
+  //  unsigned int vi = v;
+
+  bool throttle = (vi != viLast);
+  
   if( isInput ){
-    //        printf("Calc input %d/%d cyc:%lu expected:%f expectedInt:%d expectedFloat:%f\n",N,D,cycles,v,vi,vf);
+  int vLastN = N*(cycles-delay);
+  int vlastD = D;
+  if(vLastN<0.f){vLastN=0;}
+  int viLast = intCeil(vLastN,vLastD);
+  //printf("Calc input %d/%d cyc:%3u expected:%3f expectedInt:%3d expectedFloat:%f throttle:%d\n",N,D,cycles,v,vi,vf,throttle?1:0);
+  //printf("Calc input %d/%d cyc:%3u expected:%3d throttle:%d\n",N,D,cycles,vi,throttle?1:0);
   }else{
     //        printf("Calc output %d/%d cyc:%lu expected:%f expectedInt:%d expectedFloat:%f delay:%d\n",N,D,cycles,v,vi,vf,delay);
   }
   
-  return vi != viLast;
+  return throttle;
 }
 
 int main(int argc, char** argv) {
