@@ -206,6 +206,10 @@ int main(int argc, char** argv) {
     top->reset = true;
 #endif
     top->eval();
+
+    if(Verilated::gotFinish()){
+      exit(1);
+    }
   }
     
   top->final();

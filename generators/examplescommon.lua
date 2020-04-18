@@ -1156,7 +1156,7 @@ local function errorInputFIFOClogged( res, size, delay, name, fnName, topFnName 
   return [[  if ( (monitorStarted || startMonitorTrigger) && ]]..res:vInputReady()..[[==1'b0 && throttle==1'b1 && errorInputClogged==2'd0) begin
     errorInputClogged <= 2'd1;
     errorInputCloggedReadyDownstream <= ]]..res:vOutputReady()..[[;
-  end else if (errorInputClogged==2'd1 && (]]..res:vInputValid()..[[||]]..res:vOutputValid()..[[)) begin
+  end else if (errorInputClogged==2'd1 && ]]..res:vInputValid()..[[) begin
     $display("\n]]..J.sel(size>0,"* ","")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ fifoSz:]]..size..[[ input CLOGGED in cycle %d fifoSize:%d/]]..size..[[ delay:]]..delay..[[ throttle:%d dsReady:%d\n", cyclesSinceStart, fifoSize, throttle, errorInputCloggedReadyDownstream );
     errorInputClogged <= 2'd2;
     killAtEnd <= 1'b1;
@@ -1214,7 +1214,7 @@ local function errorIncorrectCount( res, size, delay, internalDelay, rate, input
     errorMonitorNCount <= monitorNCount;
     errorReadyDownstream <= ]]..res:vOutputReady()..[[;
     errorValidDownstream <= ]]..res:vOutputValid()..[[;
-  end else if (errorQ==2'd1 && (]]..res:vInputValid()..[[||]]..res:vOutputValid()..[[) ) begin
+  end else if (errorQ==2'd1 && ]]..J.sel(inputSide,res:vInputValid(),res:vOutputValid())..[[ ) begin
     // only display the first warning!
     $display("\n]]..J.sel(size>0,"* ","")..J.sel(inputSide,"I ","O ")..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ didn't match expected number of ]]..J.sel(inputSide,"INPUTS","OUTPUTS")..[[! delay:]]..delay..[[ internalDelay:]]..internalDelay..[[ rate:]]..tostring(rate)..[[ fifoSz@error:%0d/]]..size..[[ expected:%0d outputCount:%0d inputCount:%0d validDownstream@error:%0d readyDownstream@error:%0d cyclesSinceStart@error:%0d cyclesSinceStartNow:%0d monitorNCount@error:%0d/]]..D..[[ throttle@error:%0d \n", errorFifoSize, errorMonitorReferenceCount, errorMonitorOutputCount, errorMonitorInputCount, errorValidDownstream, errorReadyDownstream, errorCyclesSinceStart, cyclesSinceStart,  errorMonitorNCount, errorThrottle );
     // this isn't a critical warning (just a perf warning), so wait until end
