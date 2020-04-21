@@ -5151,7 +5151,19 @@ local function calculateDelaysZ3( output )
   local totalbits
   for line in f:lines() do
     print("LINE",line)
-    if string.match(line,"define%-fun") then
+    if string.match(line,"%|%->") then
+      -- sometimes output looks like this?
+      local name = string.match (line, "(%g+)")
+      local num = string.match (line, "%d+")
+
+      if curname=="MINVAR" then
+        totalbits = num
+      else
+        err( seenNames[name]~=nil,"name not valid?",name )
+        delayTable[name] = num
+      end
+
+    elseif string.match(line,"define%-fun") then
       local nam = string.match(line,"define%-fun (%g+)")
       print("NAME",nam)
       curname = nam
