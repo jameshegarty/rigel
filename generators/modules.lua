@@ -5152,16 +5152,16 @@ local function calculateDelaysZ3( output )
   for line in f:lines() do
     print("LINE",line)
     if string.match(line,"%|%->") then
-      -- sometimes output looks like this?
-      local name = string.match (line, "(%g+)")
-      local num = string.match (line, "%d+")
+      -- some versions of z3 write out the objective function
+--      local name = string.match (line, "(%g+)")
+--      local num = string.match (line, "%d+")
 
-      if name=="MINVAR" then
-        totalbits = num
-      else
-        err( seenNames[name]~=nil,"name not valid?",name )
-        delayTable[name] = num
-      end
+--      if name=="MINVAR" then
+--        totalbits = num
+--      else
+--        err( seenNames[name]~=nil,"name not valid?",name )
+--        delayTable[name] = num
+--      end
 
     elseif string.match(line,"define%-fun") then
       local nam = string.match(line,"define%-fun (%g+)")
