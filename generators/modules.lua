@@ -5156,7 +5156,7 @@ local function calculateDelaysZ3( output )
       local name = string.match (line, "(%g+)")
       local num = string.match (line, "%d+")
 
-      if curname=="MINVAR" then
+      if name=="MINVAR" then
         totalbits = num
       else
         err( seenNames[name]~=nil,"name not valid?",name )
