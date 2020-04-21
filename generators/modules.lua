@@ -6302,7 +6302,7 @@ table.insert(verilog,[[  if( reset ) begin
 end else ]])          
         end
         
-table.insert(verilog,[[  if( process_valid && process_CE ) begin
+table.insert(verilog,[[  if( process_CE ) begin
     DELAY_1 <= ]]..res:vInput()..[[;
 ]])
 
@@ -6347,7 +6347,7 @@ int j;
     end else]])
       end
       
-table.insert(verilog,[[      if( process_CE && process_valid ) begin
+table.insert(verilog,[[      if( process_CE ) begin
       ram[writeAddr] <= ]]..res:vInput()..[[;
       readAddr <= readAddr + ]]..addrBits..[['d1;
       writeAddr <= writeAddr + ]]..addrBits..[['d1;
