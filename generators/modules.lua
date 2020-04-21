@@ -5056,8 +5056,10 @@ local function calculateDelaysZ3( output )
     function(n, inputs)
       local res
 
+--      if n.kind~="statements" and n.kind~="selectStream" then -- these are noops
       seenNames[n.name] = n
       table.insert( statements, "(declare-const "..n.name.." Int)" )
+--      end
       
       if n.kind=="input" or n.kind=="constant" then
         table.insert( statements, "(assert (= "..n.name.." 0))" )
@@ -5108,9 +5110,12 @@ local function calculateDelaysZ3( output )
           --assert(false)
         end
       elseif n.kind=="statements" then
-        res = inputs[1]
+        table.insert( statements, "(assert (= "..n.name.." "..inputs[1].."))" )
+        res = n.name
       elseif n.kind=="selectStream" then
-        res = inputs[1]
+        -- for concat, we currently make all stream delays the same! So just look at index 1 always
+        table.insert( statements, "(assert (= "..n.name.." "..inputs[1].."))" )
+        res = n.name
       else
         print("delay NYI - ",n.kind,input.type,output.type)
         assert(false)

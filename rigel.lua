@@ -2635,7 +2635,7 @@ function darkroom.statements( t )
   err( type(t)=="table", "statements: argument should be table" )
   err( #t>0 and J.keycount(t)==#t, "statements: argument should be lua array")
   J.map(t, function(i) err(darkroom.isIR(i), "statements: argument should be rigel value") end )
-  return darkroom.newIR{kind="statements",inputs=t,loc=getloc(),name="STATEMENTSINTERNALNAME"}
+  return darkroom.newIR{kind="statements",inputs=t,loc=getloc(),name="__&STATEMENTS"}
 end
 
 -- this should go somewhere else
