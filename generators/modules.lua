@@ -5150,14 +5150,14 @@ local function calculateDelaysZ3( output )
 
   local totalbits
   for line in f:lines() do
---    print("LINE",line)
+    print("LINE",line)
     if string.match(line,"define%-fun") then
       local nam = string.match(line,"define%-fun (%g+)")
---      print("NAME",nam)
+      print("NAME",nam)
       curname = nam
     elseif string.match (line, "%d+") then
       local num = string.match (line, "%d+")
---      print("NUM",num)
+      print("NUM",num)
       num = tonumber(num)
       err(type(curname)=="string","name not set?")
       if curname=="MINVAR" then
