@@ -830,7 +830,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
     if pout.type~=types.null() then
       SR = res:add( fpgamodules.shiftRegister( types.bool(), systolicModule:getDelay(fnname), false, true ):instantiate(prefix.."validBitDelay_"..systolicModule.name) )
     
-      local srvalue = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE )
+      local srvalue = SR:process(S.constant(true,types.bool()), S.constant(true,types.bool()), CE )
       local outvalid
 
       if pout.type:isBool() then -- IE RVTrigger
@@ -3609,20 +3609,20 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     if inputNullary and outputNullary and nilhandshake==true then
       assert(false) -- NYI
     elseif inputNullary and nilhandshake==true then
-      outvalid = SR:pushPop( pinp, S.constant(true,types.bool()), CE)
+      outvalid = SR:process( pinp, S.constant(true,types.bool()), CE)
       out = S.tuple({inner:process(nil,pinp,processCE), outvalid})
     elseif inputNullary and nilhandshake==false then
-      outvalid = SR:pushPop(S.constant(true,types.bool()), S.constant(true,types.bool()), CE)
+      outvalid = SR:process(S.constant(true,types.bool()), S.constant(true,types.bool()), CE)
       --table.insert(pipelines,inner:process(nil,pinp,CE))
       out = S.tuple({inner:process(nil,S.constant(true,types.bool()),processCE), outvalid})
     elseif outputNullary and nilhandshake==true then
-      outvalid = SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()), CE)
+      outvalid = SR:process(S.index(pinp,1), S.constant(true,types.bool()), CE)
       out = outvalid
       table.insert(pipelines,inner:process(S.index(pinp,0),S.index(pinp,1), processCE))
     elseif outputNullary and nilhandshake==false then
       table.insert(pipelines,inner:process(S.index(pinp,0),S.index(pinp,1), processCE))
     else
-      outvalid = SR:pushPop(S.index(pinp,1), S.constant(true,types.bool()), CE)
+      outvalid = SR:process(S.index(pinp,1), S.constant(true,types.bool()), CE)
       out = S.tuple({inner:process(S.index(pinp,0),S.index(pinp,1), processCE), outvalid})
     end
     
@@ -4941,11 +4941,19 @@ local function insertFIFOs( out, delayTable, moduleName )
         err( type(delayTable[orig.inputs[1]])=="number", "missing delay for: ",orig.inputs[1] )
         assert( type(delayTable[orig])=="number" )
 
+        res = n.inputs[1]
+
         local extraDelayForFIFOs = FIFOSizeToDelay( n.fn.inputBurstiness ) + FIFOSizeToDelay( n.fn.outputBurstiness )
-        
+
         local iDelayThis = delayTable[orig] - orig.fn.delay - extraDelayForFIFOs
-        err( delayTable[orig.inputs[1]] == iDelayThis, "NYI - input to fn requires delay buffer! inp:",delayTable[orig.inputs[1]]," this:",iDelayThis," del ",delayTable[orig]," fn ",orig.fn.delay,orig, orig.fn )
-               
+
+        --err( delayTable[orig.inputs[1]] == iDelayThis, "NYI - input to fn requires delay buffer! inputDelay:",delayTable[orig.inputs[1]]," delayAtInputOfThisFn::",iDelayThis," bits:",n.inputs[1].type:extractData():verilogBits()," del ",delayTable[orig]," fn ",orig.fn.delay,orig, orig.fn )
+        assert( iDelayThis >= delayTable[orig.inputs[1]])
+
+        if iDelayThis ~= delayTable[orig.inputs[1]] then
+          res = modules.makeHandshake(modules.shiftRegister( n.inputs[1].type:deInterface(), iDelayThis-delayTable[orig.inputs[1]] ))(res)
+        end
+
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
 
         err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
@@ -4970,7 +4978,6 @@ local function insertFIFOs( out, delayTable, moduleName )
           OFIFO = C.fifoWithMonitor( n.type:deInterface(), n.fn.outputBurstiness + FIFOSizeToDelay( n.fn.outputBurstiness ), delayTable[orig], n.fn.delay, n.rate, false, NAME, n.fn.name, moduleName )
         end
 
-        res = n.inputs[1]
         if IFIFO~=nil then
           local bts = (n.fn.inputBurstiness*n.fn.inputType:extractData():verilogBits())
 --          print("IFIFO ",n.fn.inputBurstiness, n.fn.inputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay,  n.fn.name)
@@ -5037,45 +5044,166 @@ local function insertFIFOs( out, delayTable, moduleName )
   return fr
 end
 
--- function definition
--- output, inputs
-function modules.lambda( name, input, output, instanceList, generatorStr, generatorParams, globalMetadata, X )
-  if DARKROOM_VERBOSE then print("lambda start '"..name.."'") end
+local function calculateDelaysZ3( output )
 
-  err( X==nil, "lambda: too many arguments" )
-  err( type(name) == "string", "lambda: module name must be string" )
-  err( input==nil or rigel.isIR( input ), "lambda: input must be a rigel input value or nil" )
-  err( input==nil or input.kind=="input", "lambda: input must be a rigel input or nil" )
-  err( rigel.isIR( output ), "modules.lambda: module '",name,"' output should be Rigel value, but is: ",output )
-  if instanceList==nil then instanceList={} end
-  err( type(instanceList)=="table", "lambda: instances must be nil or a table")
-  J.map( instanceList, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end )
-  err( generatorStr==nil or type(generatorStr)=="string","lambda: generatorStr must be nil or string")
-  err( generatorParams==nil or type(generatorParams)=="table","lambda: generatorParams must be nil or table")
-  err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
+  local statements = {}
+  local ofTerms = {}
 
-  -- should we compile thie module as handshaked or not?
-  -- For handshaked modules, the input/output type is _not_ necessarily handshaked
-  -- for example, input/output type could be null, but the internal connections may be handshaked
-  -- so, check if we handshake anywhere
-  local HANDSHAKE_MODE = rigel.handshakeMode(output)
-
-  local instanceMap = J.invertTable(instanceList)
-  instanceList=nil -- now invalid
-
-  -- collect instances (user doesn't have to explicitly give all instances)
-  local instanceMap, provides, requires, requiresWithReadys = collectInstances( name, output, instanceMap )
+  local verbose = true
   
-  if rigel.SDF then
-    input, output = lambdaSDFNormalize(input,output,name)
-    local sdfMaxRate = output:sdfExtremeRate(true)
+  local seenNames = {}
+  local resdelay = output:visitEach(
+    function(n, inputs)
+      local res
 
-    if (Uniform(sdfMaxRate[1]):le(sdfMaxRate[2]):assertAlwaysTrue())==false then
-      output:visitEach(function(n) print(tostring(n)) end)
-      err( false,"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(sdfMaxRate[1]).."/"..tostring(sdfMaxRate[2]).." somewhere in module '"..name.."'")
+      seenNames[n.name] = n
+      table.insert( statements, "(declare-const "..n.name.." Int)" )
+      
+      if n.kind=="input" or n.kind=="constant" then
+        table.insert( statements, "(assert (= "..n.name.." 0))" )
+        res = n.name
+      elseif n.kind=="concat" or n.kind=="concatArray2d" then
+        for k,i in ipairs(inputs) do
+          table.insert( statements, "(assert (>= "..n.name.." "..i.."))" )
+          table.insert( ofTerms, "(* (- "..n.name.." "..i..") "..(n.inputs[k].type:extractData():verilogBits())..")" )
+        end
+        res = n.name
+      elseif n.kind=="apply" or (n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module)) then
+
+        local fn = n.fn
+        if n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module) then
+          fn = n.inst.module
+        end
+
+        -- if we have burstiness, we need to add a fifo, which will introduce extra delay!
+        local extra = 0
+        if fn.inputType:isRV() then extra = extra + FIFOSizeToDelay(fn.inputBurstiness) end
+        if fn.outputType:isRV() then extra = extra + FIFOSizeToDelay(fn.outputBurstiness) end
+        
+        if fn.inputType==types.Interface() or (fn.inputType:isrv() and fn.inputType:extractData():verilogBits()==0) then
+          --res = fn.delay+extra
+          table.insert( statements, "(assert (= "..n.name.." "..(fn.delay+extra).."))" )
+          res = n.name
+        else
+          err(fn.delay~=nil,"Error: fn "..fn.name.." is missing delay? "..tostring(fn.inputType).." "..tostring(fn.outputType))
+          --res = inputs[1] + fn.delay + extra
+          --assert(false)
+          table.insert( statements, "(assert (>= "..n.name.." (+ "..inputs[1].." "..(fn.delay+extra)..")))" )
+          local bts = n.inputs[1].type:extractData():verilogBits()
+          if bts>0 then table.insert( ofTerms, "(* (- "..n.name.." "..inputs[1]..") "..bts..")" ) end
+          res = n.name
+        end
+      elseif n.kind=="applyMethod" then
+        if n.inst.module.functions[n.fnname].inputType==types.null() or n.inst.module.functions[n.fnname].inputType:isInil() then
+          --res = n.inst.module.functions[n.fnname].delay
+          --          assert(false)
+          table.insert( statements, "(assert (= "..n.name.." 0))" )
+          res = n.name
+        else
+          table.insert( statements, "(assert (>= "..n.name.." (+ "..inputs[1].." "..n.inst.module.functions[n.fnname].delay..")))" )
+          local bts = n.inputs[1].type:extractData():verilogBits()
+          if bts>0 then table.insert( ofTerms, "(* (- "..n.name.." "..inputs[1]..") "..bts..")" ) end
+          res = n.name
+          --res = inputs[1] + n.inst.module.functions[n.fnname].delay
+          --assert(false)
+        end
+      elseif n.kind=="statements" then
+        res = inputs[1]
+      elseif n.kind=="selectStream" then
+        res = inputs[1]
+      else
+        print("delay NYI - ",n.kind,input.type,output.type)
+        assert(false)
+      end
+      
+      err( type(res)=="string", "delay thing returned something other than a string?",res )
+      return res
+    end)
+
+  local z3str = {}
+  table.insert(z3str,"(set-option :produce-models true)")
+  table.insert(z3str,"(declare-const MINVAR Int)")
+  for k,v in ipairs(statements) do
+    table.insert(z3str, v )
+  end
+  if #ofTerms==0 then
+    table.insert(z3str,"(assert (>= MINVAR 0))")
+  else
+    table.insert(z3str,"(assert (>= MINVAR (+ "..table.concat(ofTerms," ")..")))")
+  end
+  table.insert(z3str, "(minimize MINVAR )")
+  table.insert(z3str, "(check-sat)")
+  --table.insert(z3str, "(get-objectives)")
+  table.insert(z3str, "(get-model)")
+  
+  z3str = table.concat(z3str,"\n")
+
+  if verbose then print(z3str) end
+  
+  local z3call = [[echo "]]..z3str..[[" | z3 -in -smt2]]
+
+  local f = assert (io.popen (z3call))
+
+  local res = ""
+  local curname
+  local delayTable = {}
+
+  local totalbits
+  for line in f:lines() do
+--    print("LINE",line)
+    if string.match(line,"define%-fun") then
+      local nam = string.match(line,"define%-fun (%g+)")
+--      print("NAME",nam)
+      curname = nam
+    elseif string.match (line, "%d+") then
+      local num = string.match (line, "%d+")
+--      print("NUM",num)
+      num = tonumber(num)
+      err(type(curname)=="string","name not set?")
+      if curname=="MINVAR" then
+        totalbits = num
+      else
+        err( seenNames[curname]~=nil,"name not valid?",curname )
+        delayTable[curname] = num
+      end
+    end
+    
+--    res = res..line.."\n"
+  end
+
+  f:close()
+
+  if verbose then
+    print("TOTALBITS",totalbits)
+    print("DELAYTABLE")
+    for k,v in pairs(delayTable) do
+      print(k,v)
     end
   end
   
+  local delayTableASTs = {}
+  for k,v in pairs(seenNames) do
+    err( delayTable[k]~=nil," missing delay for: ",k)
+    delayTableASTs[v] = delayTable[k]
+  end
+  
+  err( type(delayTable[output.name])=="number","delay for output missing? name: ",output.name," is: ",delayTable[output.name] )
+--  print("RES",res)
+  
+--  if string.match(res,"sat") then
+--    local num = string.match (res, "%d+")
+--    print("Z3MAX:",num)
+--    J.err(num~=nil and type(tonumber(num))=="number","failed to find maximum value of expr? "..tostring(self))
+--    return tonumber(num)
+--  else
+--    assert(false)
+--  end
+
+  return delayTable[output.name], delayTableASTs
+end
+
+
+local function calculateDelaysGreedy( output )
   local delayTable = {}
   local resdelay = output:visitEach(
     function(n, inputs)
@@ -5121,8 +5249,59 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
       delayTable[n] = res
       return res
     end)
+
   assert(type(resdelay)=="number")
 
+  return resdelay, delayTable
+end
+
+-- function definition
+-- output, inputs
+function modules.lambda( name, input, output, instanceList, generatorStr, generatorParams, globalMetadata, X )
+  if DARKROOM_VERBOSE then print("lambda start '"..name.."'") end
+
+  err( X==nil, "lambda: too many arguments" )
+  err( type(name) == "string", "lambda: module name must be string" )
+  err( input==nil or rigel.isIR( input ), "lambda: input must be a rigel input value or nil" )
+  err( input==nil or input.kind=="input", "lambda: input must be a rigel input or nil" )
+  err( rigel.isIR( output ), "modules.lambda: module '",name,"' output should be Rigel value, but is: ",output )
+  if instanceList==nil then instanceList={} end
+  err( type(instanceList)=="table", "lambda: instances must be nil or a table")
+  J.map( instanceList, function(n) err( rigel.isInstance(n), "lambda: instances argument must be an array of instances" ) end )
+  err( generatorStr==nil or type(generatorStr)=="string","lambda: generatorStr must be nil or string")
+  err( generatorParams==nil or type(generatorParams)=="table","lambda: generatorParams must be nil or table")
+  err( globalMetadata==nil or type(globalMetadata)=="table","lambda: globalMetadata must be nil or table")
+
+  -- should we compile thie module as handshaked or not?
+  -- For handshaked modules, the input/output type is _not_ necessarily handshaked
+  -- for example, input/output type could be null, but the internal connections may be handshaked
+  -- so, check if we handshake anywhere
+  local HANDSHAKE_MODE = rigel.handshakeMode(output)
+
+  local instanceMap = J.invertTable(instanceList)
+  instanceList=nil -- now invalid
+
+  -- collect instances (user doesn't have to explicitly give all instances)
+  local instanceMap, provides, requires, requiresWithReadys = collectInstances( name, output, instanceMap )
+  
+  if rigel.SDF then
+    input, output = lambdaSDFNormalize(input,output,name)
+    local sdfMaxRate = output:sdfExtremeRate(true)
+
+    if (Uniform(sdfMaxRate[1]):le(sdfMaxRate[2]):assertAlwaysTrue())==false then
+      output:visitEach(function(n) print(tostring(n)) end)
+      err( false,"LambdaSDFNormalize failed? somehow we ended up with a instance utilization of "..tostring(sdfMaxRate[1]).."/"..tostring(sdfMaxRate[2]).." somewhere in module '"..name.."'")
+    end
+  end
+  
+  --local resdelay, delayTable = calculateDelaysGreedy( output )
+  local resdelay, delayTable
+  if rigel.Z3_FIFOS then
+    resdelay, delayTable = calculateDelaysZ3( output )
+  else
+    resdelay, delayTable = calculateDelaysGreedy( output )
+  end
+    
   if rigel.AUTO_FIFOS~=false then
     if HANDSHAKE_MODE and input~=nil and input.type:isInil()==false then
       output = insertFIFOs( output, delayTable, name )
@@ -6062,13 +6241,15 @@ endmodule
   return res
 end)
 
-modules.shiftRegister = J.memoize(function(ty, N)
+modules.shiftRegister = J.memoize(function(ty, N, clear )
   assert( types.isType(ty) )
   assert( ty:isSchedule() )
   assert( type(N)=="number" )
-  assert( N>0 )
+  err( N>0, "shift register with 0 delay?" )
 
-  local modname = J.sanitize("ShiftRegister_"..tostring(ty).."_DELAY"..tostring(N))
+  if clear==nil then clear=false end
+  
+  local modname = J.sanitize("ShiftRegisterDELAY"..tostring(N).."_"..tostring(ty))
   local res = rigel.newFunction{ inputType = types.rv(ty), outputType = types.rv(ty), name = modname, delay=N, stateful=true, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
 
   if terralib~=nil then res.terraModule = MT.shiftRegister( res, ty, N ) end
@@ -6077,35 +6258,94 @@ modules.shiftRegister = J.memoize(function(ty, N)
     local C = require "generators.examplescommon"
     local s = C.automaticSystolicStub(res)
     
-    local verilog = res:vHeader()
+    local verilog = {res:vHeader()}
 
-    -- it's possible ty is a trigger...
-    if ty:lower():verilogBits()>0 then
-      for i=1,N do
-        verilog = verilog.."reg ["..(ty:lower():verilogBits()-1)..":0] DELAY_"..i..";\n"
-      end
-      verilog = verilog.."assign "..res:vOutput().." = DELAY_"..N..";\n"
-      
-      verilog = verilog..[[always @(posedge CLK) begin
-  if( process_CE ) begin
+    if ty:lower():verilogBits()==0 then
+      -- do nothing! it's empty
+      --    elseif N<10 then
+    elseif N<10 then
+      -- it's possible ty is a trigger...
+      if ty:lower():verilogBits()>0 then
+        for i=1,N do
+          table.insert(verilog,"reg ["..(ty:lower():verilogBits()-1)..":0] DELAY_"..i..";\n")
+        end
+        table.insert(verilog,"assign "..res:vOutput().." = DELAY_"..N..";\n")
+        
+        table.insert(verilog,[[always @(posedge CLK) begin
+]])
+
+        if clear then
+table.insert(verilog,[[  if( reset ) begin
+]])
+        for i=1,N do
+          table.insert(verilog,"    DELAY_"..i.." <= "..(ty:lower():verilogBits()).."'d0;\n")
+        end
+
+             table.insert(verilog,[[
+end else ]])          
+        end
+        
+table.insert(verilog,[[  if( process_valid && process_CE ) begin
     DELAY_1 <= ]]..res:vInput()..[[;
-]]
+]])
 
-      for i=2,N do
-        verilog = verilog.."    DELAY_"..i.." <= DELAY_"..(i-1)..";\n"
-      end
-
-      verilog = verilog..[[  end
+        for i=2,N do
+          table.insert(verilog,"    DELAY_"..i.." <= DELAY_"..(i-1)..";\n")
+        end
+        
+        table.insert(verilog,[[  end
 end
-]]
+]])
+      end
+    else
+      local nearestN = J.nearestPowerOf2(N)
+      local addrBits = math.log(nearestN)/math.log(2)
+
+--      for i=1,nearestN do
+--        table.insert(verilog,ty:lower():verilogBits())
+--        table.insert(verilog,"'d0")
+--        if i<nearestN then table.insert(verilog,",") end
+--      end
+
+      table.insert(verilog, [[  reg []]..(addrBits-1)..[[:0] writeAddr = ]]..addrBits..[['d]]..(N%nearestN)..[[;
+  reg []]..(addrBits-1)..[[:0] readAddr = ]]..addrBits..[['d0;
+  reg []]..(ty:lower():verilogBits()-1)..[[:0] ram []]..(nearestN-1)..[[:0];
+
+  assign ]]..res:vOutput()..[[ = ram[readAddr];
+
+int i;
+int j;
+
+  always @(posedge CLK) begin
+]])
+
+      if clear then
+      table.insert(verilog,[[
+  if( reset ) begin
+      for(i=0; i<]]..nearestN..[[-1; i=i+1) begin
+        for(j=0; j<]]..(ty:lower():verilogBits())..[[; j=j+1) begin
+           ram[i][j] = 1'b0;
+        end
+      end   
+    end else]])
+      end
+      
+table.insert(verilog,[[      if( process_CE && process_valid ) begin
+      ram[writeAddr] <= ]]..res:vInput()..[[;
+      readAddr <= readAddr + ]]..addrBits..[['d1;
+      writeAddr <= writeAddr + ]]..addrBits..[['d1;
+    end
+  end
+]])
+      
     end
     
-    verilog = verilog..[[
+    table.insert(verilog,[[
 endmodule
 
-]]
+]])
 
-    s:verilog(verilog)
+    s:verilog(table.concat(verilog))
     return s
   end
   

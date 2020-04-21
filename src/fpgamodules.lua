@@ -349,7 +349,7 @@ function modules.wideMux( tab, key )
   return S.index(r,0)
 end
 
-modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
+modules.shiftRegisterOld = memoize(function( ty, size, resetValue, CE, X )
   err( types.isType(ty),"shiftRegister: type must be type, but is: "..tostring(ty))
   err( type(size)=="number","shiftRegister: size must be number")
   assert(X==nil)
@@ -363,7 +363,7 @@ modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
   local inp = systolic.parameter("sr_input", ty)
   local regs = {}
 
-  local ppvalid = systolic.parameter("pushPop_valid",types.bool())
+  local ppvalid = systolic.parameter("process_valid",types.bool())
   local rstvalid = systolic.parameter("reset",types.bool())
 
   for i=1,size do
@@ -380,11 +380,21 @@ modules.shiftRegister = memoize(function( ty, size, resetValue, CE, X )
   if size==0 then out=inp end
 
   local CEvar = J.sel(CE,S.CE("CE"),nil)
-  local pushPop = M:addFunction( systolic.lambda("pushPop", inp, out, "pushPop_out", pipelines, ppvalid, CEvar ) )
+  local pushPop = M:addFunction( systolic.lambda("process", inp, out, "process_out", pipelines, ppvalid, CEvar ) )
   local reset = M:addFunction( systolic.lambda("reset", systolic.parameter("R",types.null()), nil, "reset_out", resetPipelines, rstvalid ) )
 
   return M
-                                end)
+end)
+
+modules.shiftRegister = function( ty, size, resetValue, CE, X )
+  if (resetValue==nil or resetValue==0 or resetValue==false) and CE and size>0 then
+    local RM = require "generators.modules"
+    local mod = RM.shiftRegister( ty, size, resetValue~=nil )
+    return mod.systolicModule
+  else
+    return modules.shiftRegisterOld( ty, size, resetValue, CE )
+  end
+end
 
 -- This returns a module that keeps track of phase. It returns a phase value and a valid bit.
 -- valid bit is only true after a full phase has completed.

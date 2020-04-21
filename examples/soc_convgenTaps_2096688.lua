@@ -13,6 +13,8 @@ local P = require "params"
 local G = require "generators.core"
 local Uniform = require "uniform"
 
+R.Z3_FIFOS = true
+
 local ConvWidth = 4
 local ConvRadius = ConvWidth/2
 
