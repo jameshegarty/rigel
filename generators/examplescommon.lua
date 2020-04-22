@@ -1323,6 +1323,7 @@ reg anyValidsSeen = 1'b0;
 // we always start ready
 wire throttle;
 
+// synopsys translate_off
 integer f;
 
 initial begin
@@ -1336,7 +1337,7 @@ always @(posedge CLK) begin
     $fwrite(f,"%d, %d,%d,%d,%d,        %d,        %d,        %d,        %d,      %d,        %d\n",cyclesSinceStart, monitorReferenceCount, monitor]]..J.sel(inputSide,"In","Out")..[[putCount, monitor]]..J.sel(inputSide,"Out","In")..[[putCount, fifoSize,throttle,]]..res:vInputReady()..","..res:vInputValid()..","..res:vOutputReady()..","..res:vOutputValid()..","..J.sel(inputSide,"monitorReferenceCount!=monitorInputCount","monitorReferenceCount!=monitorOutputCount")..[[);
   end
 end
-
+// synopsys translate_on
 
 ]]
 
@@ -1444,14 +1445,18 @@ verilog = verilog..[[
     errorOutputDrained <= 2'd0;
     fifoSize <= 32'd0;
     fifoMax <= 32'd0;
+// synopsys translate_off
     if( killAtEnd ) begin $finish(); end
+// synopsys translate_on
   end else begin
     if( monitorStarted || startMonitorTrigger ) begin
       cyclesSinceStart <= cyclesSinceStart+32'd1;
     end
   end
 
+// synopsys translate_off
   if( killNextCyc ) begin $finish(); end
+// synopsys translate_on
 
   if (]]..res:vInputValid()..[[) begin
     cyclesSinceValid <= 32'd0;
@@ -1461,10 +1466,13 @@ verilog = verilog..[[
 
 ]]
 if inputSide and delay>0 and false then
-  verilog = verilog..[[  if (monitor_started && ]]..res:vInputReady()..[[==1'b0 && cyclesSinceStart>=]]..delay..[[) begin
+  verilog = verilog..[[  
+// synopsys translate_off
+  if (monitor_started && ]]..res:vInputReady()..[[==1'b0 && cyclesSinceStart>=]]..delay..[[) begin
     $display("]]..topFnName..[[ ]]..name..[[ of ]]..fnName..[[ input CLOGGED in cycle %d",cyclesSinceStart);
     $finish();
   end
+// synopsys translate_on
 ]]
 end
 
@@ -2775,7 +2783,7 @@ end)
 C.ConvertVRtoRV = J.memoize(function(fn)
   err( types.isHandshakeVR(fn.inputType), "ConvertVRtoRV: fn input should be HandshakeVR, but is: "..tostring(fn.inputType) )
   err( types.isHandshakeVR(fn.outputType), "ConvertVRtoRV: fn output should be HandshakeVR" )
-  return C.linearPipeline({C.fifo(types.extractData(fn.inputType),128,nil,nil,true),fn,C.VRtoRVRaw(types.extractData(fn.outputType))},"ConvertVRtoRV_"..fn.name)
+  return C.linearPipeline({C.fifo(types.extractData(fn.inputType),1,nil,nil,true),fn,C.VRtoRVRaw(types.extractData(fn.outputType))},"ConvertVRtoRV_"..fn.name)
 end)
 
 -- placed at the front of a pipeline to feed it invalid input

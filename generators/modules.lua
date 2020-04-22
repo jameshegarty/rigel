@@ -5155,26 +5155,13 @@ local function calculateDelaysZ3( output )
 
   local totalbits
   for line in f:lines() do
-    print("LINE",line)
     if string.match(line,"%|%->") then
       -- some versions of z3 write out the objective function
---      local name = string.match (line, "(%g+)")
---      local num = string.match (line, "%d+")
-
---      if name=="MINVAR" then
---        totalbits = num
---      else
---        err( seenNames[name]~=nil,"name not valid?",name )
---        delayTable[name] = num
---      end
-
     elseif string.match(line,"define%-fun") then
       local nam = string.match(line,"define%-fun (%g+)")
-      print("NAME",nam)
       curname = nam
     elseif string.match (line, "%d+") then
       local num = string.match (line, "%d+")
-      print("NUM",num)
       num = tonumber(num)
       err(type(curname)=="string","name not set?")
       if curname=="MINVAR" then
@@ -5184,8 +5171,6 @@ local function calculateDelaysZ3( output )
         delayTable[curname] = num
       end
     end
-    
---    res = res..line.."\n"
   end
 
   f:close()
@@ -6330,8 +6315,8 @@ end
 
   assign ]]..res:vOutput()..[[ = ram[readAddr];
 
-int i;
-int j;
+reg [31:0] i;
+reg [31:0] j;
 
   always @(posedge CLK) begin
 ]])
