@@ -1,3 +1,6 @@
+# make sure we use bash shell - to make the hacky runtime timers work
+SHELL = /bin/bash
+
 BUILDDIR ?= out
 
 SRCS = $(wildcard $(BUILDDIR)/*.terra.raw)

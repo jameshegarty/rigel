@@ -15,36 +15,6 @@ for k,v in ipairs(configs.upsampleSeq) do
   meta.upsampleSeq[k].outputImageSize={v.size[1]*v.scale[1], v.size[2]*v.scale[2]}
 end
 
-configs.padSeq = J.cartesian{type=Type, size={IS}, V=NumP, pad=LRBT, value={0,18}}
-meta.padSeq={}
-for k,v in ipairs(configs.padSeq) do
-  if v.type==types.bool() then v.value=true end
-  if v.type:isArray() or v.type:isTuple() then v.value={v.value} end
-  v.pad = J.shallowCopy(v.pad)
-  for i=1,4 do if v.pad[i]%v.V~=0 then  v.pad[i]=J.upToNearest(v.V,v.pad[i]) end end
-
-  meta.padSeq[k]={inputP=v.V, outputP=v.V, inputImageSize=v.size}
-  meta.padSeq[k].outputImageSize={v.size[1]+v.pad[1]+v.pad[2], v.size[2]+v.pad[3]+v.pad[4]}
-
-end
-
-local cropAmt = { {1,1,1,1}, {0,2,0,2}, {2,0,0,2}, {0,0,0,0} }
-configs.cropSeq = J.cartesian{type=Type, size={IS}, V=NumP, crop=cropAmt }
-meta.cropSeq={}
-for k,v in ipairs(configs.cropSeq) do
-  v.crop = J.shallowCopy(v.crop)
-  for i=1,4 do if v.crop[i]%v.V~=0 then  v.crop[i]=J.upToNearest(v.V,v.crop[i]) end end
-    
-  meta.cropSeq[k] = { inputP=v.V, outputP=v.V, inputImageSize=v.size }
-  meta.cropSeq[k].outputImageSize={v.size[1]-v.crop[1]-v.crop[2], v.size[2]-v.crop[3]-v.crop[4]}
-end
-
-configs.changeRate = J.cartesian{type=Type, H={1}, inW=NumP, outW=NumP}
-meta.changeRate={}
-for k,v in ipairs(configs.changeRate) do
-  meta.changeRate[k] = {inputP=v.inW, outputP=v.outW, inputImageSize=IS, outputImageSize=IS}
-end
-
 configs.constSeq = {}
 local CSC = J.cartesian{type=Type, W=NumP, H=NumP, P=NumP, value={42}}
 meta.constSeq={}

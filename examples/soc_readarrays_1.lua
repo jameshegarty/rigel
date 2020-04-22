@@ -10,6 +10,8 @@ local SDF = require "sdf"
 local Zynq = require "generators.zynq"
 local A = require "generators.accessors"
 
+R.Z3_FIFOS = true
+
 local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(0,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")

@@ -21,6 +21,8 @@ darkroom.default_nettype_none = true
 
 darkroom.MONITOR_FIFOS = false
 darkroom.AUTO_FIFOS = true
+darkroom.THROTTLE_FIFOS = true
+darkroom.Z3_FIFOS = false -- use z3 to alloc fifos
 
 -- path to root of rigel repo
 darkroom.path = string.sub(debug.getinfo(1).source,2,#debug.getinfo(1).source-9)

@@ -850,7 +850,7 @@ endmodule
   local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.HandshakeTrigger, outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,(Nbytes/8)}}, sdfOutput={{1,1}}, instanceMap=instanceMap, delay=10, inputBurstiness=2 }
 
   -- hack: have it throttle outputs
-  res.outputBurstiness = 128
+  res.outputBurstiness = 2
   
   if terralib~=nil then
     res.makeTerra = function() return  SOCMT.axiBurstReadN( res, Nbytes, address, readFn ) end
@@ -1330,7 +1330,7 @@ endmodule
   instanceMap = J.joinSet(instanceMap,address:getInstances())
   instanceMap = J.joinSet(instanceMap,Nbytes:getInstances())
 
-  local res = RM.liftVerilogTab{ name="DRAMWriter"..moduleNameSuffix, inputType=R.Handshake(types.bits(64)), outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1}}, sdfOutput={{1,Nbytes/8}}, instanceMap=instanceMap, delay=(Nbytes:toNumber()/8)+4, inputBurstiness=128 }
+  local res = RM.liftVerilogTab{ name="DRAMWriter"..moduleNameSuffix, inputType=R.Handshake(types.bits(64)), outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1}}, sdfOutput={{1,Nbytes/8}}, instanceMap=instanceMap, delay=(Nbytes:toNumber()/8)+8, inputBurstiness=8, outputBurstiness=1 }
 
   if terralib~=nil then
     res.makeTerra = nil

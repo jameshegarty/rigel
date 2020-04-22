@@ -946,19 +946,23 @@ break
     return maxFIFOSize, minFIFOSize, largestDelay
   end
 
+  -- if fifos totally fill, upstream ready will be set false! Prevent this by allowing a few items of slack
+  -- why 2 though? seems like a hack
+  local SLACK = 2
+  
   --print("Start simulate FIFO ",name)
   local M1, minFIFOSize1, D1 = simulate( 0 )
   --print("sim result, FIFOMax:",M1," Delay:",D1,name)
   if D1==0 then
     common.err( minFIFOSize1>=0, "min fifo size was <0! ", minFIFOSize1, " max:",M1," inputSide:",inputSide," rate:",rate," ",name )
-    return 0, M1
+    return 0, M1+SLACK
   end
 
   local M2, minFIFOSize2, D2 = simulate( D1 )
   --print("sim result 2, FIFOMax:",M2," delay:",D2,name)
   assert( D2==0 )
   common.err( minFIFOSize2>=0, "min fifo size was <0! ", minFIFOSize1, name )
-  return D1, M2
+  return D1, M2+SLACK
 end
 
 return common
