@@ -59,6 +59,29 @@ $(BUILDDIR)/moduleparams_downsampley.compiles.txt: moduleparams_downsampley.lua
 $(BUILDDIR)/moduleparams_downsampley.correct.txt: $(BUILDDIR)/verilogcorrect.txt
 	# no extra checks
 	touch $(BUILDDIR)/moduleparams_downsampley.correct.txt
+#################
+$(BUILDDIR)/moduleparams_upsample.compiles.txt: moduleparams_upsample.lua
+	../rigelTerra moduleparams_upsample.lua
+
+$(BUILDDIR)/moduleparams_upsample.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	# no extra checks
+	touch $(BUILDDIR)/moduleparams_upsample.correct.txt
+
+#################
+$(BUILDDIR)/moduleparams_upsamplex.compiles.txt: moduleparams_upsamplex.lua
+	../rigelTerra moduleparams_upsamplex.lua
+
+$(BUILDDIR)/moduleparams_upsamplex.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	# no extra checks
+	touch $(BUILDDIR)/moduleparams_upsamplex.correct.txt
+
+#################
+$(BUILDDIR)/moduleparams_upsampley.compiles.txt: moduleparams_upsampley.lua
+	../rigelTerra moduleparams_upsampley.lua
+
+$(BUILDDIR)/moduleparams_upsampley.correct.txt: $(BUILDDIR)/verilogcorrect.txt
+	# no extra checks
+	touch $(BUILDDIR)/moduleparams_upsampley.correct.txt
 
 #################
 $(BUILDDIR)/moduleparams_changerate.compiles.txt: moduleparams_changerate.lua
