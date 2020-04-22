@@ -68,6 +68,14 @@ function RS.modules.upsampleSeq(t)
   return C.upsampleSeq( t.type, t.size[1], t.size[2], t.V, t.scale[1], t.scale[2] )
 end
 
+function RS.modules.upsampleXSeq(t)
+  return RM.upsampleXSeq( t.type, t.V, t.scale )
+end
+
+function RS.modules.upsampleYSeq(t)
+  return RM.upsampleYSeq( t.type, t.size[1], t.size[2], t.V, t.scale )
+end
+
 function RS.modules.upsample(t)
   return RM.upsample( t.type, t.size[1], t.size[2], t.scale[1], t.scale[2] )
 end

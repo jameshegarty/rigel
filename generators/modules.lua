@@ -1925,6 +1925,21 @@ modules.upsampleYSeq = memoize(function( A, W, H, T, scale )
     return systolicModule
   end
 
+  local upsampleYSim = function()
+    for y=0,(H*scale)-1 do
+      for x=0,W-1,math.max(T,1) do
+        if y%scale==0 then
+          coroutine.yield(true)
+        else
+          coroutine.yield(false)
+        end
+      end
+    end
+  end
+
+  res.RVDelay, res.inputBurstiness = J.simulateFIFO( upsampleYSim, res.sdfInput, res.name, true, (W*H)/math.max(T,1) )
+  res.outputBurstiness = 2 -- hack: make it wait to start writing stuff out until it's fifo is full enough
+  
   return modules.waitOnInput( rigel.newFunction(res) )
 end)
 
