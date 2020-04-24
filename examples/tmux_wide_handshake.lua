@@ -5,6 +5,8 @@ local S = require("systolic")
 local harness = require "generators.harness"
 local C = require "generators.examplescommon"
 local SDF = require "sdf"
+local G = require "generators.core"
+
 W = 128
 H = 64
 T = 8
@@ -20,7 +22,7 @@ A = R.input( R.Handshake(ITYPE), {{1,2}} )
 
 local muxout = R.applyMethod("L1", fifos[1],"load")
 
-local out = R.apply("toHandshakeArray", RM.toHandshakeArrayOneHot(ITYPE,{{1,2},{1,2}}), R.concatArray2d("sa",{A,muxout},2,1))
+local out = R.apply("toHandshakeArray", RM.toHandshakeArrayOneHot(ITYPE,{{1,2},{1,2}}), R.concatArray2d("sa",{G.FIFO{128}(A),muxout},2,1))
 
 local SER = RM.sequence( ITYPE, {{1,2},{1,2}}, RM.interleveSchedule( 2, 2 ) ) 
 local out = R.apply("ser", SER, out )

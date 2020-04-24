@@ -34,36 +34,30 @@ noc.extern=true
 local ts=""
 if terralib~=nil then ts=".terra" end
 
-local ConvInner = R.FunctionGenerator("ConvInner",{"type","rate"},{},
-function(args)
-  local ty = args.type
-  if ty:deInterface():isData()==false then
-    ty = T.RV(ty:deInterface())
-  end
-  
-  local res =  G.Function{"ConvolveInner_"..tostring(ty), ty, args.rate,
-    function(inp)
-      local out = G.Map{Mul}(inp)
-      local res = Reduce{Add{R.Async}}(out)
-      local sft = Rshift{8}(res)
-      return RemoveMSBs{24}(sft)
-  end}
-  return res
-end,
-T.ParSeq(T.array2d(T.Tuple{P.DataType("L"),P.DataType("R")},P.SizeValue("V")),P.SizeValue("size")) )
+local ConvInner = G.SchedulableFunction{ T.Array2d(T.Tuple{P.DataType("L"),P.DataType("R")},P.SizeValue("size")),
+function(inp)
+  local out = G.Map{Mul}(inp)
+  local res = Reduce{Add{R.Async}}(out)
+  local sft = Rshift{8}(res)
+  return RemoveMSBs{24}(sft)
+end}
 
-
-local Conv = G.Function{ "Conv", SDF{1,cycles}, T.HandshakeTrigger,
+--local Conv = G.Function{ "Conv", SDF{1,cycles}, T.HandshakeTrigger,
+local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
   function(i)
     local ii = G.FanOut{2}(i)
-    local ii0 = G.FIFO{128}(ii[0])
-    local ii1 = G.FIFO{128}(ii[1])
+    --local ii0 = G.FIFO{128}(ii[0])
+    local ii0 = ii[0]
+    --local ii1 = G.FIFO{128}(ii[1])
+    local ii1 = ii[1]
     local res = G.AXIReadBurst{"1080p.raw",{1920,1080},u(8),noc.read}(ii0)
     local pad = Pad{{8,8,2,1}}(res)
-    local trig = G.Broadcast{R.Size(Uniform(1920+8+8),1080+3)}(ii1)
-    local coeffs = G.Map{RM.Storv(regs.coeffs)}(trig)
     local st = Stencil{{-3,0,-3,0}}(pad)
     st = G.Map{G.Map{AddMSBs{24}}}(st)
+    -----
+    local trig = G.Broadcast{R.Size(Uniform(1920+8+8),1080+3)}(ii1)
+    local coeffs = G.Map{RM.Storv(regs.coeffs)}(trig)
+    -----
     local padFanIn = G.FanIn(st,coeffs)
     local padZip = G.Zip(padFanIn)
     padZip = G.Map{G.Zip}(padZip)

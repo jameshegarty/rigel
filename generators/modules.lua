@@ -3795,7 +3795,7 @@ return mod
   else
     local bytes = (size*A:verilogBits())/8
     
-    local name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall).."_csimOnly"..tostring(csimOnly).."_VRLoad"..tostring(VRLoad).."_dbgname"..tostring(dbgname))
+    local name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall).."_csimOnly"..tostring(csimOnly).."_VRLoad"..tostring(VRLoad).."_VRS"..tostring(VRStore).."_SZFN"..tostring(includeSizeFn).."_RATE"..tostring(SDFRate).."_dbgname"..tostring(dbgname))
 
     local res = rigel.newModule{ kind="fifo", name=name, functions={store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, stateful=(csimOnly~=true) }
 
@@ -4645,46 +4645,74 @@ local function lambdaSDFNormalize( input, output, name, X )
 end
 
 -- check to make sure we have FIFOs in diamonds
+-- we check for fifos whenever we have fan in. One one exception is:
+--    if all branches into the fan in trace directly to an input (not through a fan out), we consider it ok.
+--    ie: that is basically a fan-in module itself, which we will check for later.
 local function checkFIFOs(output)
-  output:visitEach(
+
+  -- does this node's inputs trace directly to an input node, NOT through a fan-out? (ie only through nodes with 1 in, 1 out)
+  local traceToInput
+  traceToInput = J.memoize(function(n)
+      local res
+      if n.kind=="concat" then
+        res = true
+        for _,i in ipairs(n.inputs) do
+          if traceToInput(i)==false then res=false end
+        end
+      elseif #n.inputs==0 then
+        res = true -- this is an input or nullary module
+      elseif n.kind=="apply" and n.fn.fifoStraightThrough==true and n.fn.inputType:streamCount()==n.fn.outputType:streamCount() then
+        res = traceToInput(n.inputs[1])
+      elseif #n.inputs>1 or types.streamCount(n.type)>1 then
+        res = false
+      else
+        assert(#n.inputs==1 and types.streamCount(n.type)==1 )
+        res = traceToInput(n.inputs[1])
+      end
+
+      return res
+  end)
+  
+  return output:visitEach(
     function(n, arg)
       local res = {}
       if n.kind=="input" then
-        -- HACK: if we have multiple stream inputs, just give the user the benefit of the doubt? (& count them as fifoed)
-        res = J.broadcast(true,types.streamCount(n.type))
+        res = J.broadcast(false,types.streamCount(n.type))
       elseif n.kind=="apply" or (n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module)) then
         local fn = n.fn
         if n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module) then fn = n.inst.module end
-        
-        if fn.kind=="broadcastStream" then
-          res = J.broadcast( false, n.type.size[1]*n.type.size[2] )
-        elseif fn.kind=="packTuple" or fn.kind=="toHandshakeArrayOneHot" then
+
+        if #n.inputs==0 then
+          assert(false)
+        elseif fn.inputType:streamCount()<=1 and fn.outputType:streamCount()<=1 then
+          if fn.outputType:streamCount()==0 then
+            res = {}
+          else
+            res = {fn.fifoed or arg[1][1]}
+          end
+        elseif fn.inputType:streamCount()==1 and fn.outputType:streamCount()>1 then
+          -- always consider these to be fan outs
+          res = J.broadcast( false, n.type.size[1]*n.type.size[2] ) -- clear fifo flag on fan-out
+        elseif fn.inputType:streamCount()>1 and fn.outputType:streamCount()==1 then
+          -- always consider these to be fan ins
           assert(#arg==1)
           assert(#arg[1]==types.streamCount(fn.inputType) )
+
+          local allStreamsTraceToInput = traceToInput(n.inputs[1])
+          local allFIFOed = true
+          
           for i=1,types.streamCount(fn.inputType) do
-            J.err( fn.disableFIFOCheck==true or arg[1][i], "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx ",i-1,". ",types.streamCount(fn.inputType)," input streams) ",n.loc)
+            J.err( fn.disableFIFOCheck==true or arg[1][i] or allStreamsTraceToInput, "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx ",i-1,". ",types.streamCount(fn.inputType)," input streams, to fn:",fn.name,") ",n.loc)
+            allFIFOed = allFIFOed and arg[1][i]
           end
 
           -- Is this right???? if we got this far, we did have a fifo along this brach...
-          res = J.broadcast(true,types.streamCount(n.type))
-        elseif n.kind=="apply" and rigel.isFunctionGenerator(fn.generator) and fn.generator.name=="core.FIFO" then
-          res = {true}
-        elseif n.kind=="apply" and fn.generator=="C.fifo" then
-          res = {true}
+          res = J.broadcast(allFIFOed,types.streamCount(n.type))
+        elseif fn.inputType:streamCount()==fn.outputType:streamCount() and fn.fifoStraightThrough then
+          -- sort of a hack: we marked this function to indicate that streams pass straight through, so we can just propagate signals
+          res = arg[1]
         else
-          assert(#arg==#n.inputs)
-          
-          if #n.inputs==0 then
-            -- HACK: for nullary modules, just give the user the benefit of the doubt? (& count them as fifoed)
-            res = J.broadcast(true,types.streamCount(n.type))
-          else
-            if types.streamCount(fn.inputType) ~= types.streamCount(fn.outputType) then
-              -- hack: tooooo hard to figure this out, so be conservative
-              res = J.broadcast( false, types.streamCount(fn.outputType) )
-            else
-              res = arg[1]
-            end
-          end
+          J.err(false, "unknown fn fifo behavior? ",fn.name," type:",fn.inputType,"->",fn.outputType," inputCount:",#n.inputs," inputStreamCount:",fn.inputType:streamCount()," outputStreamCount:",fn.outputType:streamCount() )
         end
       elseif n.kind=="applyMethod" then
         assert(rigel.isModule(n.inst.module))
@@ -4707,7 +4735,8 @@ local function checkFIFOs(output)
       elseif n.kind=="statements" then
         res = arg[1]
       elseif n.kind=="constant" then
-        res = {}
+        assert(false) -- should not appear in RV graphs
+        --res = {}
       else
         print("NYI ",n.kind)
         assert(false)
@@ -4888,32 +4917,6 @@ function modules.lambdaTab(tab)
   return modules.lambda(tab.name,tab.input,tab.output,tab.instanceList, tab.generatorStr, tab.generatorParams, tab.globalMetadata)
 end
 
-local function allocateFIFOs(out)
-
-  local statements = {}
-  local ofTerms = {}
-  
-  -- construct the SMT problem
-  -- each node returns the expression
-  out:visitEach(
-    function( n, args )
-      if n.kind=="input" then
-        table.insert( statements, "(declare-const "..n.name.." Int)" )
-        table.insert( statements, "(assert (= "..n.name.." 0))" )
-      elseif n.kind=="apply" or n.kind=="applyMethod" then
-        table.insert( statements, "(declare-const "..n.name.." Int)" )
-      elseif n.kind=="selectStream" then
-      elseif n.kind=="concat" or n.kind=="concatArray2d" then
-      elseif n.kind=="statements" then
-      elseif n.kind=="constant" then
-      else
-        print("NYI - allocate FIFOS ",n.kind)
-      end
-    end)
-
-  return out
-end
-
 local function FIFOSizeToDelay( fifoSize )
   if fifoSize==0 then
     return 0
@@ -4926,9 +4929,14 @@ local function FIFOSizeToDelay( fifoSize )
   end
 end
 
-local function insertFIFOs( out, delayTable, moduleName )
+local function insertFIFOs( out, delayTable, moduleName, X )
+  assert( type(moduleName)=="string")
+  assert( X==nil )
+
   local C = require "generators.examplescommon"
 
+  local verbose = false
+  
   local depth = {}
   local maxDepth=0
   out:visitEach(
@@ -4966,7 +4974,9 @@ local function insertFIFOs( out, delayTable, moduleName )
         assert( iDelayThis >= delayTable[orig.inputs[1]])
 
         if iDelayThis ~= delayTable[orig.inputs[1]] then
-          res = modules.makeHandshake(modules.shiftRegister( n.inputs[1].type:deInterface(), iDelayThis-delayTable[orig.inputs[1]] ))(res)
+          local d = iDelayThis-delayTable[orig.inputs[1]]
+          if verbose then print("DELAY",n.fn.name,d) end
+          res = modules.makeHandshake(modules.shiftRegister( n.inputs[1].type:deInterface(), d ))(res)
         end
 
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
@@ -4995,7 +5005,7 @@ local function insertFIFOs( out, delayTable, moduleName )
 
         if IFIFO~=nil then
           local bts = (n.fn.inputBurstiness*n.fn.inputType:extractData():verilogBits())
---          print("IFIFO ",n.fn.inputBurstiness, n.fn.inputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay,  n.fn.name)
+          if verbose then print("IFIFO ",n.fn.inputBurstiness, n.fn.inputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay,  n.fn.name) end
           fifoBits = fifoBits + bts
           res = rigel.apply( J.sanitize(n.name.."_IFIFO"), IFIFO, res )
 
@@ -5007,7 +5017,7 @@ local function insertFIFOs( out, delayTable, moduleName )
         res = rigel.apply( n.name, n.fn, res )
         if OFIFO~=nil then
           local bts = (n.fn.outputBurstiness*n.fn.outputType:extractData():verilogBits())
---          print("OFIFO ",n.fn.outputBurstiness, n.fn.outputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay, n.fn.name)
+          if verbose then print("OFIFO ",n.fn.outputBurstiness, n.fn.outputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay, n.fn.name) end
           fifoBits = fifoBits + bts
           res = rigel.apply( J.sanitize(n.name.."_OFIFO"), OFIFO, res )
         end
@@ -5048,6 +5058,7 @@ local function insertFIFOs( out, delayTable, moduleName )
             err( inp.type:isRV(),"input to shift register is not RV? is: ",inp.type," this:", orig )
 
             local G = require "generators.core"
+            if verbose then print("DELAY",delayDiff,n) end
             res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
           end
         end
@@ -5064,7 +5075,7 @@ local function calculateDelaysZ3( output )
   local statements = {}
   local ofTerms = {}
 
-  local verbose = true
+  local verbose = false
   
   local seenNames = {}
   local resdelay = output:visitEach(
@@ -5455,7 +5466,9 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
 
   end
 
-  checkFIFOs(output)
+  if HANDSHAKE_MODE then
+    res.fifoed = checkFIFOs( output, name )
+  end
   
   local function makeSystolic( fn )
     local module = Ssugar.moduleConstructor( fn.name ):onlyWire( HANDSHAKE_MODE )
@@ -6267,7 +6280,7 @@ modules.shiftRegister = J.memoize(function(ty, N, clear )
   if clear==nil then clear=false end
   
   local modname = J.sanitize("ShiftRegisterDELAY"..tostring(N).."_"..tostring(ty))
-  local res = rigel.newFunction{ inputType = types.rv(ty), outputType = types.rv(ty), name = modname, delay=N, stateful=true, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1} }
+  local res = rigel.newFunction{ inputType = types.rv(ty), outputType = types.rv(ty), name = modname, delay=N, stateful=true, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, generator="ShiftRegister" }
 
   if terralib~=nil then res.terraModule = MT.shiftRegister( res, ty, N ) end
   

@@ -323,8 +323,9 @@ functionGeneratorMT.__call=function(tab,...)
 
     local rfn = tab:complete(arglist)
 
-    err( rfn.inputType==arg.type, "Failed to find a conversion for fn '",rfn.name,"' with \ninput type:'",rfn.inputType,"' \noutput type '",rfn.outputType,"' \nto convert to type:'",arg.type,"'")
-    --err( rfn.sdfInput==arg.rate, "Failed to find a conversion for fn '",rfn.name,"' with input rate:",rfn.sdfInput," to convert to rate:",arg.rate)
+    if arg.scheduleConstraints==nil then -- if we're doing the schedule pass, don't show an error
+      err( rfn.inputType==arg.type, "Failed to find a conversion for fn '",rfn.name,"' with \ninput type:'",rfn.inputType,"' \noutput type '",rfn.outputType,"' \nto convert to type:'",arg.type,"'")
+    end
     
     return rfn(arg)
   elseif type(rawarg[1])=="table" and #rawarg==1 then
@@ -620,6 +621,9 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
           return rrr
         end}
 
+      -- hack: tell the FIFO check code that streams are not mixed
+      res.fifoStraightThrough = true
+      
       table.insert( functionStack, res )
     else
       err( targetInputType:is("Interface") and fn.inputType:is("Interface"),"ConvertInterface NYI - must both be single interfaces, but is conversion from ",targetInputType," to ",fn.inputType )
@@ -1297,10 +1301,14 @@ local function checkRigelFunction(tab)
   err( type(tab.delay)=="number", "rigel.newFunction: missing delay? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType," delay is: ",tab.delay )
   err( tostring(tab.delay)~="inf","rigel.newFunction: delay is inf?")
   err( tostring(tab.delay)~="nan","rigel.newFunction: delay is nan?")
-  
+
   if tab.inputBurstiness==nil then tab.inputBurstiness=0 end
   if tab.outputBurstiness==nil then tab.outputBurstiness=0 end
 
+  -- if fifoed==true, this means a RV module has a FIFO along its datapath
+  -- if module has multiple stream inputs, behavior of fifoed is undefined (IE: only applies to 1 stream in/out!)
+  if tab.fifoed==nil then tab.fifoed=false end
+  
   if types.isHandshakeAny(tab.inputType) or types.isHandshakeAny(tab.outputType) then
     err( type(tab.inputBurstiness)=="number", "rigel.newFunction: missing inputBurstiness? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
     err( type(tab.outputBurstiness)=="number", "rigel.newFunction: missing outputBurstiness? fn '",tab.name,"' inputType:",tab.inputType," outputType:",tab.outputType )
@@ -1874,7 +1882,15 @@ function darkroom.newIR(tab)
   
   IR.new( tab )
   local r = setmetatable( tab, darkroomIRMT )
-  r:typecheck()
+
+  local scheduleMode = (r.scheduleConstraints~=nil)
+  for _,i in ipairs(r.inputs) do scheduleMode = scheduleMode or (i.scheduleConstraints~=nil) end
+  
+  if scheduleMode then
+    r:typecheckSchedulePass()
+  else
+    r:typecheck()
+  end
 
   if darkroom.SDF then
     r.rate = r:calcSDF()
@@ -2113,6 +2129,58 @@ function darkroomIRFunctions:typecheck()
     print("Rigel Typecheck NYI ",n.kind)
     assert(false)
   end
+end
+
+function darkroomIRFunctions:typecheckSchedulePass()
+  if self.scheduleConstraints==nil then self.scheduleConstraints={} end
+
+  if self.kind=="input" then
+    -- nothing to do
+  elseif self.kind=="apply" then
+    -- try to send rv version of input type into fn, and see if it supports it
+
+    --assert( self.inputs[1].type:isrv() ) -- we should have done this earlier in other nodes
+
+    J.err( self.inputs[1].type:deInterface()==self.fn.inputType:deInterface(),"Error, deinterfaced inputs to function must match, but is: input:",self.inputs[1].type," fnInput:",self.fn.inputType )
+
+    if self.fn.inputType:isrv()==false or self.fn.outputType:isrv()==false then
+      self.scheduleConstraints.RV = true
+    else
+      assert( self.fn.inputType:isrv() )
+      assert( self.fn.outputType:isrv() )
+      self.scheduleConstraints.RV = self.inputs[1].scheduleConstraints.RV
+    end
+
+    -- always return rv
+    --self.type = types.rv( self.fn.outputType:deInterface() )
+
+    -- just return the type the function gave us
+    -- if this ended up RV, we'll get boxed into being RV, but whatever, we need to do that to prevent errors
+    -- (ie if we change the type to rv, the number of SDF streams may no longer match)
+    self.type = self.fn.outputType
+  elseif self.kind=="concat" then
+    self.scheduleConstraints.RV = false
+    for k,i in ipairs(self.inputs) do
+      self.scheduleConstraints.RV = self.scheduleConstraints.RV or i.scheduleConstraints.RV
+    end
+    self:typecheck() -- default to regular behavior
+  elseif self.kind=="selectStream" then
+    self.scheduleConstraints.RV = self.inputs[1].scheduleConstraints.RV
+    self:typecheck() -- default to regular behavior
+  else
+    print("Rigel Schedule Typeheck NYI", self.kind )
+    assert(false)
+  end
+
+  J.err( type(self.scheduleConstraints.RV)=="boolean", "RV schedule constraint missing for ", self.kind )
+  
+  for k,i in ipairs(self.inputs) do
+    if i.scheduleConstraints.RV then
+      assert( self.scheduleConstraints.RV )
+    end
+  end
+
+  assert( types.isType(self.type) )
 end
 
 function darkroomIRFunctions:codegenSystolicReady( module, rateMonitors, X )
@@ -2451,18 +2519,28 @@ function darkroom.isFunction(t) return darkroom.isPlainFunction(t) or darkroom.i
 function darkroom.isIR(t) return getmetatable(t)==darkroomIRMT end
 
 -- function argument
-function darkroom.input( ty, sdfRate )
+-- schedulePass: if true, proceed in schedule mode, instead of wire mode
+function darkroom.input( ty, sdfRate, schedulePass, X )
   err( types.isType( ty ), "input: first argument should be type, but is: "..tostring(ty) )
   err( ty:isInterface(),"input: type should be interface type, but is: "..tostring(ty))
   err( sdfRate==nil or SDFRate.isSDFRate(sdfRate), "input: second argument should be SDF rate or nil")
-
+  if schedulePass==nil then schedulePass = false end
+  err( type(schedulePass)=="boolean","input: schedulePass should be boolean" )
+  err( X==nil, "input: too many args!")
+  
   if sdfRate==nil then
     sdfRate=J.broadcast({1,1}, math.max(1,darkroom.streamCount(ty)) )
   end
 
   err( darkroom.streamCount(ty)==0 or darkroom.streamCount(ty)==#sdfRate, "rigel.input: number of streams in type "..tostring(ty).." ("..tostring(darkroom.streamCount(ty))..") != number of SDF streams passed in ("..tostring(#sdfRate)..")" )
+
+  local res = {kind="input", type = ty, name="input", id={}, inputs={}, rate=SDF(sdfRate), loc=getloc()}
+
+  if schedulePass then
+    res.scheduleConstraints={RV=false}
+  end
   
-  return darkroom.newIR( {kind="input", type = ty, name="input", id={}, inputs={}, rate=SDF(sdfRate), loc=getloc()} )
+  return darkroom.newIR( res )
 end
 
 darkroom.instantiate = function( name, mod, X )
@@ -2487,12 +2565,6 @@ function darkroom.apply( name, fn, input, sdfRateOverride )
   end
   
   if darkroom.isFunctionGenerator(fn) then
---[=[    local arglist = {}
-    for k,v in pairs(fn.curriedArgs) do arglist[k] = v end
-    local ty, rate
-    if arglist.type==nil then ty=input.type end
-    if arglist.rate==nil then rate=input.rate end
-  fn = fn{ty,rate}]=]
 return fn(input)    
   end
 

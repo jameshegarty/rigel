@@ -622,6 +622,43 @@ function(args)
   return RM.lambda( args.string, input, out, args.instanceList )
 end,nil,false)
 
+-- string is name
+generators.SchedulableFunction = R.FunctionGenerator("core.Function",{"luaFunction","type","type1"},{"string","rate"},
+function(args)
+  print("Scheculed SchedulableFunction ",args.type,args.type1)
+  
+  if args.string==nil then
+    args.string = "unnamedSchedulableFunction"..__unnamedID
+    __unnamedID = __unnamedID+1
+  end
+
+  J.err( args.type1:isData(),"SchedulableFunction declared input type should be data type, but is: ",args.type1 )
+  J.err( args.type1:isSupertypeOf(args.type:deSchedule(),{},""),"SchedulableFunction was passed an input type that can't be converted to declared type! declared:", args.type1, " passed:", args.type )
+
+  local schedulePassInput = R.input( types.rv(args.type:deInterface()), args.rate, true )
+  local scheduleOut = args.luaFunction(schedulePassInput)
+  J.err( R.isIR(scheduleOut), "SchedulableFunction: user function returned something other than a Rigel value? ",scheduleOut)
+  J.err( type(scheduleOut.scheduleConstraints)=="table","Internal Error, schedule pass didn't return constraints?")
+  J.err( type(scheduleOut.scheduleConstraints.RV)=="boolean","Internal Error, schedule pass didn't return RV constraint?")
+  
+  print("Schedule Pass result, RV:", scheduleOut.scheduleConstraints.RV )
+  
+  local input
+  if scheduleOut.scheduleConstraints.RV then
+    -- this needs an RV interface
+    input = R.input( types.RV(args.type:deInterface()), args.rate )
+  else
+    input = R.input( types.rv(args.type:deInterface()), args.rate )
+  end
+
+  print("Schedulable input type:",input.type)
+  
+  local out = args.luaFunction(input)
+  J.err( R.isIR(out), "SchedulableFunction: user function returned something other than a Rigel value? "..tostring(out))
+
+  return RM.lambda( args.string, input, out )
+end,nil,true)
+
 --generators.Function = generators.Module
 
 --[=[

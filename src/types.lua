@@ -1432,6 +1432,8 @@ function TypeFunctions:optimize( rates )
           local recTy, recRates = self.over:optimize( rates )
           return self:replaceVar( "over", recTy ), recRates
         else
+          J.err( #rates==1,"NYI - optimize with multiple rates!, type:",self," rates:",rates)
+                 
           -- try to optimize
           local V = J.canonicalV( rates*SDF{ self.V[1]*self.V[2],self.size[1]*self.size[2]}, self.size )
 
@@ -1668,9 +1670,13 @@ function types.extractValid(a)
   assert(false)
 end
 
+function TypeFunctions:streamCount()
+  return types.streamCount(self)
+end
+
 function types.streamCount(A)
   if A:is("Interface") then
-    if A.R~=nil and A.V~=nil then
+    if A:isRV() then
       return 1
     else
       return 0

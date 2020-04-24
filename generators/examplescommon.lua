@@ -1253,7 +1253,7 @@ C.fifoWithMonitor = memoize(function( ty, size, delay, internalDelay, rate, inpu
     inst[internalFIFO] = 1
   end
 
-  local res = R.newFunction{ name=J.sanitize("FIFOWithMonitor_"..tostring(ty).."_size"..tostring(size).."_delay"..tostring(delay).."_rate"..tostring(rate).."_inputSide"..tostring(inputSide).."_"..name.."_"..fnName.."_"..topFnName), inputType = types.RV(ty), outputType=types.RV(ty), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true, instanceMap=inst, delay=0 }
+  local res = R.newFunction{ name=J.sanitize("FIFOWithMonitor_"..tostring(ty).."_size"..tostring(size).."_delay"..tostring(delay).."_rate"..tostring(rate).."_inputSide"..tostring(inputSide).."_"..name.."_"..fnName.."_"..topFnName), inputType = types.RV(ty), outputType=types.RV(ty), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=true, instanceMap=inst, delay=0, fifoed=true }
 
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
@@ -1560,8 +1560,9 @@ C.fifo = memoize(function( ty, size, nostall, csimOnly, VRLoad, includeSizeFn, n
   
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
-  local res = RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_CSIMONLY"..tostring(csimOnly).."_DBGNAME"..tostring(name), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
-
+  local res = RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_SZFN"..tostring(includeSizeFn).."_CSIMONLY"..tostring(csimOnly).."_DBGNAME"..tostring(name), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+  res.fifoed = true
+  
   return res
 end)
 
