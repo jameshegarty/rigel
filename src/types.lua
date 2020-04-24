@@ -1668,9 +1668,13 @@ function types.extractValid(a)
   assert(false)
 end
 
+function TypeFunctions:streamCount()
+  return types.streamCount(self)
+end
+
 function types.streamCount(A)
   if A:is("Interface") then
-    if A.R~=nil and A.V~=nil then
+    if A:isRV() then
       return 1
     else
       return 0
