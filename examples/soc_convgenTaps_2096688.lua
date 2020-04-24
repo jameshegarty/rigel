@@ -42,8 +42,8 @@ function(inp)
   return RemoveMSBs{24}(sft)
 end}
 
-local Conv = G.Function{ "Conv", SDF{1,cycles}, T.HandshakeTrigger,
---local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
+--local Conv = G.Function{ "Conv", SDF{1,cycles}, T.HandshakeTrigger,
+local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
   function(i)
     local ii = G.FanOut{2}(i)
     --local ii0 = G.FIFO{128}(ii[0])

@@ -181,16 +181,16 @@ function makeA( T, dType, window, bits )
   local rsumAsyncfn = makeSumReduce(partial_type,true)
 
   local G = require "generators.core"
-  Fdx0 = G.FIFO{128}(Fdx0)
-  Fdx2 = G.FIFO{128}(Fdx2)
+  Fdx0 = G.FIFO{1}(Fdx0)
+  Fdx2 = G.FIFO{1}(Fdx2)
   
   local inp0 = R.apply("inp0", C.SoAtoAoSHandshake(window/T,window,{dType,dType}), R.concat("o0",{Fdx0,Fdx2}) )
   local out0 = R.apply("out0", RM.makeHandshake(RM.map(partialfn, window/T, window)), inp0 )
   local out0 = R.apply("out0red", RM.makeHandshake(RM.reduce(rsumfn, window/T, window)), out0 )
   local out0 = R.apply("out0redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out0 )
 
-  Fdx1 = G.FIFO{128}(Fdx1)
-  Fdy0 = G.FIFO{128}(Fdy0)
+  Fdx1 = G.FIFO{1}(Fdx1)
+  Fdy0 = G.FIFO{1}(Fdy0)
   
   local inp1 = R.apply("inp1", C.SoAtoAoSHandshake(window/T,window,{dType,dType}), R.concat("o1",{Fdx1,Fdy0}) )
   local out1 = R.apply("out1", RM.makeHandshake(RM.map(partialfn, window/T, window)), inp1 )
@@ -201,8 +201,8 @@ function makeA( T, dType, window, bits )
   out1 = R.selectStream("out1B1",out1B,0)
   local out2 = R.selectStream("out1B2",out1B,1)
 
-  Fdy1 = G.FIFO{128}(Fdy1)
-  Fdy2 = G.FIFO{128}(Fdy2)
+  Fdy1 = G.FIFO{8}(Fdy1)
+  Fdy2 = G.FIFO{8}(Fdy2)
 
   local inp3 = R.apply("inp3", C.SoAtoAoSHandshake(window/T,window,{dType,dType}), R.concat("o3",{Fdy1,Fdy2}) )
   local out3 = R.apply("out3", RM.makeHandshake(RM.map(partialfn, window/T, window)), inp3 )
@@ -279,8 +279,8 @@ function makeB( T, dtype, window, bits )
 
   local G = require "generators.core"
   
-  Fdx = G.FIFO{128}(Fdx)
-  gmf0 = G.FIFO{128}(gmf0)
+  Fdx = G.FIFO{1}(Fdx)
+  gmf0 = G.FIFO{1}(gmf0)
 
   local out_0 = R.concat("o0tup",{Fdx, gmf0})
   local out_0 = R.apply("o0P", C.SoAtoAoSHandshake(window/T,window,{dtype, gmf_type}), out_0)
@@ -288,8 +288,8 @@ function makeB( T, dtype, window, bits )
   local out_0 = R.apply("out0red", RM.makeHandshake(RM.reduce(rsumfn, window/T, window)), out_0 )
   local out_0 = R.apply("out0redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(rsumAsyncfn, T))), out_0 )
 
-  Fdy = G.FIFO{128}(Fdy)
-  gmf1 = G.FIFO{128}(gmf1)
+  Fdy = G.FIFO{1}(Fdy)
+  gmf1 = G.FIFO{1}(gmf1)
 
   local out_1 = R.concat("o1tup",{Fdy, gmf1})
   local out_1 = R.apply("o1P", C.SoAtoAoSHandshake(window/T,window,{dtype,gmf_type}), out_1)

@@ -323,8 +323,9 @@ functionGeneratorMT.__call=function(tab,...)
 
     local rfn = tab:complete(arglist)
 
-    err( rfn.inputType==arg.type, "Failed to find a conversion for fn '",rfn.name,"' with \ninput type:'",rfn.inputType,"' \noutput type '",rfn.outputType,"' \nto convert to type:'",arg.type,"'")
-    --err( rfn.sdfInput==arg.rate, "Failed to find a conversion for fn '",rfn.name,"' with input rate:",rfn.sdfInput," to convert to rate:",arg.rate)
+    if arg.scheduleConstraints==nil then -- if we're doing the schedule pass, don't show an error
+      err( rfn.inputType==arg.type, "Failed to find a conversion for fn '",rfn.name,"' with \ninput type:'",rfn.inputType,"' \noutput type '",rfn.outputType,"' \nto convert to type:'",arg.type,"'")
+    end
     
     return rfn(arg)
   elseif type(rawarg[1])=="table" and #rawarg==1 then
@@ -2138,7 +2139,7 @@ function darkroomIRFunctions:typecheckSchedulePass()
   elseif self.kind=="apply" then
     -- try to send rv version of input type into fn, and see if it supports it
 
-    assert( self.inputs[1].type:isrv() ) -- we should have done this earlier in other nodes
+    --assert( self.inputs[1].type:isrv() ) -- we should have done this earlier in other nodes
 
     J.err( self.inputs[1].type:deInterface()==self.fn.inputType:deInterface(),"Error, deinterfaced inputs to function must match, but is: input:",self.inputs[1].type," fnInput:",self.fn.inputType )
 
@@ -2151,13 +2152,21 @@ function darkroomIRFunctions:typecheckSchedulePass()
     end
 
     -- always return rv
-    self.type = types.rv( self.fn.outputType:deInterface() )
+    --self.type = types.rv( self.fn.outputType:deInterface() )
+
+    -- just return the type the function gave us
+    -- if this ended up RV, we'll get boxed into being RV, but whatever, we need to do that to prevent errors
+    -- (ie if we change the type to rv, the number of SDF streams may no longer match)
+    self.type = self.fn.outputType
   elseif self.kind=="concat" then
     self.scheduleConstraints.RV = false
     for k,i in ipairs(self.inputs) do
       self.scheduleConstraints.RV = self.scheduleConstraints.RV or i.scheduleConstraints.RV
     end
-    n:typecheck() -- default to regular behavior
+    self:typecheck() -- default to regular behavior
+  elseif self.kind=="selectStream" then
+    self.scheduleConstraints.RV = self.inputs[1].scheduleConstraints.RV
+    self:typecheck() -- default to regular behavior
   else
     print("Rigel Schedule Typeheck NYI", self.kind )
     assert(false)

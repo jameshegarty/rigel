@@ -1432,6 +1432,8 @@ function TypeFunctions:optimize( rates )
           local recTy, recRates = self.over:optimize( rates )
           return self:replaceVar( "over", recTy ), recRates
         else
+          J.err( #rates==1,"NYI - optimize with multiple rates!, type:",self," rates:",rates)
+                 
           -- try to optimize
           local V = J.canonicalV( rates*SDF{ self.V[1]*self.V[2],self.size[1]*self.size[2]}, self.size )
 
