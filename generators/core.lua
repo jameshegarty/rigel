@@ -637,7 +637,7 @@ function(args)
 
   local schedulePassInput = R.input( types.rv(args.type:deInterface()), args.rate, true )
   local scheduleOut = args.luaFunction(schedulePassInput)
-  J.err( R.isIR(scheduleOut), "SchedulableFunction: user function returned something other than a Rigel value? "..tostring(out))
+  J.err( R.isIR(scheduleOut), "SchedulableFunction: user function returned something other than a Rigel value? ",scheduleOut)
   J.err( type(scheduleOut.scheduleConstraints)=="table","Internal Error, schedule pass didn't return constraints?")
   J.err( type(scheduleOut.scheduleConstraints.RV)=="boolean","Internal Error, schedule pass didn't return RV constraint?")
   

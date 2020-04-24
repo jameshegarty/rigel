@@ -3795,7 +3795,7 @@ return mod
   else
     local bytes = (size*A:verilogBits())/8
     
-    local name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall).."_csimOnly"..tostring(csimOnly).."_VRLoad"..tostring(VRLoad).."_dbgname"..tostring(dbgname))
+    local name = sanitize("fifo_SIZE"..size.."_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_T"..tostring(T).."_BYTES"..tostring(bytes).."_nostall"..tostring(nostall).."_csimOnly"..tostring(csimOnly).."_VRLoad"..tostring(VRLoad).."_VRS"..tostring(VRStore).."_SZFN"..tostring(includeSizeFn).."_RATE"..tostring(SDFRate).."_dbgname"..tostring(dbgname))
 
     local res = rigel.newModule{ kind="fifo", name=name, functions={store=storeRigelFn, load=loadRigelFn, size=sizeRigelFn}, stateful=(csimOnly~=true) }
 
@@ -4653,14 +4653,24 @@ local function checkFIFOs(output)
   -- does this node's inputs trace directly to an input node, NOT through a fan-out? (ie only through nodes with 1 in, 1 out)
   local traceToInput
   traceToInput = J.memoize(function(n)
-    if #n.inputs==0 then
-      return true -- this is an input or nullary module
-    elseif #n.inputs>1 or types.streamCount(n.type)>1 then
-      return false
-    else
-      assert(#n.inputs==1 and types.streamCount(n.type)==1 )
-      return traceToInput(n.inputs[1])
-    end
+      local res
+      if n.kind=="concat" then
+        res = true
+        for _,i in ipairs(n.inputs) do
+          if traceToInput(i)==false then res=false end
+        end
+      elseif #n.inputs==0 then
+        res = true -- this is an input or nullary module
+      elseif n.kind=="apply" and n.fn.fifoStraightThrough==true and n.fn.inputType:streamCount()==n.fn.outputType:streamCount() then
+        res = traceToInput(n.inputs[1])
+      elseif #n.inputs>1 or types.streamCount(n.type)>1 then
+        res = false
+      else
+        assert(#n.inputs==1 and types.streamCount(n.type)==1 )
+        res = traceToInput(n.inputs[1])
+      end
+
+      return res
   end)
   
   return output:visitEach(
@@ -4688,7 +4698,7 @@ local function checkFIFOs(output)
           assert(#arg==1)
           assert(#arg[1]==types.streamCount(fn.inputType) )
 
-          local allStreamsTraceToInput = traceToInput(n)
+          local allStreamsTraceToInput = traceToInput(n.inputs[1])
           local allFIFOed = true
           
           for i=1,types.streamCount(fn.inputType) do
@@ -4698,9 +4708,11 @@ local function checkFIFOs(output)
 
           -- Is this right???? if we got this far, we did have a fifo along this brach...
           res = J.broadcast(allFIFOed,types.streamCount(n.type))
-
+        elseif fn.inputType:streamCount()==fn.outputType:streamCount() and fn.fifoStraightThrough then
+          -- sort of a hack: we marked this function to indicate that streams pass straight through, so we can just propagate signals
+          res = arg[1]
         else
-          J.err( false, "unknown fn fifo behavior? ",fn.name," type:",fn.inputType,"->",fn.outputType," inputCount:",#n.inputs," inputStreamCount:",fn.inputType:streamCount() )
+          J.err(false, "unknown fn fifo behavior? ",fn.name," type:",fn.inputType,"->",fn.outputType," inputCount:",#n.inputs," inputStreamCount:",fn.inputType:streamCount()," outputStreamCount:",fn.outputType:streamCount() )
         end
       elseif n.kind=="applyMethod" then
         assert(rigel.isModule(n.inst.module))

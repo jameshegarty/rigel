@@ -620,6 +620,9 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
           return rrr
         end}
 
+      -- hack: tell the FIFO check code that streams are not mixed
+      res.fifoStraightThrough = true
+      
       table.insert( functionStack, res )
     else
       err( targetInputType:is("Interface") and fn.inputType:is("Interface"),"ConvertInterface NYI - must both be single interfaces, but is conversion from ",targetInputType," to ",fn.inputType )
