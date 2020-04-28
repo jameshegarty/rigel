@@ -1314,15 +1314,23 @@ modules.flatmap = memoize(function( fn, Vw1, Vh1, W1_orig, H1_orig, Vw2, Vh2, W2
 
   -- hackity hack
   if Vw1>0 or Vh1>0 then
-    res.inputType = fn.inputType:replaceVar("over",types.ParSeq( res.inputType:extractData(), W1_orig, H1_orig ))
+    local newinp = fn.inputType:replaceVar("over",types.ParSeq( res.inputType:extractData(), W1_orig, H1_orig ))
+    assert( res.inputType:lower()==newinp:lower() )
+    res.inputType = newinp
   elseif W1_orig>0 or H1_orig>0 then
-    res.inputType = fn.inputType:replaceVar("over",types.Seq(types.Par( res.inputType:extractData()) ,W1_orig, H1_orig ))
+    local newinp = fn.inputType:replaceVar("over",types.Seq(types.Par( res.inputType:extractData()) ,W1_orig, H1_orig ))
+    assert( res.inputType:lower()==newinp:lower() )
+    res.inputType = newinp
   end
   
   if Vw2>0 or Vh2>0 then
-    res.outputType = fn.outputType:replaceVar("over",types.ParSeq( res.outputType:extractData(), W2_orig, H2_orig ))
+    local newout = fn.outputType:replaceVar("over",types.ParSeq( res.outputType:extractData(), W2_orig, H2_orig ))
+    assert( res.outputType:lower() == newout:lower() )
+    res.outputType = newout
   elseif W2_orig>0 or H2_orig>0 then
-    res.outputType = fn.outputType:replaceVar("over",types.Seq(types.Par( res.outputType:extractData() ), W2_orig, H2_orig ))
+    local newout = fn.outputType:replaceVar("over",types.Seq(types.Par( res.outputType:extractData() ), W2_orig, H2_orig ))
+    assert( res.outputType:lower() == newout:lower() )
+    res.outputType = newout
   end
 
   return res

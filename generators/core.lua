@@ -115,14 +115,11 @@ function(args)
 end,
 T.rv(T.Par(P.UintType("T"))) )
 
-
-
 generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},
 function(args)
   return C.print( args.T, args.string )
 end,
 P.DataType("T") )
-
 
 generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 
@@ -503,6 +500,13 @@ function(args)
   assert(false)
 end,
 T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")))
+
+-- This only works if the array size doesn't change!!
+generators.Flatmap = R.FunctionGenerator("core.Flatmap",{"rigelFunction","type","rate"},{},
+function(args)
+  return RM.flatmap( args.rigelFunction, args.V[1], args.V[2], args.size[1], args.size[2], args.V[1], args.V[2], args.size[1], args.size[2] )
+end,
+T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")) )
 
 generators.Reduce = R.FunctionGenerator("core.Reduce",{"rigelFunction"},{},
 function(args)
