@@ -547,9 +547,9 @@ C.valueToTrigger = memoize(function(ty)
 end)
 
 -----------------------------
-C.triggerToConstant = memoize(function(ty,value)
+C.triggerToConstant = memoize(function( ty, value )
   J.err( types.isType(ty), "C.triggerToConstant: type must be type")
-  return RM.lift( "TriggerToConstant_"..tostring(ty), types.Trigger, ty, 0,
+  return RM.lift( "TriggerToConstant_"..tostring(ty).."_"..tostring(value), types.Trigger, ty, 0,
     function(sinp) return S.constant(value,ty) end, nil,"C.triggerToConstant")
 end)
 

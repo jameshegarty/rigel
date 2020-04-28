@@ -267,7 +267,7 @@ end
 
 function CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight)
   local struct UnpackStencil {}
-  terra UnpackStencil:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+  terra UnpackStencil:process( inp : &res.inputType:lower():toTerraType(), out : &res.outputType:lower():toTerraType() )
     for i=0,[T] do
       for y=0,[stencilH] do
         for x=0,[stencilW] do

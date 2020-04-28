@@ -251,7 +251,7 @@ T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P
 
 
 generators.ArgMin = R.FunctionGenerator("core.ArgMin", {}, {"async"},
-function(a) return C.argmin( a.idx, a.T, a.async, true ) end,
+function(a) return C.argmin( a.idx, a.T, a.async, false ) end,
 T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P.NumberType("T")}} )
 
 
