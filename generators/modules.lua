@@ -169,7 +169,14 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray, framedW, framedH )
   if framedW~=nil then
     -- hackity hack
     local inputType = types.rv(types.tuple( J.map(typelist, function(t) return types.ParSeq(types.array2d(t,W,H),framedW,framedH) end) ))
-    local outputType = types.rv(types.ParSeq(types.array2d(types.tuple(typelist),W,H),framedW,framedH ))
+    local outputType
+
+    if asArray then
+      outputType = types.rv(types.ParSeq(types.array2d(types.Array2d(typelist[1],#typelist),W,H),framedW,framedH ))
+    else
+      outputType = types.rv(types.ParSeq(types.array2d(types.tuple(typelist),W,H),framedW,framedH ))
+    end
+    
     assert(res.inputType:lower()==inputType:lower())
     assert(res.outputType:lower()==outputType:lower())
     res.inputType = inputType
@@ -4648,8 +4655,10 @@ end
 -- we check for fifos whenever we have fan in. One one exception is:
 --    if all branches into the fan in trace directly to an input (not through a fan out), we consider it ok.
 --    ie: that is basically a fan-in module itself, which we will check for later.
-local function checkFIFOs(output)
-
+local function checkFIFOs( output, moduleName, X )
+  assert( X==nil )
+  assert( type(moduleName)=="string" )
+  
   -- does this node's inputs trace directly to an input node, NOT through a fan-out? (ie only through nodes with 1 in, 1 out)
   local traceToInput
   traceToInput = J.memoize(function(n)
@@ -4702,7 +4711,7 @@ local function checkFIFOs(output)
           local allFIFOed = true
           
           for i=1,types.streamCount(fn.inputType) do
-            J.err( fn.disableFIFOCheck==true or arg[1][i] or allStreamsTraceToInput, "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx ",i-1,". ",types.streamCount(fn.inputType)," input streams, to fn:",fn.name,") ",n.loc)
+            J.err( fn.disableFIFOCheck==true or arg[1][i] or allStreamsTraceToInput, "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx ",i-1,". ",types.streamCount(fn.inputType)," input streams, to fn:",fn.name,") inside function: ",moduleName," ", n.loc)
             allFIFOed = allFIFOed and arg[1][i]
           end
 

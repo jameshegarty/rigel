@@ -413,7 +413,7 @@ Uniform.isInteger = J.memoize(
     if n.kind=="const" then
       return type(n.value)=="number" and (n.value==math.floor(n.value))
     else
-      print("NYI isInteger "..tostring(n.kind))
+      print("NYI isInteger "..tostring(n.kind).." ",n)
       assert(false)
     end
   end)

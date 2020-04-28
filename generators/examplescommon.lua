@@ -800,7 +800,7 @@ end)
 -- returns a function from A[2][Width,Width]->reduceType
 -- 'reduceType' is the precision we do the sum
 C.SAD = memoize(function( A, reduceType, Width, X )
-  err( types.isType(A) and A:isData(),"SAD: type must be data type")
+  err( types.isType(A) and A:isData(),"SAD: type must be data type, but is: ", A)
   assert(X==nil)
 
   local inp = R.input( types.rv(types.Par(types.array2d( types.array2d(A,2) , Width, Width ))) )
@@ -1847,11 +1847,8 @@ end)
 C.stencilLinebuffer = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, ymax, framed, X )
   err(types.isType(A), "stencilLinebuffer: A must be type, but is: "..tostring(A))
 
-  --local w,h = Uniform(w_orig):toNumber(),Uniform(h_orig):toNumber()
- 
   err(type(T)=="number","stencilLinebuffer: T must be number")
-  -- err(type(w)=="number","stencilLinebuffer: w must be number, but is: "..tostring(w))
-  --err(type(h)=="number","stencilLinebuffer: h must be number")
+
   err(type(xmin)=="number","stencilLinebuffer: xmin must be number")
   err(type(xmax)=="number","stencilLinebuffer: xmax must be number")
   err(type(ymin)=="number","stencilLinebuffer: ymin must be number")
@@ -1860,18 +1857,28 @@ C.stencilLinebuffer = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, 
   err(T>=0, "stencilLinebuffer: T must be >=0");
   err(Uniform(w_orig):toNumber()>0,"stencilLinebuffer: w must be >0");
   err(Uniform(h_orig):toNumber()>0,"stencilLinebuffer: h must be >0");
+
   err(xmin<=xmax,"stencilLinebuffer: xmin("..tostring(xmin)..")>xmax("..tostring(xmax)..")")
   err(ymin<=ymax,"stencilLinebuffer: ymin("..tostring(ymin)..") must be <= ymax("..tostring(ymax)..")")
-  err(xmax==0,"stencilLinebuffer: xmax must be 0")
-  err(ymax==0,"stencilLinebuffer: ymax must be 0")
+
+  err( xmax<=0,"stencilLinebuffer: NYI - xmax must be <=0")
+  err( ymax<=0,"stencilLinebuffer: NYI - ymax must be <=0")
 
   err(X==nil,"C.stencilLinebuffer: Too many arguments")
-  
-  local SSRFn = modules.SSR( A, T, xmin, ymin, framed, w_orig, h_orig)
 
-  local LBfn = modules.linebuffer( A, w_orig, h_orig, T, ymin, framed )
+  local fns = {modules.linebuffer( A, w_orig, h_orig, T, ymin, framed )}
+
+  table.insert( fns, modules.SSR( A, T, xmin, ymin, framed, w_orig, h_orig) )
+
+  if xmax~=0 or ymax~=0 then
+    -- not supported by stencil generator, but we can hack around this with a slice
+    assert( framed )
+    local G = require "generators.core"
+    table.insert( fns, G.Map{G.Slice{{0, xmax-xmin, 0, ymax-ymin}} } )
+  end
   
-  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..tostring(w_orig).."_h"..tostring(h_orig).."_T"..tostring(T).."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), SSRFn, LBfn, "C.stencilLinebuffer" )
+
+  return C.linearPipeline( fns, J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..tostring(w_orig).."_h"..tostring(h_orig).."_T"..tostring(T).."_xmin"..tostring(math.abs(xmin)).."_xmax"..tostring(math.abs(xmax)).."_ymin"..tostring(math.abs(ymin)).."_ymax"..tostring(math.abs(ymax))) )
 end)
 
 -- this is basically the same as a stencilLinebuffer, but implemend using a register chain instead of rams
@@ -1948,30 +1955,35 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
   assert(type(stencilH)=="number")
   err(stencilH>0,"unpackStencil: stencilH must be >0, but is:"..tostring(stencilH))
   err(type(T)=="number","unpackStencil: vector width should be number, but is: "..tostring(T))
-  assert(T>=1)
+  err( T>=0, "unpackStencil: T must be >=0, but is: ",T)
   err(arrHeight==nil, "Error: NYI - unpackStencil on non-height-1 arrays")
   err( framed==nil or type(framed)=="boolean", "unpackStencil: framed must be nil or bool")
   if framed==nil then framed=false end
   assert(X==nil)
 
   local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T,generator="C.unpackStencil"}
-  res.inputType = types.array2d( A, stencilW+T-1, stencilH)
-  res.outputType = types.array2d( types.array2d( A, stencilW, stencilH), T )
+  res.inputType = types.array2d( A, stencilW+math.max(T,1)-1, stencilH)
 
+  if T==0 then
+    res.outputType = types.array2d( A, stencilW, stencilH)
+  else
+    res.outputType = types.array2d( types.array2d( A, stencilW, stencilH), T )
+  end
+  
   if framed then
-    local framedW, framedH = Uniform(framedW_orig):toNumber(), Uniform(framedH_orig):toNumber()
+    --local framedW, framedH = Uniform(framedW_orig):toNumber(), Uniform(framedH_orig):toNumber()
     --err( type(framedW)=="number", "unpackStencil: framedW must be number, but is: "..tostring(framedW))
     --err( type(framedH)=="number", "unpackStencil: framedH must be  number")
     
-    res.inputType = res.inputType:addDim(framedW/T,framedH,false)
-    res.outputType = res.outputType:addDim(framedW,framedH,true)
+    res.inputType = types.rv(types.Seq( res.inputType, framedW_orig, framedH_orig ))
+    res.outputType = types.rv(types.Seq( res.outputType, framedW_orig, framedH_orig ))
   else
   end
   
   res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}
   res.stateful = false
   res.delay=0
-  res.name = J.sanitize("unpackStencil_"..tostring(A).."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
+  res.name = J.sanitize("unpackStencil_"..tostring(A).."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T).."_framed"..tostring(framed).."_framedW"..tostring(framedW_orig).."_framedH"..tostring(framedH_orig) )
 
   if terralib~=nil then res.terraModule = CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight) end
 
@@ -1980,7 +1992,7 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
     
     local sinp = S.parameter("inp", rigel.extractData(res.inputType) )
     local out = {}
-    for i=1,T do
+    for i=1,math.max(T,1) do
       out[i] = {}
       for y=0,stencilH-1 do
         for x=0,stencilW-1 do
@@ -1988,8 +2000,18 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
         end
       end
     end
+
+
+    local stencils = J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)
+
+    local fin
+    if T==0 then
+      fin = stencils[1]
+    else
+      fin = S.cast( S.tuple(stencils), rigel.extractData(res.outputType) )
+    end
     
-    systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), rigel.extractData(res.outputType) ), "process_output", nil, nil, nil ) )
+    systolicModule:addFunction( S.lambda("process", sinp, fin, "process_output", nil, nil, nil ) )
 
     return systolicModule
   end
@@ -2032,8 +2054,8 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     err(idxHigh<W, "slice: idxHigh>=W")
     err(type(idyLow)=="number", "slice:idyLow must be number")
     err(type(idyHigh)=="number","slice:idyHigh must be number")
-    err(idyLow<H, "slice: idyLow must be <H")
-    err(idyHigh<H, "slice: idyHigh must be <H")
+    err(idyLow<H, "slice: idyLow must be < array H")
+    err(idyHigh<H, "slice: idyHigh must be < array H, but input type is: ",inputType," idyHigh:",idyHigh)
     assert(idxLow<=idxHigh)
     assert(idyLow<=idyHigh)
     local OT

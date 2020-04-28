@@ -920,7 +920,7 @@ end
 -- check that v is a lua value convertable to this type
 function TypeFunctions:checkLuaValue(v)
   if self:isArray() then
-    err( type(v)=="table", "CheckLuaValue: if type is an array ("..tostring(self).."), value must be a table")
+    err( type(v)=="table", "CheckLuaValue: if type is an array (",self,"), value must be a table, but is: ",v)
     err( #v==J.keycount(v), "CheckLuaValue: lua table is not an array (unstructured keys)")
     err( #v==self:channels(), "CheckLuaValue: incorrect number of channels, is "..(#v).." but should be "..self:channels() )
     for i=1,#v do
