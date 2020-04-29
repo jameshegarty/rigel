@@ -2162,7 +2162,7 @@ function darkroomIRFunctions:typecheckSchedulePass()
     -- if this ended up RV, we'll get boxed into being RV, but whatever, we need to do that to prevent errors
     -- (ie if we change the type to rv, the number of SDF streams may no longer match)
     self.type = self.fn.outputType
-  elseif self.kind=="concat" then
+  elseif self.kind=="concat" or self.kind=="concatArray2d" then
     self.scheduleConstraints.RV = false
     for k,i in ipairs(self.inputs) do
       self.scheduleConstraints.RV = self.scheduleConstraints.RV or i.scheduleConstraints.RV

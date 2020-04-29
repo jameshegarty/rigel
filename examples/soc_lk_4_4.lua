@@ -46,30 +46,6 @@ local regs = SOC.axiRegs({},SDF{1,W*H*V}):instantiate("regs")
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")
 noc.extern=true
 
-function toUint8Sign(ty)
-  assert(f.FLOAT or f.extractSigned(ty))
-  local inp = f.parameter("touint8",ty)
-  local outtype = types.array2d(types.uint(8),2)
-  local out = f.select(inp:sign(),f.plainconstant({255,255},outtype), f.plainconstant({0,0},outtype))
-  return out:toRigelModule("toUint8")
-end
-
-function toUint8(ty)
-  local inp = f.parameter("touint8",ty)
-
-  if f.FLOAT then
-    local out = inp*f.constant(2^10)
-    local out = out:lower(types.uint(8))
-    local out = f.array2d({out,out},2)
-    return out:toRigelModule("toUint8")
-  else
-    inp = inp*f.constant(2^10,inp:isSigned())
-    local out = inp:abs():denormalize():truncate(8):lower()
-    local out = f.array2d({out,out},2)
-    return out:toRigelModule("toUint8")
-  end
-end
-
 -- note that we use our convetion here:
 -- Atype: type of entries of A matrix
 invert2x2 = J.memoize(function( AType, bits )
@@ -175,44 +151,41 @@ makeSumReduce = J.memoize(function(inputType)
 function makeA( dType, window, bits )
   f.expectFixed( dType )
   assert(type(bits)=="table")
-
   assert(type(window)=="number")
 
-  local cost = 0
-
   local stt = types.array2d(dType, window, window)
-  local inpt = types.tuple{ stt, stt }
-  local inp = R.input( types.rv(types.Par(inpt)) )
-  local Fdx = R.apply("fdx", C.index(inpt,0), inp)
-  local Fdy = R.apply("fdy", C.index(inpt,1), inp)
 
-  local partial = makePartial( dType, dType, bits.Apartial[1], bits.Apartial[2] )
-  bits.Apartial[3] = partial[3]
-  local partial_type=partial[2]
-  local partialfn = partial[1]
-  --print("A partial type", partial_type, partial[4])
-  cost = cost + partial[4]*3*window*window
-  local rsum = makeSumReduce(partial_type)
-  cost = cost + rsum[2]*3*window*window
-  local rsumfn = rsum[1]
+  return G.SchedulableFunction{"A", types.tuple{ stt, stt },
+    function(inp)
+      local Fdx = inp[0]
+      local Fdy = inp[1]
 
-  local inp0 = R.apply("inp0", C.SoAtoAoS(window,window,{dType,dType}), R.concat("o0",{Fdx,Fdx}) )
-  local out0 = R.apply("out0", RM.map(partialfn, window, window), inp0 )
-  local out0 = R.apply("out0red", RM.reduce(rsumfn, window, window), out0 )
+      local partial = makePartial( dType, dType, bits.Apartial[1], bits.Apartial[2] )
+      bits.Apartial[3] = partial[3]
+      local partial_type=partial[2]
+      local partialfn = partial[1]
 
-  local inp1 = R.apply("inp1", C.SoAtoAoS(window,window,{dType,dType}), R.concat("o1",{Fdx,Fdy}) )
-  local out1 = R.apply("out1", RM.map(partialfn, window, window), inp1 )
-  local out1 = R.apply("out1red", RM.reduce(rsumfn, window, window), out1 )
+      local rsum = makeSumReduce(partial_type)
+      local rsumfn = rsum[1]
 
-  local out2 = out1
+      local inp0 = G.Zip(Fdx,Fdx)
+      local out0 = G.Map{partialfn}(inp0)
+      out0 = G.Reduce{rsumfn}(out0)
 
-  local inp3 = R.apply("inp3", C.SoAtoAoS(window,window,{dType,dType}), R.concat("o3",{Fdy,Fdy}) )
-  local out3 = R.apply("out3", RM.map(partialfn, window, window), inp3 )
-  local out3 = R.apply("out3red", RM.reduce(rsumfn, window, window), out3 )
+      local inp1 = G.Zip(Fdx,Fdy)
+      local out1 = G.Map{partialfn}(inp1)
+      out1 = G.Reduce{rsumfn}(out1)
 
-  local out = R.concatArray2d("out", {out0,out1,out2,out3}, 4 )
+      local out2 = out1
 
-  return RM.lambda("A", inp, out ), partial_type, cost
+      local inp3 = G.Zip(Fdy,Fdy)
+      local out3 = G.Map{partialfn}(inp3)
+      out3 = G.Reduce{rsumfn}(out3)
+      
+      local out = R.concatArray2d("out", {out0,out1,out2,out3}, 4 )
+
+      return out
+    end}
 end
 
 minus = J.memoize(function(ty)
@@ -226,8 +199,6 @@ function makeB( dtype, window, bits )
   f.expectFixed(dtype)
   assert(type(window)=="number")
   assert(type(bits)=="table")
-
-  local cost = 0
 
   -- arguments: frame1, frame2, fdx, fdy
   local FTYPE = types.array2d(types.uint(8),window,window)
@@ -245,20 +216,18 @@ function makeB( dtype, window, bits )
   gmf = R.apply("SA",C.SoAtoAoS(window, window, {types.uint(8),types.uint(8)}), gmf)
   local MINUS = minus(types.uint(8))
   local m, gmf_type, gmf_cost = MINUS[1], MINUS[2], MINUS[3]
-  --print("GMF type", gmf_type)
-  cost = cost + gmf_cost*window*window
+
   gmf = R.apply("SSM",RM.map(m,window,window), gmf)
   ---------
 
   local partial = makePartial( dtype, gmf_type, bits.Bpartial[1], bits.Bpartial[2] )
   bits.Bpartial[3] = partial[3]
   local partial_type = partial[2]
-  --print("MakeB Partial Type",partial_type)
+
   local partialfn = partial[1]
-  cost = cost + partial[4]*2*window*window
+
   local rsum = makeSumReduce(partial_type)
   local rsumfn = rsum[1]
-  cost = cost + rsum[2]*2*window*window
 
   local out_0 = R.concat("o0tup",{Fdx, gmf})
   local out_0 = R.apply("o0P", C.SoAtoAoS(window,window,{dtype, gmf_type}), out_0)
@@ -272,8 +241,7 @@ function makeB( dtype, window, bits )
 
   local out = R.concatArray2d("arrrrry0t",{out_0,out_1},2)
 
-  --print("B output type", partial_type)
-  return RM.lambda("b", finp, out), partial_type, cost
+  return RM.lambda("b", finp, out), partial_type
 end
 
 solve = J.memoize(function( AinvType, btype, bits )
@@ -342,7 +310,6 @@ function makeLK( T, internalW, internalH, window, bits )
 
       local fdx_stencil = G.Stencil{{-window+1, 0, -window+1, 0}}(fdx)
 
-
       local fdy = G.Map{G.Slice{{window-1, window-1, window-2, window}}}(lb0)
       fdy = G.Map{dy(bits)}(fdy)
       local fdy_stencil = G.Stencil{{-window+1, 0, -window+1, 0}}(fdy)
@@ -350,7 +317,7 @@ function makeLK( T, internalW, internalH, window, bits )
       local Af, AType, Acost = makeA( dType, window, bits )
       local Ainp = G.Zip( fdx_stencil, fdy_stencil )
       local A = G.Map{Af}(Ainp)
-      local INVO = invert2x2( AType, bits )
+      local INVO = invert2x2( A.type:deInterface():arrayOver():arrayOver(), bits )
       local fAinv, AInvType = INVO[1], INVO[2]
 
       local Ainv = G.Map{fAinv}(A)
