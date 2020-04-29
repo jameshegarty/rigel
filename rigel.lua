@@ -545,6 +545,7 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
       end
     elseif fnType:isTuple() then
       assert( targetType:isTuple() and #fnType.list==#targetType.list )
+      --print("FANNEDCONVERTINTERFACE target:",targetType," fntype:",fnType)
       res = G.Function{"FannedConvertInterface", types.RV(targetType), SDF{1,1},
         function(inp)
           local tmp = RM.broadcastStream( targetType, #targetType.list)(inp)
@@ -2146,7 +2147,7 @@ function darkroomIRFunctions:typecheckSchedulePass()
     if self.fn.inputType:isrv()==false or self.fn.outputType:isrv()==false then
       self.scheduleConstraints.RV = true
       if self.inputs[1].scheduleConstraints.RV==false then
-        print("Function ",self.fn.name,self.loc," forced RV")
+        print("Function forced RV:", self.fn.name, self.loc )
       end
     else
       assert( self.fn.inputType:isrv() )

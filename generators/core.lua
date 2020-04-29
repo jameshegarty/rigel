@@ -21,7 +21,7 @@ generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"type","rate","size
 function(args)
   local V = J.canonicalV( args.rate, args.size )
 
-  print("BROADCAST",args.type,args.rate,args.size,V)
+  --print("BROADCAST",args.type,args.rate,args.size,V)
   local inputType = args.type:deSchedule()
   
   if V==args.size then
@@ -140,21 +140,37 @@ generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"
 generators.Index = R.FunctionGenerator("core.Index",{"type","rate"},{"number","size"},
 function(a)
   local ty = a.type:deInterface()
-  J.err( ty:isData(),"Index: input should be parallel type, but is: ", a.type )
-  
-  local ity
-  if ty:isArray() then
-    ity = T.array2d(ty:arrayOver(),ty.size)
-  elseif ty:isTuple() then
-    ity = T.tuple(ty.list)
+  --J.err( ty:isData(),"Index: input should be parallel type, but is: ", a.type )
+
+  if ty:isData() then
+    local ity
+    if ty:isArray() then
+      ity = T.array2d(ty:arrayOver(),ty.size)
+    elseif ty:isTuple() then
+      ity = T.tuple(ty.list)
+    else
+      J.err( false, "Index: unsupported type: ",a.type )
+    end
+    
+    if a.size~=nil then
+      return C.index(ity,a.size[1],a.size[2])
+    else
+      return C.index(ity,a.number)
+    end
   else
-    J.err( false, "Index: unsupported type: ",a.type )
-  end
-  
-  if a.size~=nil then
-    return C.index(ity,a.size[1],a.size[2])
-  else
-    return C.index(ity,a.number)
+    -- perhaps this is a Seq or ParSeq?
+    J.err( ty:isArray(),"Index: schedule type input is not an array? what could it be? ",ty)
+    J.err( ty.V:eq(R.Size(0,0)) or ty.V:eq(R.Size(1,1)),"Index: array vector size must be 0 or 1, but type is: ",ty)
+
+    local x,y
+    if a.size~=nil then
+      x = a.size[1]
+      y = a.size[2]
+    else
+      x=a.number
+      y=0
+    end
+    return RM.cropSeq( ty:arrayOver(), ty.size[1], ty.size[2], ty.V[1], math.max(x-1,0), math.min(ty.size[1]-x,ty.size[1]-1), math.max(y-1,0), math.min(ty.size[2]-y,ty.size[2]-1), true, true )
   end
 end)
 

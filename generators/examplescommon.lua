@@ -2934,10 +2934,11 @@ end)
 -- for legacy reasons, changerate returns stuff in column major order.
 -- instead, do row major
 -- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
-C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W, H, X )
+C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig, H, X )
   J.err( type(outputItemsPerCyc)=="number", "ChangeRateRowMajor: outputItermsPerCyc should be number, but is: ",outputItemsPerCyc )
   J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
-  J.err( type(W)=="number", "ChangeRateRowMajor: W should be number, but is: ",W)
+  --J.err( type(W)=="number", "ChangeRateRowMajor: W should be number, but is: ",W)
+  local W = Uniform(W_orig)
   J.err( type(H)=="number", "ChangeRateRowMajor: H should be number, but is: ",H)
   
   local generators = require "generators.core"
@@ -2957,10 +2958,10 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W, H, X
   if Vw==W and Vh==H then
     inputType = types.RV( types.Array2d(ty,Vw,Vh) )
   else
-    inputType = types.RV( types.Array2d(ty,W,H,Vw,Vh) )
+    inputType = types.RV( types.Array2d( ty, W_orig, H, Vw, Vh ) )
   end
   
-  outputType = types.RV( types.Array2d( ty, W, H, V2w, V2h ) )
+  outputType = types.RV( types.Array2d( ty, W_orig, H, V2w, V2h ) )
 
   local res = generators.Function{
     "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(inputType:extractData()),
