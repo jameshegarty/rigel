@@ -9,6 +9,7 @@ local SDF = require "sdf"
 local Zynq = require "generators.zynq"
 local J = require "common"
 local harness = require "generators.harnessSOC"
+local P = require "params"
 
 local f = require "fixed"
 
@@ -320,128 +321,62 @@ function makeLK( T, internalW, internalH, window, bits )
   assert(type(window)=="number")
   assert(type(bits)=="table")
 
+  print("MAKELK",T,internalW,internalH,window,bits)
+  
   local cost = 9
 
-  local INPTYPE = types.array2d(types.uint(8),2)
-  local inp = R.input(types.rv(types.Par(types.array2d(INPTYPE,T))))
-  local frame0 = R.apply("f0", RM.map(C.index(INPTYPE, 0 ),T), inp)
-  local frame1 = R.apply("f1", RM.map(C.index(INPTYPE, 1 ),T), inp)
-
-  local st_type = types.array2d( types.uint(8), window+1, window+1 )
-
-  local lb0 = R.apply("lb0", C.stencilLinebuffer(types.uint(8), internalW, internalH, T, -window, 0, -window, 0 ), frame0)
-  local lb0 = R.apply( "lb0_st", C.unpackStencil( types.uint(8), window+1, window+1, T ) , lb0 )
-  local lb1 = R.apply("lb1", C.stencilLinebuffer(types.uint(8), internalW, internalH, T, -window, 0, -window, 0 ), frame1)
-  local lb1 = R.apply( "lb1_st", C.unpackStencil( types.uint(8), window+1, window+1, T ) , lb1 )
-
-  local fdx = R.apply("slx", RM.map(C.slice( st_type, window-2, window, window-1, window-1),T), lb0)
-  local DD = dx(bits)
-  local dx, dType, dxcost = DD[1],DD[2],DD[3]
-  local fdx = R.apply("fdx", RM.map(dx,T), fdx)
-
-  local fdx_stencil = R.apply("fdx_stencil", C.stencilLinebuffer(dType, internalW, internalH, T, -window+1, 0, -window+1, 0 ), fdx)
-  local fdx_stencil = R.apply( "fdx_stencil_st", C.unpackStencil( dType, window, window, T ) , fdx_stencil )
-
-  local fdy = R.apply("sly", RM.map(C.slice( st_type, window-1, window-1, window-2, window),T), lb0)
-  local fdy = R.apply("fdy", RM.map(dy(bits),T), fdy )
-
-  local fdy_stencil = R.apply("fdy_stencil", C.stencilLinebuffer(dType, internalW, internalH, T, -window+1, 0, -window+1, 0 ), fdy)
-  local fdy_stencil = R.apply( "fdy_stencil_st", C.unpackStencil( dType, window, window, T ) , fdy_stencil )
-
-  cost = cost + dxcost*2
-
-  local dst_type = types.array2d(dType,window,window)
-  local Af, AType, Acost = makeA( dType, window, bits )
-  local Ainp = R.apply("Ainp", C.SoAtoAoS(T,1,{dst_type,dst_type},false),R.concat("ainp",{fdx_stencil,fdy_stencil}) )
-  local A = R.apply("A", RM.map(Af,T), Ainp)
-  local INVO = invert2x2( AType, bits )
-  local fAinv, AInvType = INVO[1], INVO[2]
-  local FAINVMAP = RM.map(fAinv,T,1,true)
-  local Ainv = R.apply("Ainv", FAINVMAP, A)
-  cost = cost + Acost
-
-  local fB, BType, Bcost = makeB( dType, window, bits )
-  local f0_slice = R.apply("f0slice", RM.map(C.slice(st_type, 0, window-1, 0, window-1),T), lb0)
-  local f1_slice = R.apply("f1slice", RM.map(C.slice(st_type, 0, window-1, 0, window-1),T), lb1)
-  local sm_type = types.array2d(types.uint(8),window,window)
-  local binp = R.apply("binp", C.SoAtoAoS(T,1,{sm_type,sm_type,dst_type,dst_type}), R.concat("btup",{f0_slice,f1_slice,fdx_stencil,fdy_stencil}))
-  local b = R.apply("b", RM.map(fB,T), binp)
-  cost = cost + Bcost
-
-  local SOLV = solve( AInvType, BType, bits )
-  local fSolve, SolveType, SolveCost = SOLV[1],SOLV[2],SOLV[3]
-  local sinp = R.apply("sinp", C.SoAtoAoS(T,1,{types.array2d(AInvType,4),types.array2d(BType,2)}), R.concat("solveinp",{Ainv,b}))
-  local vectorField = R.apply("lksolvemod", RM.map(fSolve,T), sinp)
-  cost = cost + SolveCost
-
-  local DISP = display(SolveType)
-  local displayfn, displaycost = DISP[1], DISP[2]
-  local out = R.apply("display", RM.map(displayfn,T), vectorField)
-  cost = cost + displaycost
-
-  return RM.lambda("LK",inp,out), cost
-end
-
-function OLDLKTop(T,W,H,window,bits,nostall,X)
-  assert(type(T)=="number")
-  assert(T>=1)
-  assert(type(bits)=="table")
-  assert(type(nostall)=="boolean")
-  assert(X==nil)
-
-  local PadRadius = window/2
-  local PadRadiusAligned = J.upToNearest(T,window/2)
-  local PadExtra = PadRadiusAligned - PadRadius
-  --print("PadRadius",PadRadius,"PRA",PadRadiusAligned)
-
-  local internalW = W+PadRadiusAligned*2
-  local internalH = H+window+1
-
-  local ITYPE = types.array2d(types.uint(8),2)
+  return G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),2),P.SizeValue("imsize")),
+    function(inp)
+                                 
+      local frame0 = G.Map{G.Index{0}}(inp)
+      local frame1 = G.Map{G.Index{1}}(inp)
   
-  local RW_TYPE = types.array2d( ITYPE, 4 ) -- simulate axi bus
-  local hsfninp = R.input( R.Handshake(RW_TYPE) )
+      local lb0 = G.Stencil{{-window, 0, -window, 0}}(frame0)
+      local lb1 = G.Stencil{{-window, 0, -window, 0}}(frame1)
 
-  local fifos = {}
-  local statements = {}
+      local fdx = G.Map{G.Slice{{window-2, window, window-1, window-1}}}(lb0)
+      local DD = dx(bits)
+      local dx, dType, dxcost = DD[1],DD[2],DD[3]
 
-  local out = hsfninp
-  if T~=4 then
-    out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.array2d(types.uint(8),2),1,4,T)), hsfninp )
-  end
+      fdx = G.Map{dx}(fdx)
 
-  local out = R.apply("pad", RM.liftHandshake(RM.padSeq(ITYPE, W, H, T, PadRadiusAligned, PadRadiusAligned, PadRadius+1, PadRadius, {0,0})), out)
+      local fdx_stencil = G.Stencil{{-window+1, 0, -window+1, 0}}(fdx)
 
-  local lkfn, lkcost = makeLK( T, internalW, internalH, window, bits )
-  out = R.apply("LK", RM.makeHandshake( lkfn ), out )
 
-  -- FIFO to improve timing
-  if false then
-  else
-    local sz = 128
-    if nostall then sz = 2048 end
---    table.insert( fifos, R.instantiateRegistered("f_timing",RM.fifo(types.array2d(ITYPE,T),sz,nostall)) )
---    table.insert( statements, R.applyMethod( "s_timing", fifos[#fifos], "store", out ) )
-    --    out = R.applyMethod("r_timing",fifos[#fifos],"load")
-    out = C.fifo(types.array2d(ITYPE,T),sz,nostall)(out)
-  end
+      local fdy = G.Map{G.Slice{{window-1, window-1, window-2, window}}}(lb0)
+      fdy = G.Map{dy(bits)}(fdy)
+      local fdy_stencil = G.Stencil{{-window+1, 0, -window+1, 0}}(fdy)
 
-  local out = R.apply("crop",C.cropHelperSeq(ITYPE, internalW, internalH, T, PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0), out)
-  if T~=4 then
-    out = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE,1,T,4)), out )
-  end
+      local Af, AType, Acost = makeA( dType, window, bits )
+      local Ainp = G.Zip( fdx_stencil, fdy_stencil )
+      local A = G.Map{Af}(Ainp)
+      local INVO = invert2x2( AType, bits )
+      local fAinv, AInvType = INVO[1], INVO[2]
 
-  table.insert(statements,1,out)
+      local Ainv = G.Map{fAinv}(A)
 
-  local hsfn = RM.lambda("hsfn", hsfninp, R.statements(statements), fifos)
+      local fB, BType, Bcost = makeB( dType, window, bits )
+      local f0_slice = G.Map{G.Slice{{0, window-1, 0, window-1}}}(lb0)
+      local f1_slice = G.Map{G.Slice{{0, window-1, 0, window-1}}}(lb1)
+      local binp = G.Zip(f0_slice,f1_slice,fdx_stencil,fdy_stencil)
+      local b = G.Map{fB}(binp)
 
-  return hsfn, lkcost
+      local SOLV = solve( AInvType, BType, bits )
+      local fSolve, SolveType, SolveCost = SOLV[1],SOLV[2],SOLV[3]
+      local sinp = G.Zip(Ainv,b)
+      local vectorField = G.Map{fSolve}(sinp)
+
+      local DISP = display(SolveType)
+      local displayfn, displaycost = DISP[1], DISP[2]
+      local out = G.Map{displayfn}(vectorField)
+      return out
+    end}
+  
 end
 
 local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
   function(i)
     local readStream = G.AXIReadBurst{ inputFilename, {W,H}, T.Array2d(T.Uint(8),2), 4, noc.read }(i)
-    --local TOP = OLDLKTop( V,W,H,CONVWIDTH,bits,false)
 
     local PadRadius = CONVWIDTH/2
     local PadRadiusAligned = J.upToNearest(V,CONVWIDTH/2)
@@ -454,7 +389,7 @@ local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
     local lkfn = makeLK( V, internalW, internalH, CONVWIDTH, bits )
     print("LKFN",lkfn.inputType,lkfn.outputType)
     
-    local out = G.Flatmap{lkfn}(padded)
+    local out = lkfn(padded)
     out = G.Crop{{PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0}}(out)
     return G.AXIWriteBurst{"out/soc_lk_"..CONVWIDTH.."_"..(V*CONVWIDTH),noc.write}(out)
   end}

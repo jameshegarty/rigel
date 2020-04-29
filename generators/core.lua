@@ -714,28 +714,13 @@ function(args)
   local out = args.luaFunction(input)
   J.err( R.isIR(out), "SchedulableFunction: user function returned something other than a Rigel value? "..tostring(out))
 
-  return RM.lambda( args.string, input, out )
+  local resFn = RM.lambda( args.string, input, out )
+
+  -- this will enable auto-lifting...
+  return R.FunctionGenerator("core.ScheduleableFunction_"..args.string,{},{"luaFunction","string","type1"},function(a) return resFn end,
+                             resFn.inputType:deInterface() ):complete(args)
+
 end,nil,true)
-
---generators.Function = generators.Module
-
---[=[
-generators.Generator = R.FunctionGenerator("core.Generator",{"luaFunction","type","type1"},{"string","rate1","instanceList"},
-function(args)
-  if args.string==nil then
-    args.string = "unnamedModuleGen"..__unnamedID
-    __unnamedID = __unnamedID+1
-  end
-
-  return R.FunctionGenerator( args.string,{"type","luaFunction","type1"},{"string","instanceList","rate"},
-    function(a)
-      local input = R.input( a.type, args.rate )
-      local out = args.luaFunction(input)
-      J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
-  
-      return RM.lambda( args.string, input, out, args.instanceList )
-    end,args.type1:deInterface()):complete(args)
-  end)]=]
 
 -- rigelFunction: the fn to call to perform the AXI read
 generators.AXIReadBurst = R.FunctionGenerator("core.AXIReadBurst",{"string","size","type","type1","rate","rigelFunction"},{"number","address"},
@@ -753,55 +738,11 @@ function(args)
 end,
 types.uint(32) )
 
-
 generators.AXIWriteBurst = R.FunctionGenerator("core.AXIWriteBurst",{"string","rigelFunction"},{"address"},
 function(a)
   return SOC.writeBurst( a.string, a.size[1], a.size[2], a.T, a.V[1], a.V[2], true, a.rigelFunction, a.address )
 end,
 types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
-
---[=[
-generators.Reshape = R.FunctionGenerator("core.Reshape",{"type","rate"},{},
-function(args)
-  local ratio = Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()
-
-  if ratio<=1 then
-    if args.type:isRV() then
-
-      local function reduceRatio(ty)
-        if ty:isArray() then
-          if ty.V:eq(0,0) then
-            -- recurse until we find something we can devectorize
-            return generators.Map{reduceRatio(ty:arrayOver())}
-          else
-            local chan = canonicalV( args.rate, ty.V )
-            return generators.SerToWidth{chan}
-          end
-        else
-          -- Not an array, so can't do anything, just do a passthrough
-          return generators.Identity
-        end
-      end
-      
-      return reduceRatio( args.type:deInterface(), ratio ):complete(args)
-    else
-      print("Reshape: upsupported type ",args.type)
-      assert(false)
-    end
-  end
-
-  -- even if ratio==1, we still want it to break T[1;W,H} into T{W,H} canonical form
---  if ratio==1 and args.type:deInterface():isArray() and
---    Uniform(args.type:deInterface().V[1]):toNumber()==1 and
---    Uniform(args.type:deInterface().V[2]):toNumber()==1 
---  then
---    return generators.SerToWidth{0}:complete(args)
---  end
-  
-  -- if ratio >=1, don't do anything:
-  return generators.Identity:complete(args)
-end)
-]=]
 
 -- change dims of array
 generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size"},{},
@@ -811,7 +752,6 @@ function(args)
 end,
 types.array2d(P.DataType("T"),P.SizeValue("insize")) )
 
-
 generators.Sort = R.FunctionGenerator("core.Sort",{"rigelFunction"},{},
 function(args)
   J.err( args.size[2]==1,"generators.Sort: must be 1d array" )
@@ -819,11 +759,9 @@ function(args)
 end,
 types.array2d(P.DataType("T"),P.SizeValue("size")) )
 
-
 generators.Identity = R.FunctionGenerator("core.Identity",{},{},
 function(args) return C.identity(args.T) end,
 P.DataType("T") )
-
 
 generators.Sel = R.FunctionGenerator("core.Sel",{},{},
 function(args)
