@@ -1300,7 +1300,7 @@ function systolicASTFunctions:toVerilogInner( module, declarations )
             else
               assert(false)
             end
-          elseif toType:isInt() and fromType:isInt() and toType.precision > fromType.precision then
+          elseif toType:isInt() and fromType:isInt() and toType.precision >= fromType.precision then
             -- casting smaller int to larger int. must sign extend
             expr = systolic.wireIfNecessary( wired, declarations, fromType, inputName, expr, " // wire for int size extend (cast)" )
             return "{ {"..(toType:verilogBits() - fromType:verilogBits()).."{"..expr.."["..(fromType:verilogBits()-1).."]}},"..expr.."["..(fromType:verilogBits()-1)..":0]}"

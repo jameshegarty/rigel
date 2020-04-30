@@ -116,7 +116,8 @@ function systolicASTFunctions:toTerra( symbols )
           res = args[1]
         elseif (n.inputs[1].type:isInt() or n.inputs[1].type:isUint()) and (n.type:isInt() or n.type:isUint()) then
           --err( n.inputs[1].type:isUint() or n.inputs[1].type:verilogBits()==8 or n.inputs[1].type:verilogBits()==16 or n.inputs[1].type:verilogBits()==32, "NYI cast "..tostring(n.inputs[1].type) )
-
+          err( n.inputs[1].type.exp == n.type.exp,"Err: terra cast that changes exp! input:",n.inputs[1].type," to:",n.type)
+          
           if n.type:verilogBits()==8 or n.type:verilogBits()==16 or n.type:verilogBits()==32 or
             (n.type:verilogBits()>n.inputs[1].type:verilogBits() and n.type:isInt()==n.inputs[1].type:isInt()) -- if we are expanding bitwidth, we don't need mask...
              then
@@ -125,7 +126,7 @@ function systolicASTFunctions:toTerra( symbols )
             local maskValue = math.pow(2,n.type:verilogBits())-1
             res = `[n.type:toTerraType()]([args[1]]) and [n.type:toTerraType()](maskValue)
           else
-            print("NYI - terra cast to "..tostring(n.type))
+            print("NYI - terra cast from:",n.inputs[1].type," to:"..tostring(n.type))
           end
         else
           err(false, ":toTerra CAST NYI: "..tostring(n.inputs[1].type).." to "..tostring(n.type).." "..n.loc)

@@ -240,6 +240,34 @@ C.multiply = memoize(function(A,B,outputType)
   return partial
 end)
 
+C.multiplyE = memoize(function( A, B, X )
+  err( types.isType(A), "C.multiplyE: lhs type must be type")
+  assert( A:isData() )
+  assert( A:isUint() or A:isInt() )
+  err( types.isType(B), "C.multiplyE: rhs must be type")
+  assert( B:isData() )
+  err( B:isUint() or B:isInt(), "C.multiplyE: rhs must be uint or int, but is: ",B )
+  assert( X==nil )
+  assert( A:isUint()==B:isUint() )
+
+  local outputType = A:replaceVar("precision",A.precision+B.precision):replaceVar("exp",A.exp+B.exp)
+  local outL = A:replaceVar("precision",A.precision+B.precision)
+  local outR = B:replaceVar("precision",A.precision+B.precision)
+
+  local partial = RM.lift( J.sanitize("mult_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, outputType, nil,
+    function(sinp)
+      local i0 = S.index(sinp,0)
+      local lhs = S.cast(i0,outL)
+      local i1 = S.index(sinp,1)
+      local rhs = S.cast(i1,outR)
+      local res = lhs*rhs
+      print("i0",i0.type,lhs.type,i1.type,rhs.type,res.type)
+      return res
+    end)
+
+  return partial
+end)
+
 ------------
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
@@ -354,17 +382,28 @@ C.sum = memoize(function( A, B, outputType, async )
   err( types.isType(B), "C.sum: B must be type")
   err( types.isType(outputType), "C.sum: outputType must be type")
 
+  err( A:isInt()==B:isInt() and A:isInt()==outputType:isInt(),"C.sum NYI: all types must have same signedness" )
+  err( A.exp==B.exp and A.exp==outputType.exp,"C.sum NYI: all type must have same exponant")
+  
   if async==nil then return C.sum(A,B,outputType,false) end
 
   err(type(async)=="boolean","C.sum: async must be boolean, but is: "..tostring(async))
 
   local delay
-  if async then delay = 0 else delay = math.floor(S.delayTable["+"][A:verilogBits()]*S.delayScale) end
+
+  if async then
+    delay = 0
+  else
+    local tab = S.delayTable["+"]
+    delay = math.floor(S.interp(tab,outputType:verilogBits())*S.delayScale)
+  end
 
   local partial = RM.lift(
     J.sanitize("sum_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
     function(sinp)
+      print("SUM",sinp.type,outputType)
       local sout = S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType)
+      print("SOUT",sout.type)
       if async then sout = sout:disablePipelining() end
       return sout
     end,
@@ -419,20 +458,6 @@ C.rshiftEConst = memoize(function( A, const )
   local outA = A:replaceVar("exp",A.exp-const)
   local res = RM.lift(J.sanitize("RshiftE_"..tostring(A).."_"..tostring(const)), A, outA, 0,
                                  function(inp) return S.rshiftE(inp,const) end)
-
-  --[=[
-  local res = C.identity( A, "RshiftE_"..tostring(A).."_"..tostring(const) )
-  local outT = res.outputType:deInterface():replaceVar("exp",res.outputType:deInterface().exp-const)
-  res.systolicModule.functions.process.output.type = outT -- evil hack
-  print("RSHIFTMOD",res.systolicModule)
-  
-  assert( res.outputType:isrv() )
-  
-  res.outputType = types.rv(outT)
-  ]=]
-
-    
-  
   return res
 end)
 
@@ -755,15 +780,12 @@ C.convolveTaps = memoize(function( A, ConvWidth, shift )
   if shift==nil then shift=7 end
 
   local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth )
----  local TAP_TYPE_CONST = TAP_TYPE:makeConst() XXX
   local TAP_TYPE_CONST = TAP_TYPE
 
   local INP_TYPE = types.tuple{types.array2d( A, ConvWidth, ConvWidth ),TAP_TYPE_CONST}
   local inp = R.input( types.rv(types.Par(INP_TYPE)) )
 
----  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{A,A:makeConst()}), inp ) XXX
   local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{A,A}), inp )
----  local conv = R.apply( "partial", RM.map( C.multiply(A,A:makeConst(), types.uint(32)), ConvWidth, ConvWidth ), packed ) XXX
   local conv = R.apply( "partial", RM.map( C.multiply(A,A, types.uint(32)), ConvWidth, ConvWidth ), packed )
   local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvWidth ), conv )
   local conv = R.apply( "touint8", C.shiftAndCast(types.uint(32),A,shift), conv )

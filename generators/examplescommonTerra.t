@@ -165,9 +165,42 @@ function CT.tokenCounter( res, A, str, X )
 end
 
 function CT.sum(A,B,outputType,async)
+  local function trunc(inp)
+    if outputType:verilogBits()==outputType:sizeof()*8 then
+      -- operating at same bitwidth in terra: nothing to do
+      return inp
+    elseif outputType:isInt() then
+      return quote
+            var mask = ([outputType:toTerraType()](1) << [outputType:verilogBits()]) - 1
+            var msb = [outputType:toTerraType()](1) << ([outputType:verilogBits()]-1)
+            var notmask = not mask
+
+            var inpuint = [outputType:toTerraType()]([inp])
+            var masked = inpuint and mask
+
+            -- extend the sign bit so that the CPU thinks this number has the correct sign
+            -- note that we set the sign bit based on the MSB of the _masked_ portion. This is what verilog will do.
+            -- DO NOT set sign bit based on sign bit of (unmaked) input.
+            if (masked and msb) ~=0 then
+              masked = masked or notmask
+            end
+
+            var r = [outputType:toTerraType()](masked)
+            in r end
+    elseif outputType:isUint() then
+      return quote
+            var mask = ([outputType:toTerraType()](1) << [outputType:verilogBits()]) - 1
+            var r = [outputType:toTerraType()]([inp] and mask)
+            in r end
+    else
+      assert(false)
+    end
+  end
+  
   return terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
-                            @out = [outputType:toTerraType()](a._0)+[outputType:toTerraType()](a._1)
-                  end
+    @out = [outputType:toTerraType()](a._0)+[outputType:toTerraType()](a._1)
+    @out = [trunc(`@out)]
+  end
 end
 
 function CT.argmin(ITYPE,ATYPE,domax)

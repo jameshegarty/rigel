@@ -5025,14 +5025,14 @@ local function insertFIFOs( out, delayTable, moduleName, X )
 
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
 
-        err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
-        err( n.fn.outputBurstiness<=16384, "outputBurstiness for module ",n.fn.name," is way too large: ",n.fn.outputBurstiness )
+        --err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
+        --err( n.fn.outputBurstiness<=16384, "outputBurstiness for module ",n.fn.name," is way too large: ",n.fn.outputBurstiness )
 
         local ibts = (n.fn.inputBurstiness*n.fn.inputType:extractData():verilogBits())
         local obts = (n.fn.outputBurstiness*n.fn.outputType:extractData():verilogBits())
 
-        err( ibts<20*1024*8, "Input burst FIFO is tooo big! ",ibts/8192,"KB" )
-        err( obts<20*1024*8, "Output burst FIFO is tooo big! ",obts/8192,"KB" )
+        --err( ibts<20*1024*8, "Input burst FIFO is tooo big! ",ibts/8192,"KB" )
+        --err( obts<20*1024*8, "Output burst FIFO is tooo big! ",obts/8192,"KB" )
         
         local IFIFO, OFIFO
         if rigel.MONITOR_FIFOS==false then

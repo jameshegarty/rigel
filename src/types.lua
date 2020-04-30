@@ -350,6 +350,15 @@ function types.meet( a, b, op, loc)
     
     if cmpops[op] then
       return types.bool(), thistype, thistype
+    elseif op=="*" then
+      local lhstype = types.int(prec,a.exp)
+      local rhstype = types.int(prec,b.exp)
+      local outtype = types.int(prec,a.exp+b.exp)
+      return outtype, lhstype, rhstype
+    elseif op=="+" then
+      err( a.exp==b.exp, "NYI - add with mismatched exponants! lhs:",a," rhs:",b)
+      local outtype = types.int(prec,a.exp)
+      return outtype, outtype, outtype
     elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
     elseif op=="<<" or op==">>" then
@@ -368,6 +377,15 @@ function types.meet( a, b, op, loc)
     
     if cmpops[op] then
       return types.bool(), thistype, thistype
+    elseif op=="*" then
+      local lhstype = types.uint(prec,a.exp)
+      local rhstype = types.uint(prec,b.exp)
+      local outtype = types.uint(prec,a.exp+b.exp)
+      return outtype, lhstype, rhstype
+    elseif op=="+" then
+      err( a.exp==b.exp, "NYI - add with mismatched exponants! lhs:",a," rhs:",b)
+      local outtype = types.uint(prec,a.exp)
+      return outtype, outtype, outtype
     elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
     elseif op=="<<" or op==">>" then

@@ -300,6 +300,15 @@ function(args)
   end
 end)
 
+generators.MulE = R.FunctionGenerator("core.MulE",{"type","rate"},{"number","async"},
+function(args)
+  if args.number~=nil then
+    assert(false)
+  else
+    return R.FunctionGenerator("core.MulE",{},{"async","number"},function(a) return C.multiplyE( a.L, a.R, args.async ) end, T.tuple{P.NumberType("L"),P.NumberType("R")}):complete(args)
+  end
+end)
+
 generators.GT = R.FunctionGenerator("core.GT",{"type","rate"},{"number","async"},
 function(args)
   if args.number~=nil then
