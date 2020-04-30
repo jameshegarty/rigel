@@ -164,8 +164,7 @@ function CT.tokenCounter( res, A, str, X )
   return MT.new( TokenCounter, res )
 end
 
-function CT.sum(A,B,outputType,async)
-  local function trunc(inp)
+  local function trunc(inp,outputType)
     if outputType:verilogBits()==outputType:sizeof()*8 then
       -- operating at same bitwidth in terra: nothing to do
       return inp
@@ -196,10 +195,25 @@ function CT.sum(A,B,outputType,async)
       assert(false)
     end
   end
+
+function CT.sum(A,B,outputType,async)
   
   return terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
     @out = [outputType:toTerraType()](a._0)+[outputType:toTerraType()](a._1)
-    @out = [trunc(`@out)]
+    @out = [trunc(`@out,outputType)]
+  end
+end
+
+function CT.removeMSBs( A, bits, otype )
+  return terra( a : &A:toTerraType(), out : &otype:toTerraType() )
+    @out = [trunc(`@a,otype)]
+  end
+end
+
+function CT.removeLSBs( A, bits, otype )
+  return terra( a : &A:toTerraType(), out : &otype:toTerraType() )
+    var tmp = @a >> bits
+    @out = [otype:toTerraType()](tmp)
   end
 end
 

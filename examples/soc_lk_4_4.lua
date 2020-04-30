@@ -46,27 +46,15 @@ local regs = SOC.axiRegs({},SDF{1,W*H*V}):instantiate("regs")
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")
 noc.extern=true
 
-  local fdenom = J.memoize(function(AType)
-    local finp = f.parameter( "finp", types.array2d(AType,4) )
-    local i0 = finp:index(0)
-    if f.isFixedType(AType)==false then i0=i0:lift() end
-    local i1 = finp:index(1)
-    if f.isFixedType(AType)==false then i1=i1:lift() end
-    local i2 = finp:index(2)
-    if f.isFixedType(AType)==false then i2=i2:lift() end
-    local i3 = finp:index(3)
-    if f.isFixedType(AType)==false then i3=i3:lift() end
-    
-    local fdenom = ((i0:hist("matrix0"))*i3)-(i1*i2)
-
-    bits.inv22inp[3] = fdenom:precision()
-    fdenom = fdenom:reduceBits(bits.inv22inp[1],bits.inv22inp[2])
-    fdenom = fdenom:hist("fdenom")
-    local fdenom_type = fdenom.type
-    print("FDENOM_TYPE",fdenom_type,AType)
-
-    return fdenom:toRigelModule("denom")
-  end)
+local Fdenom = G.SchedulableFunction{"Fdenom", T.Array2d(P.NumberType("ty"),4),
+  function(i)
+    local lhs = G.MulE(i[0],i[3])
+    local rhs = G.MulE(i[1],i[2])
+    local fdenom = G.SubE(lhs,rhs)
+    fdenom = G.RemoveMSBs{bits.inv22inp[1]}(fdenom)
+    fdenom = G.RemoveLSBsE{bits.inv22inp[2]}(fdenom)
+    return fdenom
+  end}
 
     local fout = J.memoize(function(AType,fdet_type)
       local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type:extractData()} )
@@ -96,7 +84,8 @@ noc.extern=true
 
 local Invert2x2 = G.SchedulableFunction{"Invert2x2", T.Array2d(P.NumberType("A"),4),
   function(i)
-    local denom = fdenom( i.type:deInterface():arrayOver() )(i)
+    --local denom = fdenom( i.type:deInterface():arrayOver() )(i)
+    local denom = Fdenom(i)
     local det = C.lutinvert(denom.type:deInterface())(denom)
     return fout( i.type:deInterface():arrayOver(), det.type:deInterface() )( i, det )
   end}

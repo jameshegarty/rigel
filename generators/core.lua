@@ -139,7 +139,12 @@ end)
 
 generators.AddMSBs = R.FunctionGenerator("core.AddMSBs",{},{"number"}, function(args) return C.addMSBs(args.T,args.number) end, P.NumberType("T") )
 generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"number"},{}, function(args) return C.removeMSBs(args.T,args.number) end, P.NumberType("T") )
-generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.T,args.number) end, T.rv(T.Par(P.NumberType("T"))) )
+
+generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"},
+   function(args) return C.removeLSBs(args.T,args.number) end, P.NumberType("T") )
+
+generators.RemoveLSBsE = R.FunctionGenerator("core.RemoveLSBsE",{"type","rate"},{"number"},
+   function(args) return C.removeLSBs(args.T,args.number,true) end, P.NumberType("T") )
 
 generators.Index = R.FunctionGenerator("core.Index",{"type","rate"},{"number","size"},
 function(a)

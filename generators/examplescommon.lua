@@ -428,7 +428,7 @@ C.sub = memoize(function( A, B, outputType, async )
   local delay
   if async then delay = 0 else delay = 1 end
 
-    local partial = RM.lift( J.sanitize("sub_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
+  local partial = RM.lift( J.sanitize("sub_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
     function(sinp)
       local sout = S.cast(S.index(sinp,0),outputType)-S.cast(S.index(sinp,1),outputType)
       if async then sout = sout:disablePipelining() end
@@ -495,45 +495,54 @@ C.addMSBs = memoize(function(A,bits)
 end)
 
 -----------------------------
-C.removeMSBs = memoize(function(A,bits)
+C.removeMSBs = memoize(function(A,bits,X)
   err( types.isType(A),"C.removeMSBs: type should be rigel type")
   err( type(bits)=="number","C.removeMSBs: bits should be number or value")
-
+  assert(X==nil)
+  
   local otype
   if A:isUint() then
     J.err(A.precision>bits,"removeMSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
-    otype = types.uint(A.precision-bits)
+    otype = types.uint( A.precision-bits, A.exp )
   elseif A:isInt() then
     J.err(A.precision>bits,"removeMSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
-    otype = types.int(A.precision-bits)
+    otype = types.int( A.precision-bits, A.exp )
   else
     J.err( A:isUint() or A:isInt(), "generators.removeMSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
   local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,otype, 0,
-                      function(inp) return S.cast(inp,otype) end)
+                      function(inp) return S.cast(inp,otype) end,
+                      function() return CT.removeMSBs(A,bits,otype) end )
   return mod
 end)
 
 -----------------------------
-C.removeLSBs = memoize(function(A,bits)
+-- keepMagnitude: adjust the exp to keep magnitude of value the same
+C.removeLSBs = memoize(function( A, bits, keepMagnitude, X )
   err( types.isType(A),"C.removeLSBs: type should be rigel type")
   err( type(bits)=="number","C.removeLSBs: bits should be number or value")
-
+  if keepMagnitude==nil then keepMagnitude=false end
+  assert( X==nil )
+  
   local otype
   if A:isUint() then
     J.err(A.precision>bits,"removeLSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
-    otype = types.uint(A.precision-bits)
+    local exp = A.exp
+    if keepMagnitude then exp=exp+bits end
+    otype = types.uint( A.precision-bits, exp )
   elseif A:isInt() then
     J.err(A.precision>bits,"removeLSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
-    otype = types.int(A.precision-bits)
-    assert(false) -- NYI
+    local exp = A.exp
+    if keepMagnitude then exp = exp+bits end
+    otype = types.int( A.precision-bits, exp )
   else
     J.err( A:isUint() or A:isInt(), "generators.removeLSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
   local mod = RM.lift(J.sanitize("generators_removeLSBs_"..tostring(bits).."_"..tostring(A)), A,otype,0,
-                      function(inp) return S.cast(S.rshift(inp,S.constant(bits,A)),otype) end)
+                      function(inp) return S.cast(S.rshift(inp,S.constant(bits,A)),otype) end,
+                      function() return CT.removeLSBs(A,bits,otype) end)
   return mod
 end)
 
@@ -1107,17 +1116,23 @@ end
 --
 -- Plug this back in, and to find the real value, we have:
 -- LUT(ffffffff) + 256, which has exponant n-17
-C.lutinvert = J.memoize(function(ty,X)
+C.lutinvert = J.memoize(function( ty, X )
   assert(X==nil)
   assert(types.isType(ty))
   assert(ty:isData())
   local fixed = require "fixed"
-  fixed.expectFixed(ty)
-  local signed = fixed.extractSigned(ty)
+  --fixed.expectFixed(ty)
+  local signed = false
+  if ty:isInt() then signed = true end
+  if fixed.isFixedType(ty) and ty:isSigned() then signed=true end
 
   --------------------
   local ainp = fixed.parameter("ainp",ty)
-  local a = ainp:hist("lutinvert_input")
+  local a = ainp
+  if fixed.isFixedType(ty)==false then
+    a = ainp:lift()
+  end
+  a = a:hist("lutinvert_input")
   local a_sign
   if signed then
     a_sign = a:sign()

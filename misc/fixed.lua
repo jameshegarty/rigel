@@ -203,6 +203,7 @@ end
 function fixedASTFunctions:lift(exponant)
   err(fixed.isFixedType(self.type)==false, "expected non-fixed type: ",self.loc)
   if self.type:isUint() then
+    if exponant==nil then exponant=self.type.exp end
     local ty = fixed.type(false,self.type.precision,exponant)
     return fixed.new{kind="lift",type=ty,inputs={self},loc=getloc()}
   elseif self.type:isInt() then
