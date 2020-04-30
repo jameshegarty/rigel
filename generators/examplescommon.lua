@@ -1107,7 +1107,7 @@ end
 --
 -- Plug this back in, and to find the real value, we have:
 -- LUT(ffffffff) + 256, which has exponant n-17
-function C.lutinvert(ty,X)
+C.lutinvert = J.memoize(function(ty,X)
   assert(X==nil)
   assert(types.isType(ty))
   assert(ty:isData())
@@ -1163,7 +1163,8 @@ function C.lutinvert(ty,X)
   local fn = RM.lambda( "lutinvert", inp, out )
 
   return fn, fn.outputType
-end
+end)
+
 -------------
 C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, offset, overlap )
   J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)

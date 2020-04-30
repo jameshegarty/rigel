@@ -2142,7 +2142,7 @@ function darkroomIRFunctions:typecheckSchedulePass()
 
     --assert( self.inputs[1].type:isrv() ) -- we should have done this earlier in other nodes
 
-    J.err( self.inputs[1].type:deInterface()==self.fn.inputType:deInterface(),"Error, deinterfaced inputs to function must match, but is: input:",self.inputs[1].type," fnInput:",self.fn.inputType )
+    J.err( self.inputs[1].type:deInterface()==self.fn.inputType:deInterface(),"Error, deinterfaced inputs to function '",self.fn.name,"' must match, but is: input:",self.inputs[1].type," fnInput:",self.fn.inputType )
 
     if self.fn.inputType:isrv()==false or self.fn.outputType:isrv()==false then
       self.scheduleConstraints.RV = true

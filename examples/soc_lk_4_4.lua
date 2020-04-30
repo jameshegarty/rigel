@@ -46,19 +46,7 @@ local regs = SOC.axiRegs({},SDF{1,W*H*V}):instantiate("regs")
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")
 noc.extern=true
 
--- note that we use our convetion here:
--- Atype: type of entries of A matrix
-invert2x2 = J.memoize(function( AType, bits )
-  assert(type(bits)=="table")
-
-  --f.expectFixed(AType)
-  local inp = R.input( types.rv(types.Par(types.array2d(AType,4))) )
-  local out, output_type
-
-  print("ATYPE",AType)
-  
-  --------
-  local function fdenom()
+  local fdenom = J.memoize(function(AType)
     local finp = f.parameter( "finp", types.array2d(AType,4) )
     local i0 = finp:index(0)
     if f.isFixedType(AType)==false then i0=i0:lift() end
@@ -78,15 +66,9 @@ invert2x2 = J.memoize(function( AType, bits )
     print("FDENOM_TYPE",fdenom_type,AType)
 
     return fdenom:toRigelModule("denom")
-  end
-    --------
-    
-  local denom = R.apply("denom", fdenom(), inp)
-  local fdetfn, fdet_type = C.lutinvert(denom.type:deInterface())
-    local det = R.apply("det", fdetfn, denom)
-    
-    ---------
-    local function fout()
+  end)
+
+    local fout = J.memoize(function(AType,fdet_type)
       local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type:extractData()} )
       local fmatrix = finp:index(0)
 
@@ -108,16 +90,16 @@ invert2x2 = J.memoize(function( AType, bits )
         OT[k] = v:reduceBits(bits.inv22[1],bits.inv22[2])
       end
 
-      output_type = OT[1].type
-
       local fout = f.array2d(OT,4)
       return fout:toRigelModule("fout")
-    end
-    ---------
-    out = R.apply("out", fout(), R.concat("ftupp",{inp,det}))
+    end)
 
-  return {RM.lambda("invert2x2", inp, out ), output_type}
-end)
+local Invert2x2 = G.SchedulableFunction{"Invert2x2", T.Array2d(P.NumberType("A"),4),
+  function(i)
+    local denom = fdenom( i.type:deInterface():arrayOver() )(i)
+    local det = C.lutinvert(denom.type:deInterface())(denom)
+    return fout( i.type:deInterface():arrayOver(), det.type:deInterface() )( i, det )
+  end}
 
 local Dx = G.SchedulableFunction{"Dx",T.Array2d(T.Uint(8),3),
   function(i)
@@ -136,41 +118,34 @@ local Dy = G.SchedulableFunction{"Dy", types.array2d(types.uint(8),1,3),
     return G.RshiftE{1}(outt)
   end}
 
--- dType: type of derivative
-function makeA( dType, window, bits )
-  --f.expectFixed( dType )
-  assert(type(bits)=="table")
-  assert(type(window)=="number")
+local CalcA = G.SchedulableFunction{"CalcA",
+  types.tuple{ types.array2d( P.NumberType("ty"), P.SizeValue("sz")),
+               types.array2d( P.NumberType("ty"), P.SizeValue("sz")) },
+  function(inp)
+    local Fdx = inp[0]
+    local Fdy = inp[1]
 
-  local stt = types.array2d(dType, window, window)
+    local inp0 = G.Zip(Fdx,Fdx)
+    local out0 = G.Map{G.MulE}(inp0)
+    
+    out0 = G.Reduce{G.Add}(out0)
+    
+    local inp1 = G.Zip(Fdx,Fdy)
+    local out1 = G.Map{G.MulE}(inp1)
+    out1 = G.Reduce{G.Add}(out1)
+    
+    local out2 = out1
+    
+    local inp3 = G.Zip(Fdy,Fdy)
+    local out3 = G.Map{G.MulE}(inp3)
+    out3 = G.Reduce{G.Add}(out3)
+    
+    local out = R.concatArray2d("out", {out0,out1,out2,out3}, 4 )
+    
+    return out
+  end}
 
-  return G.SchedulableFunction{"A", types.tuple{ stt, stt },
-    function(inp)
-      local Fdx = inp[0]
-      local Fdy = inp[1]
-
-      local inp0 = G.Zip(Fdx,Fdx)
-      local out0 = G.Map{G.MulE}(inp0)
-
-      out0 = G.Reduce{G.Add}(out0)
-
-      local inp1 = G.Zip(Fdx,Fdy)
-      local out1 = G.Map{G.MulE}(inp1)
-      out1 = G.Reduce{G.Add}(out1)
-
-      local out2 = out1
-
-      local inp3 = G.Zip(Fdy,Fdy)
-      local out3 = G.Map{G.MulE}(inp3)
-      out3 = G.Reduce{G.Add}(out3)
-      
-      local out = R.concatArray2d("out", {out0,out1,out2,out3}, 4 )
-
-      return out
-    end}
-end
-
-Minus = G.SchedulableFunction{"Minus",T.Tuple{P.NumberType("A"),P.NumberType("A")},
+local Minus = G.SchedulableFunction{"Minus",T.Tuple{P.NumberType("A"),P.NumberType("A")},
   function(i)
     assert( i.type:deInterface().list[1]==i.type:deInterface().list[2] )
     local lhs = G.UtoI(G.AddMSBs{1}(i[0]))
@@ -178,44 +153,37 @@ Minus = G.SchedulableFunction{"Minus",T.Tuple{P.NumberType("A"),P.NumberType("A"
     return G.SubE(lhs,rhs)
   end}
 
-function makeB( dtype, window, bits )
-  --f.expectFixed(dtype)
-  assert(type(window)=="number")
-  assert(type(bits)=="table")
+local CalcB = G.SchedulableFunction{"CalcB",
+  T.Tuple{ T.Array2d(T.U8,P.SizeValue("w")), T.Array2d(T.U8,P.SizeValue("w")),
+           T.Array2d(P.NumberType("ty"),P.SizeValue("w")),
+           T.Array2d(P.NumberType("ty"),P.SizeValue("w")) },
+  function(i)                              
+    local frame0 = i[0]
+    local frame1 = i[1]
+    local Fdx = i[2]
+    local Fdy = i[3]
 
-  -- arguments: frame1, frame2, fdx, fdy
-  local FTYPE = types.array2d(types.uint(8),window,window)
-  local DTYPE = types.array2d(dtype,window,window)
-  local ITYPE = types.tuple{ FTYPE, FTYPE, DTYPE, DTYPE }
-  local finp = R.input( types.rv(types.Par(ITYPE)) )
+    ---------
+    local gmf = R.concat("mfgmf",{frame1,frame0})
+    gmf = G.Zip(gmf)
+    gmf = G.Map{Minus}(gmf)
+    ---------
+
+    local out_0 = R.concat("o0tup",{Fdx, gmf})
+    out_0 = G.Zip(out_0)
+    out_0 = G.Map{G.MulE}(out_0)
+    out_0 = G.Reduce{G.Add}(out_0)
+
+    local out_1 = R.concat("o1tup",{Fdy, gmf})
+    out_1 = G.Zip(out_1)
+    out_1 = G.Map{G.MulE}(out_1)
+    out_1 = G.Reduce{G.Add}(out_1)
   
-  local frame0 = R.apply("frame0", C.index(ITYPE,0), finp)
-  local frame1 = R.apply("frame1", C.index(ITYPE,1), finp)
-  local Fdx = R.apply("fdx", C.index(ITYPE,2), finp)
-  local Fdy = R.apply("fdy", C.index(ITYPE,3), finp)
+    local out = R.concatArray2d("arrrrry0t",{out_0,out_1},2)
+    return out
+end}
 
-  ---------
-  local gmf = R.concat("mfgmf",{frame1,frame0})
-  gmf = R.apply("SA",C.SoAtoAoS(window, window, {types.uint(8),types.uint(8)}), gmf)
-  gmf = G.Map{Minus}(gmf)
-  ---------
-
-  local out_0 = R.concat("o0tup",{Fdx, gmf})
-  out_0 = G.Zip(out_0)
-  out_0 = G.Map{G.MulE}(out_0)
-  out_0 = G.Reduce{G.Add}(out_0)
-
-  local out_1 = R.concat("o1tup",{Fdy, gmf})
-  out_1 = G.Zip(out_1)
-  out_1 = G.Map{G.MulE}(out_1)
-  out_1 = G.Reduce{G.Add}(out_1)
-  
-  local out = R.concatArray2d("arrrrry0t",{out_0,out_1},2)
-
-  return RM.lambda("b", finp, out)
-end
-
-solve = J.memoize(function( AinvType, btype, bits )
+local solve = J.memoize(function( AinvType, btype, bits )
   assert( types.isType(AinvType) )
   assert( types.isType(btype) )
   assert(type(bits)=="table")
@@ -242,7 +210,7 @@ solve = J.memoize(function( AinvType, btype, bits )
   return {out:toRigelModule("lksolve"), out_0.type, out:cost()}
 end)
 
-display = J.memoize(function(inpType)
+local display = J.memoize(function(inpType)
   f.expectFixed(inpType)
 
   local inp = f.parameter("displayinp",types.array2d(inpType,2))
@@ -290,21 +258,17 @@ function makeLK( T, internalW, internalH, window, bits )
       local fdy = G.Map{Dy}(fdy)
       local fdy_stencil = G.Stencil{{-window+1, 0, -window+1, 0}}(fdy)
 
-      local Af, AType, Acost = makeA( fdx.type:deInterface():arrayOver(), window, bits )
       local Ainp = G.Zip( fdx_stencil, fdy_stencil )
-      local A = G.Map{Af}(Ainp)
-      local INVO = invert2x2( A.type:deInterface():arrayOver():arrayOver(), bits )
-      local fAinv, AInvType = INVO[1], INVO[2]
+      local A = G.Map{CalcA}(Ainp)
 
-      local Ainv = G.Map{fAinv}(A)
+      local Ainv = G.Map{Invert2x2}(A)
 
-      local fB, BType, Bcost = makeB( fdx.type:deInterface():arrayOver(), window, bits )
       local f0_slice = G.Map{G.Slice{{0, window-1, 0, window-1}}}(lb0)
       local f1_slice = G.Map{G.Slice{{0, window-1, 0, window-1}}}(lb1)
       local binp = G.Zip(f0_slice,f1_slice,fdx_stencil,fdy_stencil)
-      local b = G.Map{fB}(binp)
+      local b = G.Map{CalcB}(binp)
 
-      local SOLV = solve( AInvType, b.type:deInterface():arrayOver():arrayOver(), bits )
+      local SOLV = solve( Ainv.type:deInterface():arrayOver():arrayOver(), b.type:deInterface():arrayOver():arrayOver(), bits )
       local fSolve, SolveType, SolveCost = SOLV[1],SOLV[2],SOLV[3]
       local sinp = G.Zip(Ainv,b)
       local vectorField = G.Map{fSolve}(sinp)
