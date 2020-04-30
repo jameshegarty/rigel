@@ -205,6 +205,10 @@ function fixedASTFunctions:lift(exponant)
   if self.type:isUint() then
     local ty = fixed.type(false,self.type.precision,exponant)
     return fixed.new{kind="lift",type=ty,inputs={self},loc=getloc()}
+  elseif self.type:isInt() then
+    assert(exponant==nil)
+    local ty = fixed.type(true,self.type.precision,self.type.exp)
+    return fixed.new{kind="lift",type=ty,inputs={self},loc=getloc()}
   else
     print("Could not lift type "..tostring(self.type))
     assert(false)

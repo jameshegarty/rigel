@@ -16,9 +16,14 @@ if terralib~=nil then CT=require("generators.examplescommonTerra") end
 
 local C = {}
 
-C.identity = memoize(function(A)
+C.identity = memoize(function( A, name )
   err( A:isSchedule(),"C.identity: type should be schedule type, but is: "..tostring(A) )
-  local identity = RM.lift( "identity_"..J.verilogSanitize(tostring(A)), A:lower(), A:lower(), 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
+
+  if name==nil then
+    name = "identity_"..J.verilogSanitize(tostring(A))
+  end
+  
+  local identity = RM.lift( name, A:lower(), A:lower(), 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
 
   assert( identity.inputType == types.rv(A:lower()) )
   assert( identity.outputType == types.rv(A:lower()) )
@@ -405,6 +410,30 @@ C.rshiftConst = memoize(function(A,const)
   local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,A,0,
                       function(inp) return S.rshift(inp,S.constant(const,A)) end)
   return mod
+end)
+
+-- rshift while keeping all bits is a noop! only type changes
+C.rshiftEConst = memoize(function( A, const )
+  J.err( A:isInt() or A:isUint(),"RshiftE only works on int or uint" )
+
+  local outA = A:replaceVar("exp",A.exp-const)
+  local res = RM.lift(J.sanitize("RshiftE_"..tostring(A).."_"..tostring(const)), A, outA, 0,
+                                 function(inp) return S.rshiftE(inp,const) end)
+
+  --[=[
+  local res = C.identity( A, "RshiftE_"..tostring(A).."_"..tostring(const) )
+  local outT = res.outputType:deInterface():replaceVar("exp",res.outputType:deInterface().exp-const)
+  res.systolicModule.functions.process.output.type = outT -- evil hack
+  print("RSHIFTMOD",res.systolicModule)
+  
+  assert( res.outputType:isrv() )
+  
+  res.outputType = types.rv(outT)
+  ]=]
+
+    
+  
+  return res
 end)
 
 -----------------------------

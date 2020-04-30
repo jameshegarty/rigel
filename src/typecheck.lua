@@ -50,6 +50,8 @@ local function typecheck_inner( ast, newNodeFn )
       ast.type = ast.expr.type
     elseif ast.op=="isX" then
       ast.type = types.bool()
+    elseif ast.op=="rshiftE" then
+      ast.type = expr.type:replaceVar("exp",expr.type.exp-ast.const)
     else
       print(ast.op)
       assert(false)

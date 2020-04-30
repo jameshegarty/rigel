@@ -54,17 +54,10 @@ invert2x2 = J.memoize(function( AType, bits )
   f.expectFixed(AType)
   local inp = R.input( types.rv(types.Par(types.array2d(AType,4))) )
   local out, output_type
-  local cost = 0
 
-  if f.FLOAT then
-    local finp = f.parameter( "finp", types.array2d(AType,4) )
-    local fdenom = (finp:index(0)*finp:index(3))-(finp:index(1)*finp:index(2))
-    local fdet = fdenom:invert()
-    local fout = f.array2d({fdet*finp:index(3), (fdet:neg())*(finp:index(1)), (fdet:neg())*(finp:index(2)), fdet*finp:index(0)},4)
-    out = R.apply("out", fout:toRigelModule("fout"), inp)
-    output_type = types.float(32)
-  else
-    --------
+
+  --------
+  local function fdenom()
     local finp = f.parameter( "finp", types.array2d(AType,4) )
     local fdenom = ((finp:index(0):hist("matrix0"))*finp:index(3))-(finp:index(1)*finp:index(2))
 
@@ -73,70 +66,119 @@ invert2x2 = J.memoize(function( AType, bits )
     fdenom = fdenom:hist("fdenom")
     local fdenom_type = fdenom.type
     print("FDENOM_TYPE",fdenom_type,AType)
-    cost = cost + fdenom:cost()
-    fdenom = fdenom:toRigelModule("denom")
+
+    return fdenom:toRigelModule("denom")
+  end
     --------
     
-    local denom = R.apply("denom", fdenom, inp)
-    local fdetfn, fdet_type = C.lutinvert(fdenom_type)
+  local denom = R.apply("denom", fdenom(), inp)
+  local fdetfn, fdet_type = C.lutinvert(denom.type:deInterface())
     local det = R.apply("det", fdetfn, denom)
     
     ---------
-    local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type:extractData()} )
-    local fmatrix = finp:index(0)
-    local fdet = finp:index(1)
+    local function fout()
+      local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type:extractData()} )
+      local fmatrix = finp:index(0)
+      local fdet = finp:index(1)
 
-    local OT = {(fdet*fmatrix:index(3)):hist("invert2x2_output0"), ((fdet:neg())*fmatrix:index(1)), ((fdet:neg())*fmatrix:index(2)), (fdet*fmatrix:index(0))}
+      local OT = {(fdet*fmatrix:index(3)):hist("invert2x2_output0"), ((fdet:neg())*fmatrix:index(1)), ((fdet:neg())*fmatrix:index(2)), (fdet*fmatrix:index(0))}
 
-    for k,v in pairs(OT) do
-      bits.inv22[3] = OT[k]:precision()
-      OT[k] = v:reduceBits(bits.inv22[1],bits.inv22[2])
+      for k,v in pairs(OT) do
+        bits.inv22[3] = OT[k]:precision()
+        OT[k] = v:reduceBits(bits.inv22[1],bits.inv22[2])
+      end
+
+      output_type = OT[1].type
+
+      local fout = f.array2d(OT,4)
+      return fout:toRigelModule("fout")
     end
-
-    output_type = OT[1].type
-
-    local fout = f.array2d(OT,4)
-    cost = cost + fout:cost()
     ---------
-    out = R.apply("out", fout:toRigelModule("fout"), R.concat("ftupp",{inp,det}))
-  end
+    out = R.apply("out", fout(), R.concat("ftupp",{inp,det}))
 
-  --print("invert2x2 output type:", output_type)
-  return {RM.lambda("invert2x2", inp, out ), output_type, cost}
+  return {RM.lambda("invert2x2", inp, out ), output_type}
 end)
 
+--[=[
 dx = J.memoize(function(bits)
   assert(type(bits)=="table")
 
   local inp = f.parameter("dxinp", types.array2d(types.uint(8),3,1))
-  local out = ((inp:index(2):lift(0):toSigned()) - (inp:index(0):lift(0):toSigned())):rshift(1)
+  print("DX",inp.type)
+  local outl = inp:index(2):lift(0):toSigned() -- int9
+  print("OUTL",outl.type)
+  local outr = inp:index(0):lift(0):toSigned() -- int9
+  print("OUTR",outr.type)
+  local outt = (outl - outr) --int10
+  print("OUTT",outt.type)
+  local out = outt:rshift(1) -- into10_-1
+  print("OUT",out.type)
   bits.d[3] = out:precision()
-  out = out:reduceBits(bits.d[1],bits.d[2])
+  out = out:reduceBits(bits.d[1],bits.d[2]) -- int10_-1
+  print("OUT",out.type)
   return {out:toRigelModule("dx"), out.type, out:cost()}
 end)
+]=]
 
+dx = G.SchedulableFunction{"dx",T.Array2d(T.Uint(8),3),
+  function(i)
+    local outl = G.UtoI(G.AddMSBs{1}(i[2]))
+    print("OUTL",outl.type)
+    local outr = G.UtoI(G.AddMSBs{1}(i[0]))
+    print("OUTR",outr.type)
+    local outt = G.SubE(outl,outr)
+    print("OUTT",outt.type)
+    local out = G.RshiftE{1}(outt)
+    print("OUT",out.type)
+    return out
+  end}
+
+
+--[=[
 dy = J.memoize(function(bits)
   assert(type(bits)=="table")
-
   local inp = f.parameter("dyinp", types.array2d(types.uint(8),1,3))
-  local out = ((inp:index(0,2):lift(0):toSigned()) - (inp:index(0,0):lift(0):toSigned())):rshift(1)
+  local outl = inp:index(0,2):lift(0):toSigned() -- int9
+  print("YL",outl.type)
+  local outr = inp:index(0,0):lift(0):toSigned() -- int9
+  print("YR",outr.type)
+  local outt = outl - outr --int10
+  print("YT",outt.type)
+  local out = (outt):rshift(1) --int10-1
+  print("TOUT",out.type)
   bits.d[3] = out:precision()
-  return out:reduceBits(bits.d[1],bits.d[2]):toRigelModule("dy")
-end)
+  local red = out:reduceBits(bits.d[1],bits.d[2]) -- int10-1
+  print("RED",red.type)
+  return red:toRigelModule("dy")
+  end)]=]
+
+dy = G.SchedulableFunction{"DY", types.array2d(types.uint(8),1,3),
+  function(i)
+    local outl = G.UtoI(G.AddMSBs{1}(G.Index{{0,2}}(i)))
+    local outr = G.UtoI(G.AddMSBs{1}(G.Index{{0,0}}(i)))
+    local outt = G.SubE(outl,outr)
+    return G.RshiftE{1}(outt)
+  end}
 
 makePartial = J.memoize(function(ltype,rtype,outMSB,outLSB)
-  f.expectFixed(ltype)
-  f.expectFixed(rtype)
+  --f.expectFixed(ltype)
+  --f.expectFixed(rtype)
   assert(type(outMSB)=="number")
   assert(type(outLSB)=="number")
 
+  print("MAKEPARTIAL",ltype,rtype)
   local finp = f.parameter("pi",types.tuple{ltype,rtype})
-  local out = finp:index(0)*finp:index(1)
+  local l = finp:index(0)
+  if f.isFixedType(ltype)==false then l=l:lift() end
+  local r = finp:index(1)
+  if f.isFixedType(rtype)==false then r=r:lift() end
+  
+  local out = l*r
   local prec = out:precision()
   out = out:reduceBits(outMSB,outLSB)
   --print("OUT:COST",out:cost())
   return {out:toRigelModule("partial_"..tostring(ltype)..tostring(rtype)), out.type, prec, out:cost()}
-                      end)
+end)
 
 makeSumReduce = J.memoize(function(inputType)
                           assert(types.isType(inputType))
@@ -149,7 +191,7 @@ makeSumReduce = J.memoize(function(inputType)
 
 -- dType: type of derivative
 function makeA( dType, window, bits )
-  f.expectFixed( dType )
+  --f.expectFixed( dType )
   assert(type(bits)=="table")
   assert(type(window)=="number")
 
@@ -196,7 +238,7 @@ minus = J.memoize(function(ty)
 end)
 
 function makeB( dtype, window, bits )
-  f.expectFixed(dtype)
+  --f.expectFixed(dtype)
   assert(type(window)=="number")
   assert(type(bits)=="table")
 
@@ -303,18 +345,19 @@ function makeLK( T, internalW, internalH, window, bits )
       local lb1 = G.Stencil{{-window, 0, -window, 0}}(frame1)
 
       local fdx = G.Map{G.Slice{{window-2, window, window-1, window-1}}}(lb0)
-      local DD = dx(bits)
-      local dx, dType, dxcost = DD[1],DD[2],DD[3]
+      --local DD = dx(bits)
+      --local dx, dType, dxcost = DD[1],DD[2],DD[3]
 
       fdx = G.Map{dx}(fdx)
 
       local fdx_stencil = G.Stencil{{-window+1, 0, -window+1, 0}}(fdx)
 
       local fdy = G.Map{G.Slice{{window-1, window-1, window-2, window}}}(lb0)
-      fdy = G.Map{dy(bits)}(fdy)
+      --fdy = G.Map{dy(bits)}(fdy)
+      local fdy = G.Map{dy}(fdy)
       local fdy_stencil = G.Stencil{{-window+1, 0, -window+1, 0}}(fdy)
 
-      local Af, AType, Acost = makeA( dType, window, bits )
+      local Af, AType, Acost = makeA( fdx.type:deInterface():arrayOver(), window, bits )
       local Ainp = G.Zip( fdx_stencil, fdy_stencil )
       local A = G.Map{Af}(Ainp)
       local INVO = invert2x2( A.type:deInterface():arrayOver():arrayOver(), bits )
@@ -322,7 +365,7 @@ function makeLK( T, internalW, internalH, window, bits )
 
       local Ainv = G.Map{fAinv}(A)
 
-      local fB, BType, Bcost = makeB( dType, window, bits )
+      local fB, BType, Bcost = makeB( fdx.type:deInterface():arrayOver(), window, bits )
       local f0_slice = G.Map{G.Slice{{0, window-1, 0, window-1}}}(lb0)
       local f1_slice = G.Map{G.Slice{{0, window-1, 0, window-1}}}(lb1)
       local binp = G.Zip(f0_slice,f1_slice,fdx_stencil,fdy_stencil)

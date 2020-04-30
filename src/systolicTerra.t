@@ -53,6 +53,8 @@ function systolicASTFunctions:toTerra( symbols )
           end
         elseif n.op=="-" then
           res = `-[args[1]]
+        elseif n.op=="rshiftE" then
+          res = args[1]
         else
           err(false,"systolicAST:toTerra unary NYI: "..n.op)
         end
@@ -113,9 +115,11 @@ function systolicASTFunctions:toTerra( symbols )
         elseif n.inputs[1].type:isBits() and n.type:isUint() and n.inputs[1].type.precision==n.type.precision then
           res = args[1]
         elseif (n.inputs[1].type:isInt() or n.inputs[1].type:isUint()) and (n.type:isInt() or n.type:isUint()) then
-          err( n.inputs[1].type:isUint() or n.inputs[1].type:verilogBits()==8 or n.inputs[1].type:verilogBits()==16 or n.inputs[1].type:verilogBits()==32, "NYI cast "..tostring(n.inputs[1].type) )
+          --err( n.inputs[1].type:isUint() or n.inputs[1].type:verilogBits()==8 or n.inputs[1].type:verilogBits()==16 or n.inputs[1].type:verilogBits()==32, "NYI cast "..tostring(n.inputs[1].type) )
 
-          if n.type:verilogBits()==8 or n.type:verilogBits()==16 or n.type:verilogBits()==32 then
+          if n.type:verilogBits()==8 or n.type:verilogBits()==16 or n.type:verilogBits()==32 or
+            (n.type:verilogBits()>n.inputs[1].type:verilogBits() and n.type:isInt()==n.inputs[1].type:isInt()) -- if we are expanding bitwidth, we don't need mask...
+             then
             res = `[n.type:toTerraType()]([args[1]])
           elseif n.type:isUint() then
             local maskValue = math.pow(2,n.type:verilogBits())-1

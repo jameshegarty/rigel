@@ -586,6 +586,11 @@ function systolic.isX(expr) return unary(expr,"isX") end
 function systolic.__not(expr) return unary(expr,"not") end
 function systolic.abs(expr) return unary(expr,"abs") end
 
+function systolic.rshiftE(lhs, const)
+  lhs = checkast(lhs)
+  return typecheck({kind="unary",op="rshiftE",inputs={lhs},const=const,loc=getloc()})
+end
+
 function systolicASTFunctions:cname(c)
   return self:name().."_c"..c
 end
@@ -729,6 +734,7 @@ delayTable["and"]={[0]=0}
 delayTable["not"]={[0]=0}
 delayTable["or"]={[0]=0}
 delayTable["select"]={[0]=0}
+delayTable["rshiftE"]={[0]=0}
 
 function systolic.interp( tab, bits )
   local lowerk,lowerv,higherk,higherv
@@ -1412,6 +1418,8 @@ function systolicASTFunctions:toVerilogInner( module, declarations )
           finalResult = "(~"..args[1]..")"
         elseif n.op=="isX" then
           finalResult = "("..args[1].."===1'bx)"
+        elseif n.op=="rshiftE" then
+          finalResult = args[1]
         else
           print(n.op)
           assert(false)

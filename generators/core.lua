@@ -88,32 +88,28 @@ T.VarSeq(T.Par(P.DataType("T")),P.SizeValue("InSize")) )
 generators.BtoU = R.FunctionGenerator("core.BtoU",{},{},
 function(args)
   return C.cast(args.T,types.uint(args.T.precision))
-end,
-T.rv(T.Par(P.BitsType("T")) ) )
+end, P.BitsType("T") )
 
 
 -- convert Uint to Int
 generators.UtoI = R.FunctionGenerator("core.UtoI",{},{},
 function(args)
   return C.cast(args.T,types.Int(args.T.precision))
-end,
-T.rv(T.Par(P.UintType("T"))) )
+end, P.UintType("T") )
 
 
 -- convert Int to Uint
 generators.ItoU = R.FunctionGenerator("core.ItoU",{},{},
 function(args)
   return C.cast(args.T,types.Uint(args.T.precision))
-end,
-T.rv(T.Par(P.IntType("T"))) )
+end, P.IntType("T") )
 
 
 generators.LUT = R.FunctionGenerator("core.LUT",{"type1","luaFunction"},{},
 function(args)
   local vals = J.map(J.range(0,math.pow(2,args.T:verilogBits())-1),args.luaFunction)
   return RM.lut(args.T,args.type1,vals)
-end,
-T.rv(T.Par(P.UintType("T"))) )
+end, P.UintType("T") )
 
 generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},
 function(args)
@@ -130,6 +126,14 @@ generators.Rshift = R.FunctionGenerator("core.Rshift",{"type","rate"},{"number"}
     return R.FunctionGenerator("core.Rshift",{},{"number"},function(a) return C.rshiftConst( a.T, args.number ) end, P.NumberType("T") ):complete(args)
   else
     return R.FunctionGenerator("core.Rshift",{},{},function(a) return C.rshift( a.T1, a.T2 ) end, types.Tuple{P.NumberType("T1"),P.NumberType("T2")} ):complete(args)
+  end
+end)
+
+generators.RshiftE = R.FunctionGenerator("core.Rshift",{"type","rate"},{"number"}, function(args)
+  if args.number~=nil then
+    return C.rshiftEConst( args.type:deInterface(), args.number )
+  else
+    assert(false)
   end
 end)
 
@@ -272,10 +276,17 @@ generators.Neg = R.FunctionGenerator("core.Neg", {}, {"async"},
 function(a) return C.neg( a.T.precision ) end,
 T.rv(T.Par(P.IntType("T"))) )
 
-
 generators.Sub = R.FunctionGenerator("core.Sub",{},{"async"},
 function(args)
   return C.sub( args.T, args.T, args.T, args.async )
+end,
+T.tuple{P.NumberType("T"),P.NumberType("T")} )
+
+-- extend out bitwidth
+generators.SubE = R.FunctionGenerator("core.SubE",{},{"async"},
+function(args)
+  assert( args.T:isUint() or args.T:isInt() )
+  return C.sub( args.T, args.T, args.T:replaceVar("precision",args.T.precision+1), args.async )
 end,
 T.tuple{P.NumberType("T"),P.NumberType("T")} )
 
