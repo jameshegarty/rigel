@@ -16,9 +16,14 @@ if terralib~=nil then CT=require("generators.examplescommonTerra") end
 
 local C = {}
 
-C.identity = memoize(function(A)
+C.identity = memoize(function( A, name )
   err( A:isSchedule(),"C.identity: type should be schedule type, but is: "..tostring(A) )
-  local identity = RM.lift( "identity_"..J.verilogSanitize(tostring(A)), A:lower(), A:lower(), 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
+
+  if name==nil then
+    name = "identity_"..J.verilogSanitize(tostring(A))
+  end
+  
+  local identity = RM.lift( name, A:lower(), A:lower(), 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
 
   assert( identity.inputType == types.rv(A:lower()) )
   assert( identity.outputType == types.rv(A:lower()) )
@@ -235,17 +240,48 @@ C.multiply = memoize(function(A,B,outputType)
   return partial
 end)
 
+C.multiplyE = memoize(function( A, B, X )
+  err( types.isType(A), "C.multiplyE: lhs type must be type")
+  assert( A:isData() )
+  err( A:isUint() or A:isInt(), "C.multiplyE: lhs must be uint or int, but is: ",A )
+  err( types.isType(B), "C.multiplyE: rhs must be type")
+  assert( B:isData() )
+  err( B:isUint() or B:isInt(), "C.multiplyE: rhs must be uint or int, but is: ",B )
+  assert( X==nil )
+  assert( A:isUint()==B:isUint() )
+
+  local outputType = A:replaceVar("precision",A.precision+B.precision):replaceVar("exp",A.exp+B.exp)
+  local outL = A:replaceVar("precision",A.precision+B.precision)
+  local outR = B:replaceVar("precision",A.precision+B.precision)
+
+  local partial = RM.lift( J.sanitize("multE_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, outputType, nil,
+    function(sinp)
+      local i0 = S.index(sinp,0)
+      local lhs = S.cast(i0,outL)
+      local i1 = S.index(sinp,1)
+      local rhs = S.cast(i1,outR)
+      local res = lhs*rhs
+      print("i0",i0.type,lhs.type,i1.type,rhs.type,res.type)
+      return res
+    end)
+
+  return partial
+end)
+
 ------------
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
-C.multiplyConst = memoize(function( A, constValue, X )
+C.multiplyConst = memoize(function( A, constValue, outputType, X )
   err( types.isType(A), "C.multiply: A must be type")
   err( type(constValue)=="number","C.multiplyConst: value must be number, but is: "..tostring(constValue) )
   err(X==nil,"C.multiplyConst: too many arguments" )
+
+  if outputType==nil then outputType = A end
+  assert( types.isType(outputType) )
   
-  local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, nil,
-    function(sinp) return sinp*S.constant(constValue,A) end,
-    function() return CT.multiplyConst(A,constValue) end,
+  local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue).."_OT"..tostring(outputType)), A, outputType, nil,
+                           function(sinp) return S.cast(sinp,outputType)*S.constant(constValue,outputType:replaceVar("exp",0)) end,
+    function() return CT.multiplyConst(A,constValue,outputType) end,
     "C.multiplyConst" )
 
   return partial
@@ -313,9 +349,10 @@ C.AndUint = memoize(function(bits)
   return RM.lift( "AndUint_"..tostring(bits), types.tuple{types.Uint(bits),types.Uint(bits)}, types.Uint(bits), 0, function(sinp) return S.__and(S.index(sinp,0),S.index(sinp,1)) end )
 end)
 
-C.neg = memoize(function(bits)
+C.neg = memoize(function( bits, exp )
   assert(type(bits)=="number")
-  return RM.lift( "Neg_"..tostring(bits), types.Int(bits), types.Int(bits), 1, function(sinp) return S.neg(sinp) end )
+  if exp==nil then exp=0 end
+  return RM.lift( "Neg_"..tostring(bits), types.Int(bits,exp), types.Int(bits,exp), 1, function(sinp) return S.neg(sinp) end )
 end)
 
 C.tokenCounter = memoize(function(A,str,X)
@@ -349,12 +386,21 @@ C.sum = memoize(function( A, B, outputType, async )
   err( types.isType(B), "C.sum: B must be type")
   err( types.isType(outputType), "C.sum: outputType must be type")
 
+  err( A:isInt()==B:isInt() and A:isInt()==outputType:isInt(),"C.sum NYI: all types must have same signedness" )
+  err( A.exp==B.exp and A.exp==outputType.exp,"C.sum NYI: all type must have same exponant")
+  
   if async==nil then return C.sum(A,B,outputType,false) end
 
   err(type(async)=="boolean","C.sum: async must be boolean, but is: "..tostring(async))
 
   local delay
-  if async then delay = 0 else delay = math.floor(S.delayTable["+"][A:verilogBits()]*S.delayScale) end
+
+  if async then
+    delay = 0
+  else
+    local tab = S.delayTable["+"]
+    delay = math.floor(S.interp(tab,outputType:verilogBits())*S.delayScale)
+  end
 
   local partial = RM.lift(
     J.sanitize("sum_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
@@ -384,7 +430,7 @@ C.sub = memoize(function( A, B, outputType, async )
   local delay
   if async then delay = 0 else delay = 1 end
 
-    local partial = RM.lift( J.sanitize("sub_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
+  local partial = RM.lift( J.sanitize("sub_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
     function(sinp)
       local sout = S.cast(S.index(sinp,0),outputType)-S.cast(S.index(sinp,1),outputType)
       if async then sout = sout:disablePipelining() end
@@ -405,6 +451,16 @@ C.rshiftConst = memoize(function(A,const)
   local mod = RM.lift(J.sanitize("generators_rshift_const"..tostring(const).."_"..tostring(A)), A,A,0,
                       function(inp) return S.rshift(inp,S.constant(const,A)) end)
   return mod
+end)
+
+-- rshift while keeping all bits is a noop! only type changes
+C.rshiftEConst = memoize(function( A, const )
+  J.err( A:isInt() or A:isUint(),"RshiftE only works on int or uint" )
+
+  local outA = A:replaceVar("exp",A.exp-const)
+  local res = RM.lift(J.sanitize("RshiftE_"..tostring(A).."_"..tostring(const)), A, outA, 0,
+                                 function(inp) return S.rshiftE(inp,const) end)
+  return res
 end)
 
 -----------------------------
@@ -441,45 +497,54 @@ C.addMSBs = memoize(function(A,bits)
 end)
 
 -----------------------------
-C.removeMSBs = memoize(function(A,bits)
+C.removeMSBs = memoize(function(A,bits,X)
   err( types.isType(A),"C.removeMSBs: type should be rigel type")
   err( type(bits)=="number","C.removeMSBs: bits should be number or value")
-
+  assert(X==nil)
+  
   local otype
   if A:isUint() then
     J.err(A.precision>bits,"removeMSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
-    otype = types.uint(A.precision-bits)
+    otype = types.uint( A.precision-bits, A.exp )
   elseif A:isInt() then
     J.err(A.precision>bits,"removeMSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
-    otype = types.int(A.precision-bits)
+    otype = types.int( A.precision-bits, A.exp )
   else
     J.err( A:isUint() or A:isInt(), "generators.removeMSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
   local mod = RM.lift(J.sanitize("generators_removeMSBs_"..tostring(bits).."_"..tostring(A)), A,otype, 0,
-                      function(inp) return S.cast(inp,otype) end)
+                      function(inp) return S.cast(inp,otype) end,
+                      function() return CT.removeMSBs(A,bits,otype) end )
   return mod
 end)
 
 -----------------------------
-C.removeLSBs = memoize(function(A,bits)
+-- keepMagnitude: adjust the exp to keep magnitude of value the same
+C.removeLSBs = memoize(function( A, bits, keepMagnitude, X )
   err( types.isType(A),"C.removeLSBs: type should be rigel type")
   err( type(bits)=="number","C.removeLSBs: bits should be number or value")
-
+  if keepMagnitude==nil then keepMagnitude=false end
+  assert( X==nil )
+  
   local otype
   if A:isUint() then
     J.err(A.precision>bits,"removeLSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
-    otype = types.uint(A.precision-bits)
+    local exp = A.exp
+    if keepMagnitude then exp=exp+bits end
+    otype = types.uint( A.precision-bits, exp )
   elseif A:isInt() then
     J.err(A.precision>bits,"removeLSBs: can't remove all the bits! attempting to remove "..bits.." bits from "..tostring(A))
-    otype = types.int(A.precision-bits)
-    assert(false) -- NYI
+    local exp = A.exp
+    if keepMagnitude then exp = exp+bits end
+    otype = types.int( A.precision-bits, exp )
   else
     J.err( A:isUint() or A:isInt(), "generators.removeLSBs: type should be int or uint, but is: "..tostring(A) )
   end
   
   local mod = RM.lift(J.sanitize("generators_removeLSBs_"..tostring(bits).."_"..tostring(A)), A,otype,0,
-                      function(inp) return S.cast(S.rshift(inp,S.constant(bits,A)),otype) end)
+                      function(inp) return S.cast(S.rshift(inp,S.constant(bits,A)),otype) end,
+                      function() return CT.removeLSBs(A,bits,otype) end)
   return mod
 end)
 
@@ -547,9 +612,9 @@ C.valueToTrigger = memoize(function(ty)
 end)
 
 -----------------------------
-C.triggerToConstant = memoize(function(ty,value)
+C.triggerToConstant = memoize(function( ty, value )
   J.err( types.isType(ty), "C.triggerToConstant: type must be type")
-  return RM.lift( "TriggerToConstant_"..tostring(ty), types.Trigger, ty, 0,
+  return RM.lift( "TriggerToConstant_"..tostring(ty).."_"..tostring(value), types.Trigger, ty, 0,
     function(sinp) return S.constant(value,ty) end, nil,"C.triggerToConstant")
 end)
 
@@ -726,15 +791,12 @@ C.convolveTaps = memoize(function( A, ConvWidth, shift )
   if shift==nil then shift=7 end
 
   local TAP_TYPE = types.array2d( A, ConvWidth, ConvWidth )
----  local TAP_TYPE_CONST = TAP_TYPE:makeConst() XXX
   local TAP_TYPE_CONST = TAP_TYPE
 
   local INP_TYPE = types.tuple{types.array2d( A, ConvWidth, ConvWidth ),TAP_TYPE_CONST}
   local inp = R.input( types.rv(types.Par(INP_TYPE)) )
 
----  local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{A,A:makeConst()}), inp ) XXX
   local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvWidth,{A,A}), inp )
----  local conv = R.apply( "partial", RM.map( C.multiply(A,A:makeConst(), types.uint(32)), ConvWidth, ConvWidth ), packed ) XXX
   local conv = R.apply( "partial", RM.map( C.multiply(A,A, types.uint(32)), ConvWidth, ConvWidth ), packed )
   local conv = R.apply( "sum", RM.reduce( C.sum(types.uint(32),types.uint(32),types.uint(32)), ConvWidth, ConvWidth ), conv )
   local conv = R.apply( "touint8", C.shiftAndCast(types.uint(32),A,shift), conv )
@@ -800,7 +862,7 @@ end)
 -- returns a function from A[2][Width,Width]->reduceType
 -- 'reduceType' is the precision we do the sum
 C.SAD = memoize(function( A, reduceType, Width, X )
-  err( types.isType(A) and A:isData(),"SAD: type must be data type")
+  err( types.isType(A) and A:isData(),"SAD: type must be data type, but is: ", A)
   assert(X==nil)
 
   local inp = R.input( types.rv(types.Par(types.array2d( types.array2d(A,2) , Width, Width ))) )
@@ -1056,17 +1118,23 @@ end
 --
 -- Plug this back in, and to find the real value, we have:
 -- LUT(ffffffff) + 256, which has exponant n-17
-function C.lutinvert(ty,X)
+C.lutinvert = J.memoize(function( ty, X )
   assert(X==nil)
   assert(types.isType(ty))
   assert(ty:isData())
   local fixed = require "fixed"
-  fixed.expectFixed(ty)
-  local signed = fixed.extractSigned(ty)
+  --fixed.expectFixed(ty)
+  local signed = false
+  if ty:isInt() then signed = true end
+  if fixed.isFixedType(ty) and fixed.extractSigned(ty) then signed=true end
 
   --------------------
   local ainp = fixed.parameter("ainp",ty)
-  local a = ainp:hist("lutinvert_input")
+  local a = ainp
+  if fixed.isFixedType(ty)==false then
+    a = ainp:lift()
+  end
+  a = a:hist("lutinvert_input")
   local a_sign
   if signed then
     a_sign = a:sign()
@@ -1095,6 +1163,11 @@ function C.lutinvert(ty,X)
   local b = (b_inv:cast(types.uint(9))+fixed.plainconstant(256,types.uint(9))):liftFloat(-a_max-17,-a_min-17+8, b_exp:neg()-fixed.plainconstant(17, types.int(8)) )
   if signed then b = b:addSign(binp:index(2)) end
   b = b:hist("lutinvert_output")
+
+  if fixed.isFixedType(ty)==false then
+    -- convert back
+    b = b:lowerWithExp()
+  end
   local bfn = b:toRigelModule("lutinvert_b")
   ---------------
 
@@ -1109,10 +1182,12 @@ function C.lutinvert(ty,X)
 
   local inv = R.apply("inv", RM.lut(types.uint(lutbits), types.uint(8), invtable(lutbits)), aout_float_lsbs)
   local out = R.apply( "b", bfn, R.concat("binp",{inv,aout_exp,aout_sign}) )
+  print("LUTINVOUT",out.type)
   local fn = RM.lambda( "lutinvert", inp, out )
 
   return fn, fn.outputType
-end
+end)
+
 -------------
 C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, offset, overlap )
   J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
@@ -1847,11 +1922,8 @@ end)
 C.stencilLinebuffer = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, ymax, framed, X )
   err(types.isType(A), "stencilLinebuffer: A must be type, but is: "..tostring(A))
 
-  --local w,h = Uniform(w_orig):toNumber(),Uniform(h_orig):toNumber()
- 
   err(type(T)=="number","stencilLinebuffer: T must be number")
-  -- err(type(w)=="number","stencilLinebuffer: w must be number, but is: "..tostring(w))
-  --err(type(h)=="number","stencilLinebuffer: h must be number")
+
   err(type(xmin)=="number","stencilLinebuffer: xmin must be number")
   err(type(xmax)=="number","stencilLinebuffer: xmax must be number")
   err(type(ymin)=="number","stencilLinebuffer: ymin must be number")
@@ -1860,18 +1932,28 @@ C.stencilLinebuffer = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, 
   err(T>=0, "stencilLinebuffer: T must be >=0");
   err(Uniform(w_orig):toNumber()>0,"stencilLinebuffer: w must be >0");
   err(Uniform(h_orig):toNumber()>0,"stencilLinebuffer: h must be >0");
+
   err(xmin<=xmax,"stencilLinebuffer: xmin("..tostring(xmin)..")>xmax("..tostring(xmax)..")")
   err(ymin<=ymax,"stencilLinebuffer: ymin("..tostring(ymin)..") must be <= ymax("..tostring(ymax)..")")
-  err(xmax==0,"stencilLinebuffer: xmax must be 0")
-  err(ymax==0,"stencilLinebuffer: ymax must be 0")
+
+  err( xmax<=0,"stencilLinebuffer: NYI - xmax must be <=0")
+  err( ymax<=0,"stencilLinebuffer: NYI - ymax must be <=0")
 
   err(X==nil,"C.stencilLinebuffer: Too many arguments")
-  
-  local SSRFn = modules.SSR( A, T, xmin, ymin, framed, w_orig, h_orig)
 
-  local LBfn = modules.linebuffer( A, w_orig, h_orig, T, ymin, framed )
+  local fns = {modules.linebuffer( A, w_orig, h_orig, T, ymin, framed )}
+
+  table.insert( fns, modules.SSR( A, T, xmin, ymin, framed, w_orig, h_orig) )
+
+  if xmax~=0 or ymax~=0 then
+    -- not supported by stencil generator, but we can hack around this with a slice
+    assert( framed )
+    local G = require "generators.core"
+    table.insert( fns, G.Map{G.Slice{{0, xmax-xmin, 0, ymax-ymin}} } )
+  end
   
-  return C.compose( J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..tostring(w_orig).."_h"..tostring(h_orig).."_T"..tostring(T).."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin))), SSRFn, LBfn, "C.stencilLinebuffer" )
+
+  return C.linearPipeline( fns, J.sanitize("stencilLinebuffer_A"..tostring(A).."_w"..tostring(w_orig).."_h"..tostring(h_orig).."_T"..tostring(T).."_xmin"..tostring(math.abs(xmin)).."_xmax"..tostring(math.abs(xmax)).."_ymin"..tostring(math.abs(ymin)).."_ymax"..tostring(math.abs(ymax))) )
 end)
 
 -- this is basically the same as a stencilLinebuffer, but implemend using a register chain instead of rams
@@ -1948,30 +2030,35 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
   assert(type(stencilH)=="number")
   err(stencilH>0,"unpackStencil: stencilH must be >0, but is:"..tostring(stencilH))
   err(type(T)=="number","unpackStencil: vector width should be number, but is: "..tostring(T))
-  assert(T>=1)
+  err( T>=0, "unpackStencil: T must be >=0, but is: ",T)
   err(arrHeight==nil, "Error: NYI - unpackStencil on non-height-1 arrays")
   err( framed==nil or type(framed)=="boolean", "unpackStencil: framed must be nil or bool")
   if framed==nil then framed=false end
   assert(X==nil)
 
   local res = {kind="unpackStencil", stencilW=stencilW, stencilH=stencilH,T=T,generator="C.unpackStencil"}
-  res.inputType = types.array2d( A, stencilW+T-1, stencilH)
-  res.outputType = types.array2d( types.array2d( A, stencilW, stencilH), T )
+  res.inputType = types.array2d( A, stencilW+math.max(T,1)-1, stencilH)
 
+  if T==0 then
+    res.outputType = types.array2d( A, stencilW, stencilH)
+  else
+    res.outputType = types.array2d( types.array2d( A, stencilW, stencilH), T )
+  end
+  
   if framed then
-    local framedW, framedH = Uniform(framedW_orig):toNumber(), Uniform(framedH_orig):toNumber()
+    --local framedW, framedH = Uniform(framedW_orig):toNumber(), Uniform(framedH_orig):toNumber()
     --err( type(framedW)=="number", "unpackStencil: framedW must be number, but is: "..tostring(framedW))
     --err( type(framedH)=="number", "unpackStencil: framedH must be  number")
     
-    res.inputType = res.inputType:addDim(framedW/T,framedH,false)
-    res.outputType = res.outputType:addDim(framedW,framedH,true)
+    res.inputType = types.rv(types.Seq( res.inputType, framedW_orig, framedH_orig ))
+    res.outputType = types.rv(types.Seq( res.outputType, framedW_orig, framedH_orig ))
   else
   end
   
   res.sdfInput, res.sdfOutput = SDF{1,1}, SDF{1,1}
   res.stateful = false
   res.delay=0
-  res.name = J.sanitize("unpackStencil_"..tostring(A).."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T))
+  res.name = J.sanitize("unpackStencil_"..tostring(A).."_W"..tostring(stencilW).."_H"..tostring(stencilH).."_T"..tostring(T).."_framed"..tostring(framed).."_framedW"..tostring(framedW_orig).."_framedH"..tostring(framedH_orig) )
 
   if terralib~=nil then res.terraModule = CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight) end
 
@@ -1980,7 +2067,7 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
     
     local sinp = S.parameter("inp", rigel.extractData(res.inputType) )
     local out = {}
-    for i=1,T do
+    for i=1,math.max(T,1) do
       out[i] = {}
       for y=0,stencilH-1 do
         for x=0,stencilW-1 do
@@ -1988,8 +2075,18 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
         end
       end
     end
+
+
+    local stencils = J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)
+
+    local fin
+    if T==0 then
+      fin = stencils[1]
+    else
+      fin = S.cast( S.tuple(stencils), rigel.extractData(res.outputType) )
+    end
     
-    systolicModule:addFunction( S.lambda("process", sinp, S.cast( S.tuple(J.map(out,function(n) return S.cast( S.tuple(n), types.array2d(A,stencilW,stencilH) ) end)), rigel.extractData(res.outputType) ), "process_output", nil, nil, nil ) )
+    systolicModule:addFunction( S.lambda("process", sinp, fin, "process_output", nil, nil, nil ) )
 
     return systolicModule
   end
@@ -2032,8 +2129,8 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     err(idxHigh<W, "slice: idxHigh>=W")
     err(type(idyLow)=="number", "slice:idyLow must be number")
     err(type(idyHigh)=="number","slice:idyHigh must be number")
-    err(idyLow<H, "slice: idyLow must be <H")
-    err(idyHigh<H, "slice: idyHigh must be <H")
+    err(idyLow<H, "slice: idyLow must be < array H")
+    err(idyHigh<H, "slice: idyHigh must be < array H, but input type is: ",inputType," idyHigh:",idyHigh)
     assert(idxLow<=idxHigh)
     assert(idyLow<=idyHigh)
     local OT
@@ -2254,20 +2351,60 @@ function C.gaussian(W,sigma)
   return tab
 end
 
-C.plusConst = memoize(function( ty, value_orig, async)
+-- remove fractional component
+C.denormalize = memoize(function( ty )
+  err(types.isType(ty),"denormalize: first argument should be type, but is: ",ty)
+  err( ty:isInt() or ty:isUint(),"denormalize: must be int or uint, but is: ",ty )
+
+  local outbits = ty.precision+ty.exp
+  err( outbits>0,"denormalize: this type is fully fractional, so would disappear! ",ty )
+
+  local outType = ty:replaceVar("precision",outbits):replaceVar("exp",0)
+
+  if ty.exp==0 then
+    -- do nothing
+    return C.identity( ty, J.sanitize("Denormalize_"..tostring(ty) ) )
+  elseif ty.exp>0 then
+    -- make larger
+    local res = RM.lift( J.sanitize("Denormalize_"..tostring(ty)), ty, outType, 0,
+                         function(inp) return S.lshift(S.cast(inp,outType),S.constant(ty.exp,outType)) end)
+    return res
+  else -- ty.exp <0
+    local res = RM.lift( J.sanitize("Denormalize_"..tostring(ty)), ty, outType, 0,
+                         function(inp) return S.cast(S.rshift(inp,S.constant(-ty.exp,ty)), outType) end,
+                         function() return CT.denormalize(ty) end)
+    return res
+  end
+  
+  return res
+end)
+
+C.plusConst = memoize(function( ty, value_orig, async, outputType )
   err(types.isType(ty),"plus100: first argument should be type, but is: ",ty)
+
+  if async==nil then async=false end
+  assert( type(async)=="boolean" )
+
+  if outputType==nil then outputType = ty end
+  assert( types.isType(outputType) )
+
+  assert( ty.exp==outputType.exp )
+
   local value = Uniform(value_orig)
   err( value:isNumber(),"plusConst expected numeric input")
+  value = value * math.pow(2,math.max(-ty.exp,0))  -- rescale by exp, to be in right scale
 
+  print("VALUE",value_orig,value)
+  
   local instanceMap = value:getInstances()
   
-  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , J.sel(async==true,0,1) ,
+  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty, outputType , J.sel(async==true,0,1) ,
                               function(plus100inp)
-                                local res = plus100inp + value:toSystolic(ty)
+                                local res = S.cast(plus100inp,outputType) + S.cast(value:toSystolic(ty),outputType)
                                 if async==true then res = res:disablePipelining() end
                                 return res
                               end,
-                              function() return CT.plusConsttfn(ty,value) end, nil,nil, instanceMap )
+                              function() return CT.plusConsttfn( ty, value, outputType ) end, nil,nil, instanceMap )
   return plus100mod
 end)
 
@@ -2912,10 +3049,11 @@ end)
 -- for legacy reasons, changerate returns stuff in column major order.
 -- instead, do row major
 -- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
-C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W, H, X )
+C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig, H, X )
   J.err( type(outputItemsPerCyc)=="number", "ChangeRateRowMajor: outputItermsPerCyc should be number, but is: ",outputItemsPerCyc )
   J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
-  J.err( type(W)=="number", "ChangeRateRowMajor: W should be number, but is: ",W)
+  --J.err( type(W)=="number", "ChangeRateRowMajor: W should be number, but is: ",W)
+  local W = Uniform(W_orig)
   J.err( type(H)=="number", "ChangeRateRowMajor: H should be number, but is: ",H)
   
   local generators = require "generators.core"
@@ -2935,10 +3073,10 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W, H, X
   if Vw==W and Vh==H then
     inputType = types.RV( types.Array2d(ty,Vw,Vh) )
   else
-    inputType = types.RV( types.Array2d(ty,W,H,Vw,Vh) )
+    inputType = types.RV( types.Array2d( ty, W_orig, H, Vw, Vh ) )
   end
   
-  outputType = types.RV( types.Array2d( ty, W, H, V2w, V2h ) )
+  outputType = types.RV( types.Array2d( ty, W_orig, H, V2w, V2h ) )
 
   local res = generators.Function{
     "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(inputType:extractData()),

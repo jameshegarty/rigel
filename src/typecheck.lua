@@ -50,6 +50,8 @@ local function typecheck_inner( ast, newNodeFn )
       ast.type = ast.expr.type
     elseif ast.op=="isX" then
       ast.type = types.bool()
+    elseif ast.op=="rshiftE" then
+      ast.type = expr.type:replaceVar("exp",expr.type.exp-ast.const)
     else
       print(ast.op)
       assert(false)
@@ -226,7 +228,7 @@ local function typecheck_inner( ast, newNodeFn )
     ast.type = types.array2d( typeOver, ast.W, ast.H )
   elseif ast.kind=="cast" then
     if types.checkExplicitCast( ast.inputs[1].type, ast.type, ast)==false then
-      error("Casting from "..tostring(ast.inputs[1].type).." to "..tostring(ast.type).." isn't allowed! ",ast.loc)
+      J.err(false,"Casting from "..tostring(ast.inputs[1].type).." to "..tostring(ast.type).." isn't allowed! ",ast.loc)
     end
   else
     error("Internal error, typechecking for "..ast.kind.." isn't implemented! ",ast.loc)

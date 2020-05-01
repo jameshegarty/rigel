@@ -138,7 +138,7 @@ P.pyramidIterTaps = J.memoize(function(i,doDownsample,internalT,W,H,ConvWidth,no
   --st_tap_inp = R.apply("ST",C.SoAtoAoSHandshake(convT,1,{st_type,TAP_TYPE}),st_tap_inp)
   out = R.apply("PT", RM.makeHandshake(C.packTapBroad(types.array2d(st_type,convT),TAP_TYPE,taps,convT)), out)
   out = R.apply("SOA",RM.makeHandshake(RM.SoAtoAoS(convT,1,{st_type,TAP_TYPE})),out)
-  out = R.apply("conv_", RM.makeHandshake(RM.map(convolvefntaps,convT)), out)
+  out = R.apply("conv", RM.makeHandshake(RM.map(convolvefntaps,convT)), out)
   
   if #statements>0 then
     table.insert(statements,1,out)

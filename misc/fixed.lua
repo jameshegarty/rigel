@@ -201,9 +201,14 @@ function fixed.plainconstant( value, ty )
 end
 
 function fixedASTFunctions:lift(exponant)
-  err(fixed.isFixedType(self.type)==false, "expected non-fixed type: "..self.loc)
+  err(fixed.isFixedType(self.type)==false, "expected non-fixed type: ",self.loc)
   if self.type:isUint() then
+    if exponant==nil then exponant=self.type.exp end
     local ty = fixed.type(false,self.type.precision,exponant)
+    return fixed.new{kind="lift",type=ty,inputs={self},loc=getloc()}
+  elseif self.type:isInt() then
+    assert(exponant==nil)
+    local ty = fixed.type(true,self.type.precision,self.type.exp)
     return fixed.new{kind="lift",type=ty,inputs={self},loc=getloc()}
   else
     print("Could not lift type "..tostring(self.type))
@@ -213,7 +218,7 @@ end
 
 -- Throws out OR adds information, to the LSBs
 function fixedASTFunctions:normalize(precision)
-  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( fixed.isFixedType(self.type), "expected fixed type: ",self.loc)
   local expshift = self:precision()-precision
   local ty = fixed.type(self:isSigned(), precision, self:exp()+expshift)
   return fixed.new{kind="normalize", type=ty,inputs={self},loc=getloc()}
@@ -221,14 +226,14 @@ end
 
 -- throw out information! from the MSBs
 function fixedASTFunctions:truncate(precision)
-  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( fixed.isFixedType(self.type), "expected fixed type: ",self.loc)
   local ty = fixed.type(self:isSigned(), precision, self:exp())
   return fixed.new{kind="truncate", type=ty,inputs={self},loc=getloc()}
 end
 
 -- pad to a target precision and exp
 function fixedASTFunctions:pad(precision,exp)
-  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( fixed.isFixedType(self.type), "expected fixed type: ",self.loc)
   err( exp<=self:exp(), "pad shouldn't make exp larger") -- making exponant larger => bits shift right
   err( precision>=self:precision()+(self:exp()-exp), "pad shouldn't throw out data")
   local ty = fixed.type(self:isSigned(), precision, exp)
@@ -238,7 +243,7 @@ end
 -- removes exponant.
 -- this may throw out data! if exp<0
 function fixedASTFunctions:denormalize()
-  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( fixed.isFixedType(self.type), "expected fixed type: ",self.loc)
   local prec = self:precision()+self:exp()
   err( prec>0, "denormalize: this value is purely fractional! all data will be lost")
   return fixed.new{kind="denormalize", type=fixed.type(self:isSigned(), prec, 0),inputs={self},loc=getloc()}
@@ -260,18 +265,28 @@ end
 
 function fixedASTFunctions:hist(name)
   assert(type(name)=="string")
-  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( fixed.isFixedType(self.type), "expected fixed type: ",self.loc)
 
   return fixed.new{kind="hist", type=self.type, name=name,inputs={self},loc=getloc()}
 end
 
 -- allowExp: should we allow you to lower something with a non-zero exp? or throw an error
 function fixedASTFunctions:lower(allowExp)
-  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( fixed.isFixedType(self.type), "expected fixed type: ",self.loc)
 
   if allowExp~=true then err( self:exp()==0, "attempting to lower a value with nonzero exp") end
 
   return fixed.new{kind="lower", type=fixed.extract(self.type),inputs={self},loc=getloc()}
+end
+
+function fixedASTFunctions:lowerWithExp()
+  local ot
+  if self:isSigned() then
+    ot = types.Int(self:precision(),self:exp())
+  else
+    ot = types.Uint(self:precision(),self:exp())
+  end
+  return fixed.new{kind="lowerWithExp", type=ot, inputs={self},loc=getloc()}
 end
 
 function fixedASTFunctions:disablePipelining()
@@ -279,7 +294,7 @@ function fixedASTFunctions:disablePipelining()
 end
 
 function fixedASTFunctions:toSigned()
-  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( fixed.isFixedType(self.type), "expected fixed type: ",self.loc)
   if self:isSigned() then
 return self
   end
@@ -289,7 +304,7 @@ return self
 end
 
 function fixedASTFunctions:rshift(N)
-  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( fixed.isFixedType(self.type), "expected fixed type: ",self.loc)
   err( type(N)=="number", "rshift input must be number" )
   err( N>0, "rshift input must be >0")
   
@@ -297,7 +312,7 @@ function fixedASTFunctions:rshift(N)
 end
 
 function fixedASTFunctions:lshift(N)
-  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
+  err( fixed.isFixedType(self.type), "expected fixed type: ",self.loc)
   return fixed.new{kind="lshift", type=fixed.type(self:isSigned(), self:precision(), self:exp()+N),shift=N,inputs={self},loc=getloc()}
 end
 
@@ -355,34 +370,6 @@ function fixedASTFunctions:cast(to)
   assert(types.isType(to))
   return fixed.new{kind="cast",type=to, inputs={self}, loc=getloc()}
 end
-
---[=[
-function fixedASTFunctions:cast(to)
-  err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
-  err( fixed.isFixedType(to), "expected cast to fixed type: "..self.loc)
-
-  err( self:isSigned()==fixed.extractSigned(to), "sign must match")
-  
-  print("CAST",self.type, to)
-
-  local res = self
-  if fixed.extractExp(to)<res:exp() then
-    res = res:rshift( res:exp() - fixed.extractExp(to) )
-  end
-
-  assert( res:exp() == fixed.extractExp(to) )
- 
-  if fixed.extractPrecision(to) < res:precision() then
-    res = res:truncate(fixed.extractPrecision(to))
-  elseif fixed.extractPrecision(to) > res:precision() then
-    res = res:pad(fixed.extractPrecision(to),)
-  end
-  
-  err( res.type==to, "fixed cast failed, from "..tostring(self.type).." to "..tostring(to))
-
-  return res
-end
-]=]
 
 local function boolbinop(op,l,r)
   if (l.type:isInt() or l.type:isUint()) and (r.type:isInt() or r.type:isUint()) then
@@ -446,7 +433,7 @@ end
 
 -- return the sign bit. true: positive (>=0), false: negative
 function fixedASTFunctions:sign()
-  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err(fixed.isFixedType(self.type), "expected fixed point type: ",self.loc)
   err( self:isSigned(), "getting the sign of a unsigned type is futile")
   return fixed.new{kind="sign", type=types.bool(), inputs={self}, loc=getloc()}
 end
@@ -459,7 +446,7 @@ function fixedASTFunctions:addSign(inp)
 end
 
 function fixedASTFunctions:abs()
-  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err(fixed.isFixedType(self.type), "expected fixed point type: ",self.loc)
   err( self:isSigned(), "abs value of a non-signed type is futile")
 
   -- we actually _CANT_ throw out data here. signed number lose one value
@@ -476,21 +463,20 @@ function fixedASTFunctions:__not()
 end
 
 function fixedASTFunctions:neg()
-  --err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
   err( self.type:isInt() or self:isSigned(), "neg value of a non-signed type is futile")
   return fixed.new{kind="neg", type=self.type, inputs={self}, loc=getloc()}
 end
 
 -- returns a floating exponant for this value, where the mantissa is stored in 'prec' bits.
 function fixedASTFunctions:msb(prec)
-  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err(fixed.isFixedType(self.type), "expected fixed point type: ",self.loc)
   err( self:isSigned()==false, "msb with signed value")
 
   return fixed.new{kind="msb", type=types.int(8), precision = prec, inputs={self}, loc=getloc()}
 end
 
 function fixedASTFunctions:float(floatexp, prec)
-  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err(fixed.isFixedType(self.type), "expected fixed point type: ",self.loc)
   err( floatexp.type==types.int(8), "float exp should be int8")
   err( type(prec)=="number", "prec should be number" )
   assert(prec>0)
@@ -513,17 +499,17 @@ function fixedASTFunctions:liftFloat(minExp, maxExp, floatExp)
 end
 
 function fixedASTFunctions:isSigned()
-  err(fixed.isFixedType(self.type), "expected fixed point type, but was: "..tostring(self.type)..self.loc)
+  err(fixed.isFixedType(self.type), "expected fixed point type, but was: ",self.type,self.loc)
   return self.type.params.signed
 end
 
 function fixedASTFunctions:exp()
-  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err(fixed.isFixedType(self.type), "expected fixed point type: ",self.loc)
   return self.type.params.exp
 end
 
 function fixedASTFunctions:precision()
-  err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
+  err(fixed.isFixedType(self.type), "expected fixed point type: ",self.loc)
   return self.type.params.precision
 end
 
@@ -620,6 +606,8 @@ function fixedASTFunctions:toSystolic(inp)
       elseif n.kind=="lift" or n.kind=="lower" then
         -- don't actually do anything: we only add the wrapper at the very end
         res = args[1]
+      elseif n.kind=="lowerWithExp" then
+        res = S.cast(args[1],n.type)
       elseif n.kind=="constant" then
         res = S.constant( n.value, fixed.extract(n.type) )
       elseif n.kind=="plainconstant" then

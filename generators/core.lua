@@ -21,6 +21,7 @@ generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"type","rate","size
 function(args)
   local V = J.canonicalV( args.rate, args.size )
 
+  --print("BROADCAST",args.type,args.rate,args.size,V)
   local inputType = args.type:deSchedule()
   
   if V==args.size then
@@ -86,42 +87,35 @@ T.VarSeq(T.Par(P.DataType("T")),P.SizeValue("InSize")) )
 -- bits to unsigned
 generators.BtoU = R.FunctionGenerator("core.BtoU",{},{},
 function(args)
-  return C.cast(args.T,types.uint(args.T.precision))
-end,
-T.rv(T.Par(P.BitsType("T")) ) )
+  return C.cast( args.T, types.uint( args.T.precision ))
+end, P.BitsType("T") )
 
 
 -- convert Uint to Int
 generators.UtoI = R.FunctionGenerator("core.UtoI",{},{},
 function(args)
-  return C.cast(args.T,types.Int(args.T.precision))
-end,
-T.rv(T.Par(P.UintType("T"))) )
+  return C.cast( args.T, types.Int( args.T.precision, args.T.exp ))
+end, P.UintType("T") )
 
 
 -- convert Int to Uint
 generators.ItoU = R.FunctionGenerator("core.ItoU",{},{},
 function(args)
-  return C.cast(args.T,types.Uint(args.T.precision))
-end,
-T.rv(T.Par(P.IntType("T"))) )
+  return C.cast( args.T, types.Uint( args.T.precision, args.T.exp ))
+end, P.IntType("T") )
 
 
 generators.LUT = R.FunctionGenerator("core.LUT",{"type1","luaFunction"},{},
 function(args)
   local vals = J.map(J.range(0,math.pow(2,args.T:verilogBits())-1),args.luaFunction)
   return RM.lut(args.T,args.type1,vals)
-end,
-T.rv(T.Par(P.UintType("T"))) )
-
-
+end, P.UintType("T") )
 
 generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},
 function(args)
   return C.print( args.T, args.string )
 end,
 P.DataType("T") )
-
 
 generators.FlattenBits = R.FunctionGenerator("core.FlattenBits",{"type"},{},function(args) return C.flattenBits(args.type) end)
 
@@ -135,28 +129,57 @@ generators.Rshift = R.FunctionGenerator("core.Rshift",{"type","rate"},{"number"}
   end
 end)
 
+generators.RshiftE = R.FunctionGenerator("core.Rshift",{"type","rate"},{"number"}, function(args)
+  if args.number~=nil then
+    return C.rshiftEConst( args.type:deInterface(), args.number )
+  else
+    assert(false)
+  end
+end)
+
 generators.AddMSBs = R.FunctionGenerator("core.AddMSBs",{},{"number"}, function(args) return C.addMSBs(args.T,args.number) end, P.NumberType("T") )
 generators.RemoveMSBs = R.FunctionGenerator("core.RemoveMSBs",{"number"},{}, function(args) return C.removeMSBs(args.T,args.number) end, P.NumberType("T") )
-generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"}, function(args) return C.removeLSBs(args.T,args.number) end, T.rv(T.Par(P.NumberType("T"))) )
+
+generators.RemoveLSBs = R.FunctionGenerator("core.RemoveLSBs",{"type","rate"},{"number"},
+   function(args) return C.removeLSBs(args.T,args.number) end, P.NumberType("T") )
+
+generators.RemoveLSBsE = R.FunctionGenerator("core.RemoveLSBsE",{"type","rate"},{"number"},
+   function(args) return C.removeLSBs(args.T,args.number,true) end, P.NumberType("T") )
 
 generators.Index = R.FunctionGenerator("core.Index",{"type","rate"},{"number","size"},
 function(a)
   local ty = a.type:deInterface()
-  J.err( ty:isData(),"Index: input should be parallel type, but is: ", a.type )
-  
-  local ity
-  if ty:isArray() then
-    ity = T.array2d(ty:arrayOver(),ty.size)
-  elseif ty:isTuple() then
-    ity = T.tuple(ty.list)
+  --J.err( ty:isData(),"Index: input should be parallel type, but is: ", a.type )
+
+  if ty:isData() then
+    local ity
+    if ty:isArray() then
+      ity = T.array2d(ty:arrayOver(),ty.size)
+    elseif ty:isTuple() then
+      ity = T.tuple(ty.list)
+    else
+      J.err( false, "Index: unsupported type: ",a.type )
+    end
+    
+    if a.size~=nil then
+      return C.index(ity,a.size[1],a.size[2])
+    else
+      return C.index(ity,a.number)
+    end
   else
-    J.err( false, "Index: unsupported type: ",a.type )
-  end
-  
-  if a.size~=nil then
-    return C.index(ity,a.size[1],a.size[2])
-  else
-    return C.index(ity,a.number)
+    -- perhaps this is a Seq or ParSeq?
+    J.err( ty:isArray(),"Index: schedule type input is not an array? what could it be? ",ty)
+    J.err( ty.V:eq(R.Size(0,0)) or ty.V:eq(R.Size(1,1)),"Index: array vector size must be 0 or 1, but type is: ",ty)
+
+    local x,y
+    if a.size~=nil then
+      x = a.size[1]
+      y = a.size[2]
+    else
+      x=a.number
+      y=0
+    end
+    return RM.cropSeq( ty:arrayOver(), ty.size[1], ty.size[2], ty.V[1], math.max(x-1,0), math.min(ty.size[1]-x,ty.size[1]-1), math.max(y-1,0), math.min(ty.size[2]-y,ty.size[2]-1), true, true )
   end
 end)
 
@@ -188,18 +211,28 @@ generators.FanOut = R.FunctionGenerator("core.FanOut",{"type","rate"},{"number",
 function(args)
   local size = args.size
   if args.number~=nil then size={args.number,1} end
-  
-  return RM.broadcastStream( args.type:deInterface(), size[1], size[2] )
+
+  if args.type:isrv() then
+    -- trivial case!
+    return C.broadcast( args.type:deInterface(), size[1], size[2] )
+  else
+    return RM.broadcastStream( args.type:deInterface(), size[1], size[2] )
+  end
 end)
 
 generators.FanIn = R.FunctionGenerator("core.FanIn",{"type","rate"},{"bool"},
 function(args)
-  if args.type:isTuple() then
-    return RM.packTuple( args.type.list, args.bool )
-  elseif args.type:isArray() then
-    return RM.packTuple( args.type, args.bool, args.type.size )
+  if args.type:isrv() then
+    -- trivial case: do nothing!
+    return C.identity( args.type:deInterface() )
   else
-    J.err(false, "FanIn: expected handshaked tuple or array input, but is: "..tostring(args.type))
+    if args.type:isTuple() then
+      return RM.packTuple( args.type.list, args.bool )
+    elseif args.type:isArray() then
+      return RM.packTuple( args.type, args.bool, args.type.size )
+    else
+      J.err(false, "FanIn: expected handshaked tuple or array input, but is: "..tostring(args.type))
+    end
   end
 end)
 
@@ -210,7 +243,6 @@ end )
   
 generators.NE = R.FunctionGenerator("core.NE",{},{"async","number"},
 function(args)
-  
   local res = {}
   if args.number~=nil then
     -- add a const (unary op)
@@ -232,26 +264,55 @@ function(args)
   end
 end)
 
+generators.AddE = R.FunctionGenerator("core.Add",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    
+    return R.FunctionGenerator( "core.AddConst", {}, {"async","number"},
+                                function(a)
+                                  local bts = math.ceil(math.log(args.number)/math.log(2))+math.max(-a.T.exp,0)
+                                  local bb = math.max(a.T.precision,bts)+1
+                                  return C.plusConst( a.T, args.number, args.async, a.T:replaceVar("precision",bb) )
+                                end,
+                                P.NumberType("T") ):complete(args)
+  else
+    return R.FunctionGenerator("core.AddENonconst", {}, {"async","number"},
+                               function(a)
+                                 local OT = a.T:replaceVar("precision",a.T.precision+1)
+                                 return C.sum( a.T, a.T, OT, args.async )
+                               end,
+      T.tuple{P.NumberType("T"),P.NumberType("T")} ):complete(args)
+  end
+end)
+
 -- {{idxType,vType},{idxType,vType}} -> {idxType,vType}
 -- async: 0 cycle delay
 generators.ArgMax = R.FunctionGenerator("core.ArgMax", {}, {"async"},
 function(a) return C.argmin( a.idx, a.T, a.async, true ) end,
-T.rv(T.Par(T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P.NumberType("T")}})) )
+T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P.NumberType("T")}} )
 
 
 generators.ArgMin = R.FunctionGenerator("core.ArgMin", {}, {"async"},
-function(a) return C.argmin( a.idx, a.T, a.async, true ) end,
-T.rv(T.Par(T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P.NumberType("T")}})) )
+function(a) return C.argmin( a.idx, a.T, a.async, false ) end,
+T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P.NumberType("T")}} )
 
 
 generators.Neg = R.FunctionGenerator("core.Neg", {}, {"async"},
-function(a) return C.neg( a.T.precision ) end,
-T.rv(T.Par(P.IntType("T"))) )
-
+function(a) return C.neg( a.T.precision, a.T.exp ) end,
+P.IntType("T") )
 
 generators.Sub = R.FunctionGenerator("core.Sub",{},{"async"},
 function(args)
   return C.sub( args.T, args.T, args.T, args.async )
+end,
+T.tuple{P.NumberType("T"),P.NumberType("T")} )
+
+-- extend out bitwidth
+generators.SubE = R.FunctionGenerator("core.SubE",{},{"async"},
+function(args)
+  assert( args.T:isUint() or args.T:isInt() )
+  return C.sub( args.T, args.T, args.T:replaceVar("precision",args.T.precision+1), args.async )
 end,
 T.tuple{P.NumberType("T"),P.NumberType("T")} )
 
@@ -262,6 +323,22 @@ function(args)
       function(a) return C.multiplyConst( a.T, args.number, a.async ) end, P.NumberType("T") ):complete(args)
   else
     return R.FunctionGenerator("core.Mul",{},{"async","number"},function(a) return C.multiply( a.T, a.T, a.T, args.async ) end, T.tuple{P.NumberType("T"),P.NumberType("T")}):complete(args)
+  end
+end)
+
+generators.MulE = R.FunctionGenerator("core.MulE",{"type","rate"},{"number","async"},
+function(args)
+  if args.number~=nil then
+    local bts = math.ceil(math.log(args.number)/math.log(2))
+
+      return R.FunctionGenerator("core.MulEConst",{},{"async","number"},
+                                 function(a)
+                                   local OT = a.L:replaceVar("precision",a.L.precision+bts)
+                                   return C.multiplyConst( a.L, args.number, OT )
+                                 end,
+                                 P.NumberType("L")):complete(args)
+  else
+    return R.FunctionGenerator("core.MulE",{},{"async","number"},function(a) return C.multiplyE( a.L, a.R, args.async ) end, T.tuple{P.NumberType("L"),P.NumberType("R")}):complete(args)
   end
 end)
 
@@ -289,7 +366,12 @@ end)
 
 generators.Abs = R.FunctionGenerator("core.Abs",{},{"async"},
 function(a) return C.Abs( a.T, a.async ) end,
-T.rv(T.Par(P.NumberType("T"))) )
+P.NumberType("T") )
+
+-- remove fractional component
+generators.Denormalize = R.FunctionGenerator("core.Denormalize",{},{},
+function(a) return C.denormalize( a.T ) end,
+P.NumberType("T") )
 
 generators.And = R.FunctionGenerator("core.And",{"type","rate"},{"async"},
 function(args)
@@ -311,21 +393,28 @@ function(args)
   return C.Not
 end)
 
-generators.Zip = R.FunctionGenerator("core.Zip",{"type"},{},
-function(args)
-  local typelist = {}
-  for k,v in ipairs(args.list) do
-    typelist[k] = v:arrayOver()
-  end
+local function zipfn(asArray)
+  return function(args)
+    local typelist = {}
+    for k,v in ipairs(args.list) do
+      typelist[k] = v:arrayOver()
+      J.err( v.size:eq(args.list[1].size),"Zip: all input arrays  that you are zipping must have same size! item0 size:",args.list[1].size," item",k-1,"size:",v.size," inputType:",args.type)
+    end
 
-  if args.V:eq(0,0) then
-    return RM.ZipSeq( false, typelist, args.size[1], args.size[2] )
-  else
-    return RM.SoAtoAoS( args.V[1], args.V[2], typelist, nil, args.size[1], args.size[2] )
+    if args.V:eq(0,0) then
+      assert(asArray==false) -- NYI
+      return RM.ZipSeq( false, typelist, args.size[1], args.size[2] )
+    else
+      return RM.SoAtoAoS( args.V[1], args.V[2], typelist, asArray, args.size[1], args.size[2] )
+    end
   end
-end,
+end
+
+generators.Zip = R.FunctionGenerator("core.Zip",{"type"},{},zipfn(false),
 T.tuple(P.TypeList("list",T.array2d( P.ScheduleType("S$"), P.SizeValue("size"), P.SizeValue("V") ))) )
 
+generators.ZipToArray = R.FunctionGenerator("core.ZipToArray",{"type"},{},zipfn(true),
+T.tuple(P.TypeList("list",T.array2d( P.ScheduleType("S$"), P.SizeValue("size"), P.SizeValue("V") ))) )
 
 generators.Linebuffer = R.FunctionGenerator("core.Linebuffer",{"type","size","number","bounds","rate"},{},
 function(args)
@@ -355,10 +444,28 @@ function(a)
 end,
 types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
 
+-- make a stencil with its interior filled with stencils
+-- "bounds" is for the outer stencil, "size" is for the inner stencil.
+--     since the inner stencil is all overlap regions fully contained in the outer stencil, this makes sense...
+generators.StencilOfStencils = R.FunctionGenerator("core.StencilOfStencils",{"bounds","rate","size"},{},
+function(a)
+  J.err( a.imsize:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
+  local f = C.stencilLinebuffer( a.T, a.imsize[1], a.imsize[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+  local stencilW = a.bounds[2]-a.bounds[1]+1
+  local stencilH = a.bounds[4]-a.bounds[3]+1
+
+  J.err( a.size[2]==stencilH, "NYI - StencilOfStencils, height of inner stencil must be height of outer stencil")
+  
+  local g = C.unpackStencil( a.T, a.size[1], a.size[2], stencilW-a.size[1]+1, nil, true, a.imsize[1], a.imsize[2])
+
+  return C.compose("StencilOfStencils",g,f)
+end,
+types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("imsize")) )
+
 generators.Pad = R.FunctionGenerator("core.Pad",{"bounds"},{},
 function(a)
   J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Pad: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
-  return RM.padSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],0,true)
+  return RM.padSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],a.T:fakeValue(),true)
 end,
 T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
 
@@ -466,6 +573,13 @@ function(args)
   assert(false)
 end,
 T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")))
+
+-- This only works if the array size doesn't change!!
+generators.Flatmap = R.FunctionGenerator("core.Flatmap",{"rigelFunction","type","rate"},{},
+function(args)
+  return RM.flatmap( args.rigelFunction, args.V[1], args.V[2], args.size[1], args.size[2], args.V[1], args.V[2], args.size[1], args.size[2] )
+end,
+T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")) )
 
 generators.Reduce = R.FunctionGenerator("core.Reduce",{"rigelFunction"},{},
 function(args)
@@ -625,7 +739,7 @@ end,nil,false)
 -- string is name
 generators.SchedulableFunction = R.FunctionGenerator("core.Function",{"luaFunction","type","type1"},{"string","rate"},
 function(args)
-  print("Scheculed SchedulableFunction ",args.type,args.type1)
+  print("Schecule SchedulableFunction ",args.string,args.type,args.type1)
   
   if args.string==nil then
     args.string = "unnamedSchedulableFunction"..__unnamedID
@@ -633,15 +747,16 @@ function(args)
   end
 
   J.err( args.type1:isData(),"SchedulableFunction declared input type should be data type, but is: ",args.type1 )
-  J.err( args.type1:isSupertypeOf(args.type:deSchedule(),{},""),"SchedulableFunction was passed an input type that can't be converted to declared type! declared:", args.type1, " passed:", args.type )
+  J.err( args.type1:isSupertypeOf(args.type:deSchedule(),{},""),"SchedulableFunction '",args.string,"' was passed an input type that can't be converted to declared type! declared:", args.type1, " passed:", args.type )
 
   local schedulePassInput = R.input( types.rv(args.type:deInterface()), args.rate, true )
   local scheduleOut = args.luaFunction(schedulePassInput)
+
   J.err( R.isIR(scheduleOut), "SchedulableFunction: user function returned something other than a Rigel value? ",scheduleOut)
   J.err( type(scheduleOut.scheduleConstraints)=="table","Internal Error, schedule pass didn't return constraints?")
   J.err( type(scheduleOut.scheduleConstraints.RV)=="boolean","Internal Error, schedule pass didn't return RV constraint?")
   
-  print("Schedule Pass result, RV:", scheduleOut.scheduleConstraints.RV )
+  print("Schedule Pass result, ",args.string," RV:", scheduleOut.scheduleConstraints.RV )
   
   local input
   if scheduleOut.scheduleConstraints.RV then
@@ -651,33 +766,18 @@ function(args)
     input = R.input( types.rv(args.type:deInterface()), args.rate )
   end
 
-  print("Schedulable input type:",input.type)
+  print("Schedulable function ",args.string," input type:",input.type)
   
   local out = args.luaFunction(input)
   J.err( R.isIR(out), "SchedulableFunction: user function returned something other than a Rigel value? "..tostring(out))
 
-  return RM.lambda( args.string, input, out )
+  local resFn = RM.lambda( args.string, input, out )
+
+  -- this will enable auto-lifting...
+  return R.FunctionGenerator("core.ScheduleableFunction_"..args.string,{},{"luaFunction","string","type1"},function(a) return resFn end,
+                             resFn.inputType:deInterface() ):complete(args)
+
 end,nil,true)
-
---generators.Function = generators.Module
-
---[=[
-generators.Generator = R.FunctionGenerator("core.Generator",{"luaFunction","type","type1"},{"string","rate1","instanceList"},
-function(args)
-  if args.string==nil then
-    args.string = "unnamedModuleGen"..__unnamedID
-    __unnamedID = __unnamedID+1
-  end
-
-  return R.FunctionGenerator( args.string,{"type","luaFunction","type1"},{"string","instanceList","rate"},
-    function(a)
-      local input = R.input( a.type, args.rate )
-      local out = args.luaFunction(input)
-      J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
-  
-      return RM.lambda( args.string, input, out, args.instanceList )
-    end,args.type1:deInterface()):complete(args)
-  end)]=]
 
 -- rigelFunction: the fn to call to perform the AXI read
 generators.AXIReadBurst = R.FunctionGenerator("core.AXIReadBurst",{"string","size","type","type1","rate","rigelFunction"},{"number","address"},
@@ -695,55 +795,11 @@ function(args)
 end,
 types.uint(32) )
 
-
 generators.AXIWriteBurst = R.FunctionGenerator("core.AXIWriteBurst",{"string","rigelFunction"},{"address"},
 function(a)
   return SOC.writeBurst( a.string, a.size[1], a.size[2], a.T, a.V[1], a.V[2], true, a.rigelFunction, a.address )
 end,
 types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
-
---[=[
-generators.Reshape = R.FunctionGenerator("core.Reshape",{"type","rate"},{},
-function(args)
-  local ratio = Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()
-
-  if ratio<=1 then
-    if args.type:isRV() then
-
-      local function reduceRatio(ty)
-        if ty:isArray() then
-          if ty.V:eq(0,0) then
-            -- recurse until we find something we can devectorize
-            return generators.Map{reduceRatio(ty:arrayOver())}
-          else
-            local chan = canonicalV( args.rate, ty.V )
-            return generators.SerToWidth{chan}
-          end
-        else
-          -- Not an array, so can't do anything, just do a passthrough
-          return generators.Identity
-        end
-      end
-      
-      return reduceRatio( args.type:deInterface(), ratio ):complete(args)
-    else
-      print("Reshape: upsupported type ",args.type)
-      assert(false)
-    end
-  end
-
-  -- even if ratio==1, we still want it to break T[1;W,H} into T{W,H} canonical form
---  if ratio==1 and args.type:deInterface():isArray() and
---    Uniform(args.type:deInterface().V[1]):toNumber()==1 and
---    Uniform(args.type:deInterface().V[2]):toNumber()==1 
---  then
---    return generators.SerToWidth{0}:complete(args)
---  end
-  
-  -- if ratio >=1, don't do anything:
-  return generators.Identity:complete(args)
-end)
-]=]
 
 -- change dims of array
 generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size"},{},
@@ -753,7 +809,6 @@ function(args)
 end,
 types.array2d(P.DataType("T"),P.SizeValue("insize")) )
 
-
 generators.Sort = R.FunctionGenerator("core.Sort",{"rigelFunction"},{},
 function(args)
   J.err( args.size[2]==1,"generators.Sort: must be 1d array" )
@@ -761,11 +816,9 @@ function(args)
 end,
 types.array2d(P.DataType("T"),P.SizeValue("size")) )
 
-
 generators.Identity = R.FunctionGenerator("core.Identity",{},{},
 function(args) return C.identity(args.T) end,
 P.DataType("T") )
-
 
 generators.Sel = R.FunctionGenerator("core.Sel",{},{},
 function(args)
@@ -774,10 +827,14 @@ end,
 types.tuple{types.bool(),P.DataType("T"),P.DataType("T")} )
 
 
-generators.Slice = R.FunctionGenerator("core.Slice",{"size"},{},
+generators.Slice = R.FunctionGenerator("core.Slice",{},{"bounds","size"},
 function(args)
-  J.err( args.arsize[2]==1, "generators.Slice: NYI - only 1d arrays supported" )
-  return C.slice( types.array2d(args.T,args.arsize), args.size[1], args.size[2], 0, 0)
+  if args.bounds~=nil then
+    return C.slice( types.array2d(args.T,args.arsize), args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4] )
+  else
+    J.err( args.arsize[2]==1, "generators.Slice: NYI - only 1d arrays supported" )
+    return C.slice( types.array2d(args.T,args.arsize), args.size[1], args.size[2], 0, 0)
+  end
 end,
 types.array2d(P.DataType("T"),P.SizeValue("arsize")) )
 
@@ -815,12 +872,21 @@ end,
 T.array2d(P.ScheduleType("sched"),P.SizeValue("size")), false )
 
 
-generators.Const = R.FunctionGenerator("core.Const",{"type1","number"},{},
+generators.Const = R.FunctionGenerator("core.Const",{"type1"},{"number","value"},
 function(args)
-  return C.triggerToConstant(args.type1,args.number)
+  local value = args.value
+  if args.number~=nil then value = args.number end
+  return C.triggerToConstant(args.type1, value )
 end,
 T.Trigger )
 
+-- type1: type to do reduce at
+generators.SAD = R.FunctionGenerator("core.SAD",{"type","rate","type1"},{},
+function(args)
+  assert( args.size[1]==args.size[2] )
+  return C.SAD( args.A, args.type1, args.size[1] )
+end,
+T.Array2d(T.Array2d(P.DataType("A"),2),P.SizeValue("size")), false )
 
 function generators.export(t)
   if t==nil then t=_G end

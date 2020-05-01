@@ -42,7 +42,7 @@ local function toTerra(self)
             assert(false)
           end
         end
-      elseif n.kind=="lift" or n.kind=="lower" then
+      elseif n.kind=="lift" or n.kind=="lower" or n.kind=="lowerWithExp" then
         -- noop: we only add wrapper at very end
         res = args[1]
       elseif n.kind=="constant" then

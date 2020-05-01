@@ -23,7 +23,7 @@ function systolicAST.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
   err(#tab.inputs==J.keycount(tab.inputs), "systolicAST.new inputs list is not a well formed array ("..tostring(tab.kind)..")")
-  if tab.name==nil then tab.name="unnamed"..tab.kind..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
+  if tab.name==nil then tab.name="un"..tab.kind..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
   assert(types.isType(tab.type))
   assert(type(tab.loc)=="string")
   if tab.pipelined==nil then tab.pipelined=true end
@@ -586,6 +586,11 @@ function systolic.isX(expr) return unary(expr,"isX") end
 function systolic.__not(expr) return unary(expr,"not") end
 function systolic.abs(expr) return unary(expr,"abs") end
 
+function systolic.rshiftE(lhs, const)
+  lhs = checkast(lhs)
+  return typecheck({kind="unary",op="rshiftE",inputs={lhs},const=const,loc=getloc()})
+end
+
 function systolicASTFunctions:cname(c)
   return self:name().."_c"..c
 end
@@ -729,6 +734,7 @@ delayTable["and"]={[0]=0}
 delayTable["not"]={[0]=0}
 delayTable["or"]={[0]=0}
 delayTable["select"]={[0]=0}
+delayTable["rshiftE"]={[0]=0}
 
 function systolic.interp( tab, bits )
   local lowerk,lowerv,higherk,higherv
@@ -1294,7 +1300,7 @@ function systolicASTFunctions:toVerilogInner( module, declarations )
             else
               assert(false)
             end
-          elseif toType:isInt() and fromType:isInt() and toType.precision > fromType.precision then
+          elseif toType:isInt() and fromType:isInt() and toType.precision >= fromType.precision then
             -- casting smaller int to larger int. must sign extend
             expr = systolic.wireIfNecessary( wired, declarations, fromType, inputName, expr, " // wire for int size extend (cast)" )
             return "{ {"..(toType:verilogBits() - fromType:verilogBits()).."{"..expr.."["..(fromType:verilogBits()-1).."]}},"..expr.."["..(fromType:verilogBits()-1)..":0]}"
@@ -1412,6 +1418,8 @@ function systolicASTFunctions:toVerilogInner( module, declarations )
           finalResult = "(~"..args[1]..")"
         elseif n.op=="isX" then
           finalResult = "("..args[1].."===1'bx)"
+        elseif n.op=="rshiftE" then
+          finalResult = args[1]
         else
           print(n.op)
           assert(false)

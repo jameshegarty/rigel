@@ -169,7 +169,14 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray, framedW, framedH )
   if framedW~=nil then
     -- hackity hack
     local inputType = types.rv(types.tuple( J.map(typelist, function(t) return types.ParSeq(types.array2d(t,W,H),framedW,framedH) end) ))
-    local outputType = types.rv(types.ParSeq(types.array2d(types.tuple(typelist),W,H),framedW,framedH ))
+    local outputType
+
+    if asArray then
+      outputType = types.rv(types.ParSeq(types.array2d(types.Array2d(typelist[1],#typelist),W,H),framedW,framedH ))
+    else
+      outputType = types.rv(types.ParSeq(types.array2d(types.tuple(typelist),W,H),framedW,framedH ))
+    end
+    
     assert(res.inputType:lower()==inputType:lower())
     assert(res.outputType:lower()==outputType:lower())
     res.inputType = inputType
@@ -1307,15 +1314,23 @@ modules.flatmap = memoize(function( fn, Vw1, Vh1, W1_orig, H1_orig, Vw2, Vh2, W2
 
   -- hackity hack
   if Vw1>0 or Vh1>0 then
-    res.inputType = fn.inputType:replaceVar("over",types.ParSeq( res.inputType:extractData(), W1_orig, H1_orig ))
+    local newinp = fn.inputType:replaceVar("over",types.ParSeq( res.inputType:extractData(), W1_orig, H1_orig ))
+    assert( res.inputType:lower()==newinp:lower() )
+    res.inputType = newinp
   elseif W1_orig>0 or H1_orig>0 then
-    res.inputType = fn.inputType:replaceVar("over",types.Seq(types.Par( res.inputType:extractData()) ,W1_orig, H1_orig ))
+    local newinp = fn.inputType:replaceVar("over",types.Seq(types.Par( res.inputType:extractData()) ,W1_orig, H1_orig ))
+    assert( res.inputType:lower()==newinp:lower() )
+    res.inputType = newinp
   end
   
   if Vw2>0 or Vh2>0 then
-    res.outputType = fn.outputType:replaceVar("over",types.ParSeq( res.outputType:extractData(), W2_orig, H2_orig ))
+    local newout = fn.outputType:replaceVar("over",types.ParSeq( res.outputType:extractData(), W2_orig, H2_orig ))
+    assert( res.outputType:lower() == newout:lower() )
+    res.outputType = newout
   elseif W2_orig>0 or H2_orig>0 then
-    res.outputType = fn.outputType:replaceVar("over",types.Seq(types.Par( res.outputType:extractData() ), W2_orig, H2_orig ))
+    local newout = fn.outputType:replaceVar("over",types.Seq(types.Par( res.outputType:extractData() ), W2_orig, H2_orig ))
+    assert( res.outputType:lower() == newout:lower() )
+    res.outputType = newout
   end
 
   return res
@@ -2619,7 +2634,10 @@ function modules.liftXYSeqPointwise( name, generatorStr, f, W, H, T, X )
 end
 
 -- takes an image of size A[W,H] to size A[W-L-R,H-B-Top]
-modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, X )
+-- indexMode: cropSeq is basically the same as slice! if indexMode==true, we expect the crop to only return 1 item
+--     and, instead of returning that as an array, we just return the item. This allows us to use cropSeq to implement index
+--     on non-parallel types
+modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, indexMode, X )
   local BITS = 32
   err( types.isType(A), "cropSeq: type must be rigel type, but is: ",A)
   err( rigel.isBasic(A),"cropSeq: expects basic type, but is: "..tostring(A))
@@ -2646,6 +2664,13 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
 
   --err( W:lt(math.pow(2,BITS)-1):assertAlwaysTrue(), "cropSeq: width too large!")
   err( H<math.pow(2,BITS), "cropSeq: height too large!")
+
+  if indexMode==nil then indexMode = false end
+  err( type(indexMode)=="boolean","cropSeq: indexMode should be bool" )
+  if indexMode then
+    err( (Uniform(W_orig)-L-R_orig):eq(1),"cropSeq: in indexMode, output size should be 1, but is W:",W_orig," L:",L, " R:",R_orig )
+    err( (H-B-Top)==1,"cropSeq: in indexMode, output size should be 1, but is H:",H," B:",B," Top:",Top )
+  end
   
   local inputType
   if V==0 then
@@ -2653,11 +2678,12 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   else
     inputType = types.array2d(A,V)
   end
+  
   local outputType = types.tuple{inputType,types.bool()}
   local xyType = types.array2d(types.tuple{types.uint(BITS),types.uint(BITS)},math.max(V,1))
   local innerInputType = types.tuple{xyType, inputType}
 
-  local modname = J.verilogSanitize("CropSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..tostring(H).."_V"..tostring(V).."_L"..tostring(L).."_R"..tostring(R_orig).."_B"..tostring(B).."_Top"..tostring(Top))
+  local modname = J.verilogSanitize("CropSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..tostring(H).."_V"..tostring(V).."_L"..tostring(L).."_R"..tostring(R_orig).."_B"..tostring(B).."_Top"..tostring(Top).."_idx"..tostring(indexMode))
 
   local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
@@ -2694,14 +2720,30 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   -- HACK
   if framed then
     if V==0 then
-      res.inputType = types.rv(types.Seq(types.Par(res.inputType:deInterface()),W_orig,H))
-      res.outputType = types.rvV(types.Seq(types.Par(res.outputType:deInterface().list[1]),W_orig-L-R,H-B-Top))
+      local it = types.rv(types.Seq(types.Par(res.inputType:deInterface()),W_orig,H))
+      assert( it:lower()==res.inputType:lower() )
+      res.inputType = it
+      local ot = types.rvV(types.Seq(types.Par(res.outputType:deInterface().list[1]),W_orig-L-R,H-B-Top))
+      if indexMode then
+        ot = types.rvV(res.outputType:deInterface().list[1])
+      end
+      assert( ot:lower()==res.outputType:lower() )
+
+      res.outputType = ot
     else
-      res.inputType = types.rv(types.ParSeq(res.inputType:deInterface(),W_orig,H))
-      res.outputType = types.rvV(types.ParSeq(res.outputType:deInterface().list[1],W_orig-L-R,H-B-Top))
+      assert( indexMode==false)
+      local it = types.rv(types.ParSeq(res.inputType:deInterface(),W_orig,H))
+      assert( it:lower()==res.inputType:lower() )
+      res.inputType = it
+      local ot =  types.rvV(types.ParSeq(res.outputType:deInterface().list[1],W_orig-L-R,H-B-Top))
+      assert( ot:lower()==res.outputType:lower() )
+      res.outputType = ot
     end
   else
-    res.outputType = types.rvV(types.Par(res.outputType:deInterface().list[1]))
+    assert( indexMode==false)
+    local ot = types.rvV(types.Par(res.outputType:deInterface().list[1]))
+    assert( ot:lower()==res.outputType:lower() )
+    res.outputType = ot
   end
 
   local ff = Uniform(W_orig):toNumber()*math.max(Top,B,1)
@@ -4648,8 +4690,10 @@ end
 -- we check for fifos whenever we have fan in. One one exception is:
 --    if all branches into the fan in trace directly to an input (not through a fan out), we consider it ok.
 --    ie: that is basically a fan-in module itself, which we will check for later.
-local function checkFIFOs(output)
-
+local function checkFIFOs( output, moduleName, X )
+  assert( X==nil )
+  assert( type(moduleName)=="string" )
+  
   -- does this node's inputs trace directly to an input node, NOT through a fan-out? (ie only through nodes with 1 in, 1 out)
   local traceToInput
   traceToInput = J.memoize(function(n)
@@ -4702,7 +4746,7 @@ local function checkFIFOs(output)
           local allFIFOed = true
           
           for i=1,types.streamCount(fn.inputType) do
-            J.err( fn.disableFIFOCheck==true or arg[1][i] or allStreamsTraceToInput, "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx ",i-1,". ",types.streamCount(fn.inputType)," input streams, to fn:",fn.name,") ",n.loc)
+            J.err( fn.disableFIFOCheck==true or arg[1][i] or allStreamsTraceToInput, "CheckFIFOs: branch in a diamond is missing FIFO! (input stream idx ",i-1,". ",types.streamCount(fn.inputType)," input streams, to fn:",fn.name,") inside function: ",moduleName," ", n.loc)
             allFIFOed = allFIFOed and arg[1][i]
           end
 
@@ -4981,14 +5025,14 @@ local function insertFIFOs( out, delayTable, moduleName, X )
 
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
 
-        err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
-        err( n.fn.outputBurstiness<=16384, "outputBurstiness for module ",n.fn.name," is way too large: ",n.fn.outputBurstiness )
+        --err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
+        --err( n.fn.outputBurstiness<=16384, "outputBurstiness for module ",n.fn.name," is way too large: ",n.fn.outputBurstiness )
 
         local ibts = (n.fn.inputBurstiness*n.fn.inputType:extractData():verilogBits())
         local obts = (n.fn.outputBurstiness*n.fn.outputType:extractData():verilogBits())
 
-        err( ibts<20*1024*8, "Input burst FIFO is tooo big! ",ibts/8192,"KB" )
-        err( obts<20*1024*8, "Output burst FIFO is tooo big! ",obts/8192,"KB" )
+        --err( ibts<20*1024*8, "Input burst FIFO is tooo big! ",ibts/8192,"KB" )
+        --err( obts<20*1024*8, "Output burst FIFO is tooo big! ",obts/8192,"KB" )
         
         local IFIFO, OFIFO
         if rigel.MONITOR_FIFOS==false then

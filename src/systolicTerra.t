@@ -47,12 +47,15 @@ function systolicASTFunctions:toTerra( symbols )
           res = `not [args[1]]
         elseif n.op=="abs" then
           if n.inputs[1].type:isInt() then
-            res = `cstdlib.abs([args[1]])
+            -- don't use stdlib: it only works for 32 bit
+            res = `terralib.select([args[1]]>=0,[args[1]], -[args[1]])
           else
             err(false,"systolicAST:toTerra NYI abs with type "..tostring(n.inputs[1].type))
           end
         elseif n.op=="-" then
           res = `-[args[1]]
+        elseif n.op=="rshiftE" then
+          res = args[1]
         else
           err(false,"systolicAST:toTerra unary NYI: "..n.op)
         end
@@ -113,15 +116,17 @@ function systolicASTFunctions:toTerra( symbols )
         elseif n.inputs[1].type:isBits() and n.type:isUint() and n.inputs[1].type.precision==n.type.precision then
           res = args[1]
         elseif (n.inputs[1].type:isInt() or n.inputs[1].type:isUint()) and (n.type:isInt() or n.type:isUint()) then
-          err( n.inputs[1].type:isUint() or n.inputs[1].type:verilogBits()==8 or n.inputs[1].type:verilogBits()==16 or n.inputs[1].type:verilogBits()==32, "NYI cast "..tostring(n.inputs[1].type) )
-
-          if n.type:verilogBits()==8 or n.type:verilogBits()==16 or n.type:verilogBits()==32 then
+          err( n.inputs[1].type.exp == n.type.exp,"Err: terra cast that changes exp! input:",n.inputs[1].type," to:",n.type)
+          
+          if n.type:verilogBits()==8 or n.type:verilogBits()==16 or n.type:verilogBits()==32 or
+            (n.type:verilogBits()>n.inputs[1].type:verilogBits() and n.type:isInt()==n.inputs[1].type:isInt()) -- if we are expanding bitwidth, we don't need mask...
+             then
             res = `[n.type:toTerraType()]([args[1]])
           elseif n.type:isUint() then
             local maskValue = math.pow(2,n.type:verilogBits())-1
             res = `[n.type:toTerraType()]([args[1]]) and [n.type:toTerraType()](maskValue)
           else
-            print("NYI - terra cast to "..tostring(n.type))
+            print("NYI - terra cast from:",n.inputs[1].type," to:"..tostring(n.type))
           end
         else
           err(false, ":toTerra CAST NYI: "..tostring(n.inputs[1].type).." to "..tostring(n.type).." "..n.loc)

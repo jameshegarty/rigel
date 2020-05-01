@@ -16,7 +16,8 @@ local a = (ainp:lift(0)*ainp:lift(0)):hist("a_norm")
 a = a:toSigned()
 local afn = a:toRigelModule("a")
 ------------
-local lutinv, lutinvtype = C.lutinvert(a.type)
+local lutinv = C.lutinvert(a.type)
+local lutinvtype = lutinv.outputType
 print("LUTINV TYPE",lutinvtype)
 ------------
 local binp = fixed.parameter("binp", types.tuple{types.uint(8),lutinvtype:extractData()} )

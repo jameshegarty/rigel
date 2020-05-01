@@ -133,9 +133,10 @@ function CT.multiply(A,B,outputType)
                   end
 end
 
-function CT.multiplyConst(A,constValue)
-  return terra( a : &A:toTerraType(), out : &A:toTerraType() )
-    @out = [A:toTerraType()](@a)*[A:toTerraType()](constValue)
+function CT.multiplyConst( A, constValue, outputType, X )
+  assert( X==nil )
+  return terra( a : &A:toTerraType(), out : &outputType:toTerraType() )
+    @out = [outputType:toTerraType()](@a)*[outputType:toTerraType()](constValue)
   end
 end
 
@@ -164,10 +165,57 @@ function CT.tokenCounter( res, A, str, X )
   return MT.new( TokenCounter, res )
 end
 
+  local function trunc(inp,outputType)
+    if outputType:verilogBits()==outputType:sizeof()*8 then
+      -- operating at same bitwidth in terra: nothing to do
+      return inp
+    elseif outputType:isInt() then
+      return quote
+            var mask = ([outputType:toTerraType()](1) << [outputType:verilogBits()]) - 1
+            var msb = [outputType:toTerraType()](1) << ([outputType:verilogBits()]-1)
+            var notmask = not mask
+
+            var inpuint = [outputType:toTerraType()]([inp])
+            var masked = inpuint and mask
+
+            -- extend the sign bit so that the CPU thinks this number has the correct sign
+            -- note that we set the sign bit based on the MSB of the _masked_ portion. This is what verilog will do.
+            -- DO NOT set sign bit based on sign bit of (unmaked) input.
+            if (masked and msb) ~=0 then
+              masked = masked or notmask
+            end
+
+            var r = [outputType:toTerraType()](masked)
+            in r end
+    elseif outputType:isUint() then
+      return quote
+            var mask = ([outputType:toTerraType()](1) << [outputType:verilogBits()]) - 1
+            var r = [outputType:toTerraType()]([inp] and mask)
+            in r end
+    else
+      assert(false)
+    end
+  end
+
 function CT.sum(A,B,outputType,async)
+  
   return terra( a : &tuple(A:toTerraType(),B:toTerraType()), out : &outputType:toTerraType() )
-                            @out = [outputType:toTerraType()](a._0)+[outputType:toTerraType()](a._1)
-                  end
+    @out = [outputType:toTerraType()](a._0)+[outputType:toTerraType()](a._1)
+    @out = [trunc(`@out,outputType)]
+  end
+end
+
+function CT.removeMSBs( A, bits, otype )
+  return terra( a : &A:toTerraType(), out : &otype:toTerraType() )
+    @out = [trunc(`@a,otype)]
+  end
+end
+
+function CT.removeLSBs( A, bits, otype )
+  return terra( a : &A:toTerraType(), out : &otype:toTerraType() )
+    var tmp = @a >> bits
+    @out = [otype:toTerraType()](tmp)
+  end
 end
 
 function CT.argmin(ITYPE,ATYPE,domax)
@@ -267,7 +315,7 @@ end
 
 function CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight)
   local struct UnpackStencil {}
-  terra UnpackStencil:process( inp : &res.inputType:toTerraType(), out : &res.outputType:toTerraType() )
+  terra UnpackStencil:process( inp : &res.inputType:lower():toTerraType(), out : &res.outputType:lower():toTerraType() )
     for i=0,[T] do
       for y=0,[stencilH] do
         for x=0,[stencilW] do
@@ -305,20 +353,40 @@ function CT.stripMSB(totalbits)
   end
 end
 
-function CT.plusConsttfn(ty,value_orig)
+function CT.plusConsttfn( ty, value_orig, outputType, X)
   local value = Uniform(value_orig)
   
-  local out = symbol(ty:toTerraType(true))
+  local out = symbol(outputType:toTerraType(true))
   local q = quote end
   if ty:verilogBits()~=ty:sizeof()*8 then
-    --print(ty:verilogBits(),ty:sizeof()*8)
-    --assert(false)
-    q = quote @[out] = @[out] and (([ty:toTerraType()](1)<<[ty:verilogBits()])-1) end
+    local valuen = value:toNumber()
+    local vbits = math.ceil(math.log(valuen)/math.log(2))
+    if outputType:verilogBits()>=math.max(vbits,ty:verilogBits())+1 then
+      -- we know this has enough bits to not overflow, so no need to truncate...
+    else
+      q = quote @[out] = [trunc(`@[out],outputType)] end
+    end
   end
 
   return terra( a : ty:toTerraType(true), [out] ) 
-    @[out] =  @a+[ty:toTerraType()]([value:toTerra()]) 
+    @[out] =  [outputType:toTerraType()](@a)+[outputType:toTerraType()]([value:toTerra()]) 
     [q]
+  end
+end
+
+function CT.denormalize(ty)
+  if ty.exp<0 then
+    -- throw out frac bits
+    local outbits = ty.precision+ty.exp
+    local outType = ty:replaceVar("precision",outbits):replaceVar("exp",0)
+
+    print("CTDENORM",ty,outType)
+    return terra( inp : &ty:toTerraType(), out : &outType:toTerraType() )
+      var tmp = @inp >> [ty:toTerraType()]([math.max(0,-ty.exp)])
+      @out = tmp
+    end
+  else
+    assert(false)
   end
 end
 

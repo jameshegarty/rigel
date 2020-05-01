@@ -3,20 +3,28 @@ SHELL = /bin/bash
 
 BUILDDIR ?= out
 
-SRCS_SOC = soc_simple.lua soc_simple_uniform.lua soc_2in.lua soc_convgen.lua soc_convgen_0.lua soc_convgenTaps.lua soc_flip.lua soc_15x15.lua soc_15x15x15.lua soc_flipWrite.lua soc_regin.lua soc_regout.lua soc_convtest.lua soc_read.lua soc_redu1024.lua soc_redu2048.lua soc_redu4096.lua soc_redu8192.lua soc_redu16384.lua soc_redu32768.lua soc_sort.lua soc_filterseq.lua soc_filterseq8.lua soc_unaligned.lua soc_underflow.lua soc_parread.lua soc_tokencounter.lua soc_arbiter.lua soc_readlen.lua soc_readarrays_1.lua soc_readarrays_8.lua soc_convgenTaps_2096688.lua soc_convgenTaps_524172.lua soc_convgenTaps_1048344.lua soc_convgenTaps_4193376.lua
+SRCS_SOC = soc_simple.lua soc_simple_uniform.lua soc_2in.lua soc_convgen.lua soc_convgen_0.lua soc_convgenTaps.lua soc_flip.lua soc_15x15.lua soc_15x15x15.lua soc_flipWrite.lua soc_regin.lua soc_regout.lua soc_convtest.lua soc_read.lua soc_redu1024.lua soc_redu2048.lua soc_redu4096.lua soc_redu8192.lua soc_redu16384.lua soc_redu32768.lua soc_sort.lua soc_filterseq.lua soc_filterseq8.lua soc_unaligned.lua soc_underflow.lua soc_parread.lua soc_tokencounter.lua soc_arbiter.lua soc_readlen.lua soc_readarrays_1.lua soc_readarrays_8.lua
+SRCS_SOC += soc_convgenTaps_2096688.lua soc_convgenTaps_524172.lua soc_convgenTaps_1048344.lua soc_convgenTaps_4193376.lua
+SRCS_SOC += soc_stereo_tiny_1.lua
+SRCS_SOC += soc_lk_4_4.lua soc_lk_6_6.lua soc_lk_12_12.lua
 
-VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_SOC))
-VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_SOC))
-VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bmp,$(SRCS_SOC))
-VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_SOC))
-VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_SOC))	
-VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_SOC))
+# too slow
+SRCS_VERILATOR_SOC = $(filter-out soc_lk_12_12.lua, $(SRCS_SOC))
 
-YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_SOC))
-YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.cellscorrect.txt,$(SRCS_SOC))
-YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9correct.txt,$(SRCS_SOC))
-YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36correct.txt,$(SRCS_SOC))
-YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAM128X1Dcorrect.txt,$(SRCS_SOC))
+VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_VERILATOR_SOC))
+VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_VERILATOR_SOC))
+VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bmp,$(SRCS_VERILATOR_SOC))
+VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_VERILATOR_SOC))
+VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_VERILATOR_SOC))	
+VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_VERILATOR_SOC))
+
+SRCS_YOSYS_SOC = $(filter-out soc_lk_12_12.lua, $(SRCS_SOC))
+
+YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_YOSYS_SOC))
+YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.cellscorrect.txt,$(SRCS_YOSYS_SOC))
+YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S9_S9correct.txt,$(SRCS_YOSYS_SOC))
+YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAMB16_S36_S36correct.txt,$(SRCS_YOSYS_SOC))
+YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.RAM128X1Dcorrect.txt,$(SRCS_YOSYS_SOC))
 
 SRCS_STATE = state_simple.t
 

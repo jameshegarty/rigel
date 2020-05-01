@@ -545,6 +545,7 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
       end
     elseif fnType:isTuple() then
       assert( targetType:isTuple() and #fnType.list==#targetType.list )
+
       res = G.Function{"FannedConvertInterface", types.RV(targetType), SDF{1,1},
         function(inp)
           local tmp = RM.broadcastStream( targetType, #targetType.list)(inp)
@@ -897,7 +898,7 @@ __call=function(tab,...)
     arg = rawarg[1]
   end
   
-  local res = darkroom.apply("un"..darkroom.__unnamedID.."_"..tab.name:sub(1,20), tab, arg)
+  local res = darkroom.apply(J.sanitize("un"..darkroom.__unnamedID.."_"..tab.name:sub(1,20)), tab, arg)
   res.defaultName=true
   darkroom.__unnamedID = darkroom.__unnamedID+1
   return res
@@ -2141,10 +2142,13 @@ function darkroomIRFunctions:typecheckSchedulePass()
 
     --assert( self.inputs[1].type:isrv() ) -- we should have done this earlier in other nodes
 
-    J.err( self.inputs[1].type:deInterface()==self.fn.inputType:deInterface(),"Error, deinterfaced inputs to function must match, but is: input:",self.inputs[1].type," fnInput:",self.fn.inputType )
+    J.err( self.inputs[1].type:deInterface()==self.fn.inputType:deInterface(),"Error, deinterfaced inputs to function '",self.fn.name,"' must match, but is: input:",self.inputs[1].type," fnInput:",self.fn.inputType )
 
     if self.fn.inputType:isrv()==false or self.fn.outputType:isrv()==false then
       self.scheduleConstraints.RV = true
+      if self.inputs[1].scheduleConstraints.RV==false then
+        print("Function forced RV:", self.fn.name, self.loc )
+      end
     else
       assert( self.fn.inputType:isrv() )
       assert( self.fn.outputType:isrv() )
@@ -2158,7 +2162,7 @@ function darkroomIRFunctions:typecheckSchedulePass()
     -- if this ended up RV, we'll get boxed into being RV, but whatever, we need to do that to prevent errors
     -- (ie if we change the type to rv, the number of SDF streams may no longer match)
     self.type = self.fn.outputType
-  elseif self.kind=="concat" then
+  elseif self.kind=="concat" or self.kind=="concatArray2d" then
     self.scheduleConstraints.RV = false
     for k,i in ipairs(self.inputs) do
       self.scheduleConstraints.RV = self.scheduleConstraints.RV or i.scheduleConstraints.RV

@@ -17,9 +17,17 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="unknown" then
     res = "UnknownType"
   elseif ty.kind=="int" then
-    res = "int"..ty.precision
+    if ty.exp==0 then
+      res = "int"..ty.precision
+    else
+      res = "int"..ty.precision.."_"..ty.exp
+    end
   elseif ty.kind=="uint" then
-    res = "uint"..ty.precision
+    if ty.exp==0 then
+      res = "uint"..ty.precision
+    else
+      res = "uint"..ty.precision.."_"..ty.exp
+    end
   elseif ty.kind=="bits" then
     res = "bits"..ty.precision
   elseif ty.kind=="float" then
@@ -126,27 +134,38 @@ function types.bits( prec, X )
 end
 types.Bits = types.bits
 
-types._uint={}
-function types.uint( prec, X )
+--types._uint={}
+types.uint = J.memoize(function( prec, exp, X )
+  if exp==nil then return types.uint( prec, 0 ) end
+
   err(type(prec)=="number", "precision argument to types.uint must be number")
   err(prec==math.floor(prec), "uint precision should be integer, but is "..tostring(prec) )
   err(prec>0,"types.uint precision needs to be >0")
+
+  err(type(exp)=="number", "exp argument to types.uint must be number")
+  err(exp==math.floor(exp), "uint exp should be integer, but is "..tostring(exp) )
+
   err( X==nil, "types.uint: too many arguments" )
-  types._uint[prec] = types._uint[prec] or setmetatable({kind="uint",precision=prec},TypeMT)
-  return types._uint[prec]
-end
+
+  return setmetatable({kind="uint", precision=prec, exp=exp },TypeMT)
+end)
 types.u = types.uint
 types.U = types.uint
 types.Uint=types.uint
 
-types._int={}
-function types.int( prec, X )
-  assert(prec==math.floor(prec))
+types.int = J.memoize(function( prec, exp, X )
+  if exp==nil then return types.int( prec, 0 ) end
+  
+  err(type(prec)=="number", "int: precision argument must be number")
+  err(prec==math.floor(prec), "int precision should be integer, but is "..tostring(prec) )
   err( X==nil, "types.int: too many arguments" )
   err(prec>0,"types.int precision needs to be >0")
-  types._int[prec] = types._int[prec] or setmetatable({kind="int",precision=prec},TypeMT)
-  return types._int[prec]
-end
+
+  err(type(exp)=="number", "int: exp argument  must be number")
+  err(exp==math.floor(exp), "int: exp should be integer, but is "..tostring(exp) )
+
+  return setmetatable({kind="int",precision=prec,exp=exp},TypeMT)
+end)
 types.I = types.int
 types.Int=types.int
 
@@ -331,6 +350,15 @@ function types.meet( a, b, op, loc)
     
     if cmpops[op] then
       return types.bool(), thistype, thistype
+    elseif op=="*" then
+      local lhstype = types.int(prec,a.exp)
+      local rhstype = types.int(prec,b.exp)
+      local outtype = types.int(prec,a.exp+b.exp)
+      return outtype, lhstype, rhstype
+    elseif op=="+" or op=="-" then
+      err( a.exp==b.exp, "NYI - ",op," with mismatched exponants! lhs:",a," rhs:",b)
+      local outtype = types.int( prec, a.exp )
+      return outtype, outtype, outtype
     elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
     elseif op=="<<" or op==">>" then
@@ -349,6 +377,15 @@ function types.meet( a, b, op, loc)
     
     if cmpops[op] then
       return types.bool(), thistype, thistype
+    elseif op=="*" then
+      local lhstype = types.uint(prec,a.exp)
+      local rhstype = types.uint(prec,b.exp)
+      local outtype = types.uint(prec,a.exp+b.exp)
+      return outtype, lhstype, rhstype
+    elseif op=="+" or op=="-" then
+      err( a.exp==b.exp, "NYI - ",op," with mismatched exponants! lhs:",a," rhs:",b)
+      local outtype = types.uint( prec, a.exp )
+      return outtype, outtype, outtype
     elseif binops[op] or treatedAsBinops[op] then
       return thistype, thistype, thistype
     elseif op=="<<" or op==">>" then
@@ -750,7 +787,9 @@ function TypeFunctions:replaceVar(k,v)
 
   local res
   if self:isUint() then
-    res = types.uint(cpy.precision)
+    res = types.uint( cpy.precision, cpy.exp )
+  elseif self:isInt() then
+    res = types.int( cpy.precision, cpy.exp )
   elseif self:is("Interface") then
     res = types.Interface(cpy.over,cpy.R,cpy.V,cpy.I,cpy.r,cpy.v,cpy.VRmode)
   elseif self:is("array") then
@@ -920,7 +959,7 @@ end
 -- check that v is a lua value convertable to this type
 function TypeFunctions:checkLuaValue(v)
   if self:isArray() then
-    err( type(v)=="table", "CheckLuaValue: if type is an array ("..tostring(self).."), value must be a table")
+    err( type(v)=="table", "CheckLuaValue: if type is an array (",self,"), value must be a table, but is: ",v)
     err( #v==J.keycount(v), "CheckLuaValue: lua table is not an array (unstructured keys)")
     err( #v==self:channels(), "CheckLuaValue: incorrect number of channels, is "..(#v).." but should be "..self:channels() )
     for i=1,#v do
@@ -1744,6 +1783,7 @@ if terralib~=nil then require("typesTerra") end
 
 for i=1,64 do
   types["u"..tostring(i)] = types.uint(i)
+  types["U"..tostring(i)] = types.uint(i)
 end
 
 function types.export(t)

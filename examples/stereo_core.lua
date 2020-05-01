@@ -67,16 +67,16 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
   local A = types.uint(8)
 
   local ATYPE = types.array2d(A,2)
-  local TYPE = types.array2d(ATYPE,4)
+  local TYPE = types.array2d(ATYPE,4) -- read in 64 bits from axi bus (ie 4 L/R byte pairs)
   local STENCIL_TYPE = types.array2d(A,SADWidth,SADWidth)
   local hsfninp = R.input( R.Handshake(TYPE) )
   local LRTYPE = types.array2d(A,2)
-  local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(LRTYPE,1,4,1)), hsfninp ) -- A[2][1]
+  local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(LRTYPE,1,4,1)), hsfninp ) -- A[2][1] -- read 4 bytes from axi bus, but reduce this to 1 L/R pair per cycle
 
   local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
   local inp = R.apply("pad", RM.liftHandshake(RM.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, 3, 4, {0,0})), inp)
-  local inp = R.apply("oi0", RM.makeHandshake(C.index(types.array2d(LRTYPE,1),0)), inp) -- A[2]
-  local inp_broadcast = R.apply("inp_broadcast", RM.broadcastStream(types.Par(LRTYPE),2), inp)
+  local inp = R.apply("oi0", RM.makeHandshake(C.index(types.array2d(LRTYPE,1),0)), inp) -- A[2] -- just dig into the 1 element array
+  local inp_broadcast = R.apply("inp_broadcast", RM.broadcastStream(types.Par(LRTYPE),2), inp) -- fan out
 
   -------------
   local left = R.apply("left", RM.makeHandshake(C.index(types.array2d(A,2),0)), R.selectStream("i0",inp_broadcast,0) )
@@ -91,7 +91,7 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
   local left = R.apply("AO",RM.makeHandshake(C.arrayop(types.uint(8),1)),left)
   local left = R.apply( "LB", RM.makeHandshake(C.stencilLinebuffer( types.uint(8), internalW, internalH, 1, -(SearchWindow+SADWidth+OffsetX)+2, 0, -SADWidth+1, 0 )), left)
   local left = R.apply( "lslice", RM.makeHandshake(C.slice( types.array2d(types.uint(8),SearchWindow+SADWidth+OffsetX-1,SADWidth), 0, SearchWindow+SADWidth-2, 0, SADWidth-1)), left)
-  left = R.apply( "llb", RM.makeHandshake( C.unpackStencil( A, SADWidth, SADWidth, SearchWindow)  ), left) -- A[SADWidth,SADWidth][SearchWindow]
+  left = R.apply( "llb", RM.makeHandshake( C.unpackStencil( A, SADWidth, SADWidth, SearchWindow)  ), left) -- A[SADWidth,SADWidth][SearchWindow] -- build stencil of stencils
 
   --------
   local right = R.apply("right", RM.makeHandshake( C.index(types.array2d(A,2),1)), R.selectStream("i1",inp_broadcast,1) )

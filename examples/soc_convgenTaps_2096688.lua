@@ -34,7 +34,7 @@ noc.extern=true
 local ts=""
 if terralib~=nil then ts=".terra" end
 
-local ConvInner = G.SchedulableFunction{ T.Array2d(T.Tuple{P.DataType("L"),P.DataType("R")},P.SizeValue("size")),
+local ConvInner = G.SchedulableFunction{ "ConvInner", T.Array2d(T.Tuple{P.DataType("L"),P.DataType("R")},P.SizeValue("size")),
 function(inp)
   local out = G.Map{Mul}(inp)
   local res = Reduce{Add{R.Async}}(out)
@@ -46,10 +46,9 @@ end}
 local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
   function(i)
     local ii = G.FanOut{2}(i)
-    --local ii0 = G.FIFO{128}(ii[0])
     local ii0 = ii[0]
-    --local ii1 = G.FIFO{128}(ii[1])
     local ii1 = ii[1]
+
     local res = G.AXIReadBurst{"1080p.raw",{1920,1080},u(8),noc.read}(ii0)
     local pad = Pad{{8,8,2,1}}(res)
     local st = Stencil{{-3,0,-3,0}}(pad)
