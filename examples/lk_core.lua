@@ -60,7 +60,8 @@ function invert2x2( AType, bits )
     --------
     
     local denom = R.apply("denom", fdenom, inp)
-    local fdetfn, fdet_type = C.lutinvert(fdenom_type)
+    local fdetfn = C.lutinvert(fdenom_type)
+    local fdet_type = fdetfn.outputType
     local det = R.apply("det", fdetfn, denom)
     
     ---------

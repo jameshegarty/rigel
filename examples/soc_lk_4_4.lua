@@ -56,38 +56,28 @@ local Fdenom = G.SchedulableFunction{"Fdenom", T.Array2d(P.NumberType("ty"),4),
     return fdenom
   end}
 
-    local fout = J.memoize(function(AType,fdet_type)
-      local finp = f.parameter( "finpt", types.tuple{types.array2d(AType,4), fdet_type:extractData()} )
-      local fmatrix = finp:index(0)
+local Fout = G.SchedulableFunction{"Fout", T.tuple{T.array2d(P.NumberType("AType"),4), P.NumberType("fdet_type")},
+  function(i)
+    local fmatrix = i[0]
+    local i0 = fmatrix[0]
+    local i1 = fmatrix[1]
+    local i2 = fmatrix[2]
+    local i3 = fmatrix[3]
+    local fdet = i[1]
 
-      local i0 = fmatrix:index(0)
-      if f.isFixedType(AType)==false then i0=i0:lift() end
-      local i1 = fmatrix:index(1)
-      if f.isFixedType(AType)==false then i1=i1:lift() end
-      local i2 = fmatrix:index(2)
-      if f.isFixedType(AType)==false then i2=i2:lift() end
-      local i3 = fmatrix:index(3)
-      if f.isFixedType(AType)==false then i3=i3:lift() end
-
-      local fdet = finp:index(1)
-
-      local OT = {(fdet*i3):hist("invert2x2_output0"), ((fdet:neg())*i1), ((fdet:neg())*i2), (fdet*i0)}
-
-      for k,v in pairs(OT) do
-        bits.inv22[3] = OT[k]:precision()
-        OT[k] = v:reduceBits(bits.inv22[1],bits.inv22[2])
-      end
-
-      local fout = f.array2d(OT,4)
-      return fout:toRigelModule("fout")
-    end)
+    local OT = {G.MulE(fdet,i3), G.MulE(G.Neg(fdet),i1), G.MulE(G.Neg(fdet),i2), G.MulE(fdet,i0)}
+    for k,v in pairs(OT) do
+      OT[k] = G.RemoveMSBs{bits.inv22[1]}(OT[k])
+      OT[k] = G.RemoveLSBsE{bits.inv22[2]}(OT[k])
+    end
+    return G.TupleToArray(unpack(OT))
+end}
 
 local Invert2x2 = G.SchedulableFunction{"Invert2x2", T.Array2d(P.NumberType("A"),4),
   function(i)
-    --local denom = fdenom( i.type:deInterface():arrayOver() )(i)
     local denom = Fdenom(i)
     local det = C.lutinvert(denom.type:deInterface())(denom)
-    return fout( i.type:deInterface():arrayOver(), det.type:deInterface() )( i, det )
+    return Fout(i,det)
   end}
 
 local Dx = G.SchedulableFunction{"Dx",T.Array2d(T.Uint(8),3),
@@ -182,16 +172,24 @@ local solve = J.memoize(function( AinvType, btype, bits )
   local b = inp:index(1)
 
   local b0 = b:index(0)
-
   if f.isFixedType(btype)==false then b0=b0:lift() end
   local b1 = b:index(1)
   if f.isFixedType(btype)==false then b1=b1:lift() end
 
-  local out_0 = (Ainv:index(0)*(b0:neg())) + (Ainv:index(1)*(b1:neg()))
+  local Ainv0 = Ainv:index(0)
+  if f.isFixedType(AinvType)==false then Ainv0=Ainv0:lift() end
+  local Ainv1 = Ainv:index(1)
+  if f.isFixedType(AinvType)==false then Ainv1=Ainv1:lift() end
+  local Ainv2 = Ainv:index(2)
+  if f.isFixedType(AinvType)==false then Ainv2=Ainv2:lift() end
+  local Ainv3 = Ainv:index(3)
+  if f.isFixedType(AinvType)==false then Ainv3=Ainv3:lift() end
+  
+  local out_0 = (Ainv0*(b0:neg())) + (Ainv1*(b1:neg()))
   bits.solve[3] = out_0:precision()
   out_0 = out_0:reduceBits(bits.solve[1], bits.solve[2])
 
-  local out_1 = (Ainv:index(2)*(b0:neg())) + (Ainv:index(3)*(b1:neg()))
+  local out_1 = (Ainv2*(b0:neg())) + (Ainv3*(b1:neg()))
   out_1 = out_1:reduceBits(bits.solve[1], bits.solve[2])
 
   local out = f.array2d({out_0,out_1},2)

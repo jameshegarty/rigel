@@ -279,6 +279,16 @@ function fixedASTFunctions:lower(allowExp)
   return fixed.new{kind="lower", type=fixed.extract(self.type),inputs={self},loc=getloc()}
 end
 
+function fixedASTFunctions:lowerWithExp()
+  local ot
+  if self:isSigned() then
+    ot = types.Int(self:precision(),self:exp())
+  else
+    ot = types.Uint(self:precision(),self:exp())
+  end
+  return fixed.new{kind="lowerWithExp", type=ot, inputs={self},loc=getloc()}
+end
+
 function fixedASTFunctions:disablePipelining()
   return fixed.new{kind="disablePipelining", type=self.type,inputs={self},loc=getloc()}
 end
@@ -596,6 +606,8 @@ function fixedASTFunctions:toSystolic(inp)
       elseif n.kind=="lift" or n.kind=="lower" then
         -- don't actually do anything: we only add the wrapper at the very end
         res = args[1]
+      elseif n.kind=="lowerWithExp" then
+        res = S.cast(args[1],n.type)
       elseif n.kind=="constant" then
         res = S.constant( n.value, fixed.extract(n.type) )
       elseif n.kind=="plainconstant" then

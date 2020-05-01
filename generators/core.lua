@@ -278,8 +278,8 @@ T.tuple{T.tuple{P.DataType("idx"),P.NumberType("T")},T.tuple{P.DataType("idx"),P
 
 
 generators.Neg = R.FunctionGenerator("core.Neg", {}, {"async"},
-function(a) return C.neg( a.T.precision ) end,
-T.rv(T.Par(P.IntType("T"))) )
+function(a) return C.neg( a.T.precision, a.T.exp ) end,
+P.IntType("T") )
 
 generators.Sub = R.FunctionGenerator("core.Sub",{},{"async"},
 function(args)

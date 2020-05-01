@@ -243,7 +243,7 @@ end)
 C.multiplyE = memoize(function( A, B, X )
   err( types.isType(A), "C.multiplyE: lhs type must be type")
   assert( A:isData() )
-  assert( A:isUint() or A:isInt() )
+  err( A:isUint() or A:isInt(), "C.multiplyE: lhs must be uint or int, but is: ",A )
   err( types.isType(B), "C.multiplyE: rhs must be type")
   assert( B:isData() )
   err( B:isUint() or B:isInt(), "C.multiplyE: rhs must be uint or int, but is: ",B )
@@ -346,9 +346,10 @@ C.AndUint = memoize(function(bits)
   return RM.lift( "AndUint_"..tostring(bits), types.tuple{types.Uint(bits),types.Uint(bits)}, types.Uint(bits), 0, function(sinp) return S.__and(S.index(sinp,0),S.index(sinp,1)) end )
 end)
 
-C.neg = memoize(function(bits)
+C.neg = memoize(function( bits, exp )
   assert(type(bits)=="number")
-  return RM.lift( "Neg_"..tostring(bits), types.Int(bits), types.Int(bits), 1, function(sinp) return S.neg(sinp) end )
+  if exp==nil then exp=0 end
+  return RM.lift( "Neg_"..tostring(bits), types.Int(bits,exp), types.Int(bits,exp), 1, function(sinp) return S.neg(sinp) end )
 end)
 
 C.tokenCounter = memoize(function(A,str,X)
@@ -1124,7 +1125,7 @@ C.lutinvert = J.memoize(function( ty, X )
   --fixed.expectFixed(ty)
   local signed = false
   if ty:isInt() then signed = true end
-  if fixed.isFixedType(ty) and ty:isSigned() then signed=true end
+  if fixed.isFixedType(ty) and fixed.extractSigned(ty) then signed=true end
 
   --------------------
   local ainp = fixed.parameter("ainp",ty)
@@ -1161,6 +1162,11 @@ C.lutinvert = J.memoize(function( ty, X )
   local b = (b_inv:cast(types.uint(9))+fixed.plainconstant(256,types.uint(9))):liftFloat(-a_max-17,-a_min-17+8, b_exp:neg()-fixed.plainconstant(17, types.int(8)) )
   if signed then b = b:addSign(binp:index(2)) end
   b = b:hist("lutinvert_output")
+
+  if fixed.isFixedType(ty)==false then
+    -- convert back
+    b = b:lowerWithExp()
+  end
   local bfn = b:toRigelModule("lutinvert_b")
   ---------------
 
@@ -1175,6 +1181,7 @@ C.lutinvert = J.memoize(function( ty, X )
 
   local inv = R.apply("inv", RM.lut(types.uint(lutbits), types.uint(8), invtable(lutbits)), aout_float_lsbs)
   local out = R.apply( "b", bfn, R.concat("binp",{inv,aout_exp,aout_sign}) )
+  print("LUTINVOUT",out.type)
   local fn = RM.lambda( "lutinvert", inp, out )
 
   return fn, fn.outputType
