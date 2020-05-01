@@ -47,9 +47,7 @@ function systolicASTFunctions:toTerra( symbols )
           res = `not [args[1]]
         elseif n.op=="abs" then
           if n.inputs[1].type:isInt() then
-            --assert(n.inputs[1].type:verilogBits()<=32)
-            --res = `cstdlib.abs([args[1]])
-            -- don't use stdlib: it's 32 bit only
+            -- don't use stdlib: it only works for 32 bit
             res = `terralib.select([args[1]]>=0,[args[1]], -[args[1]])
           else
             err(false,"systolicAST:toTerra NYI abs with type "..tostring(n.inputs[1].type))
@@ -118,7 +116,6 @@ function systolicASTFunctions:toTerra( symbols )
         elseif n.inputs[1].type:isBits() and n.type:isUint() and n.inputs[1].type.precision==n.type.precision then
           res = args[1]
         elseif (n.inputs[1].type:isInt() or n.inputs[1].type:isUint()) and (n.type:isInt() or n.type:isUint()) then
-          --err( n.inputs[1].type:isUint() or n.inputs[1].type:verilogBits()==8 or n.inputs[1].type:verilogBits()==16 or n.inputs[1].type:verilogBits()==32, "NYI cast "..tostring(n.inputs[1].type) )
           err( n.inputs[1].type.exp == n.type.exp,"Err: terra cast that changes exp! input:",n.inputs[1].type," to:",n.type)
           
           if n.type:verilogBits()==8 or n.type:verilogBits()==16 or n.type:verilogBits()==32 or

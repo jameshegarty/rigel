@@ -458,7 +458,6 @@ function(a)
   
   local g = C.unpackStencil( a.T, a.size[1], a.size[2], stencilW-a.size[1]+1, nil, true, a.imsize[1], a.imsize[2])
 
-  print("ST OF ST", f.outputType,a.V[1],stencilW,stencilH)
   return C.compose("StencilOfStencils",g,f)
 end,
 types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("imsize")) )

@@ -2728,7 +2728,7 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
         ot = types.rvV(res.outputType:deInterface().list[1])
       end
       assert( ot:lower()==res.outputType:lower() )
-      --print("CROPTYPEHACK",res.outputType,ot)
+
       res.outputType = ot
     else
       assert( indexMode==false)

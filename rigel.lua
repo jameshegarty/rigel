@@ -545,7 +545,7 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
       end
     elseif fnType:isTuple() then
       assert( targetType:isTuple() and #fnType.list==#targetType.list )
-      --print("FANNEDCONVERTINTERFACE target:",targetType," fntype:",fnType)
+
       res = G.Function{"FannedConvertInterface", types.RV(targetType), SDF{1,1},
         function(inp)
           local tmp = RM.broadcastStream( targetType, #targetType.list)(inp)

@@ -359,16 +359,11 @@ function CT.plusConsttfn( ty, value_orig, outputType, X)
   local out = symbol(outputType:toTerraType(true))
   local q = quote end
   if ty:verilogBits()~=ty:sizeof()*8 then
-    --print(ty:verilogBits(),ty:sizeof()*8)
-    --assert(false)
     local valuen = value:toNumber()
     local vbits = math.ceil(math.log(valuen)/math.log(2))
     if outputType:verilogBits()>=math.max(vbits,ty:verilogBits())+1 then
       -- we know this has enough bits to not overflow, so no need to truncate...
     else
-
-      --assert( ty:isUint() )
-      --q = quote @[out] = @[out] and (([outputType:toTerraType()](1)<<[outputType:verilogBits()])-1) end
       q = quote @[out] = [trunc(`@[out],outputType)] end
     end
   end
@@ -388,7 +383,6 @@ function CT.denormalize(ty)
     print("CTDENORM",ty,outType)
     return terra( inp : &ty:toTerraType(), out : &outType:toTerraType() )
       var tmp = @inp >> [ty:toTerraType()]([math.max(0,-ty.exp)])
-      --@out = [trunc(`@inp,outType)]
       @out = tmp
     end
   else
