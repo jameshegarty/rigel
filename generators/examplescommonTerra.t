@@ -133,9 +133,10 @@ function CT.multiply(A,B,outputType)
                   end
 end
 
-function CT.multiplyConst(A,constValue)
-  return terra( a : &A:toTerraType(), out : &A:toTerraType() )
-    @out = [A:toTerraType()](@a)*[A:toTerraType()](constValue)
+function CT.multiplyConst( A, constValue, outputType, X )
+  assert( X==nil )
+  return terra( a : &A:toTerraType(), out : &outputType:toTerraType() )
+    @out = [outputType:toTerraType()](@a)*[outputType:toTerraType()](constValue)
   end
 end
 
@@ -352,20 +353,44 @@ function CT.stripMSB(totalbits)
   end
 end
 
-function CT.plusConsttfn(ty,value_orig)
+function CT.plusConsttfn( ty, value_orig, outputType, X)
   local value = Uniform(value_orig)
   
-  local out = symbol(ty:toTerraType(true))
+  local out = symbol(outputType:toTerraType(true))
   local q = quote end
   if ty:verilogBits()~=ty:sizeof()*8 then
     --print(ty:verilogBits(),ty:sizeof()*8)
     --assert(false)
-    q = quote @[out] = @[out] and (([ty:toTerraType()](1)<<[ty:verilogBits()])-1) end
+    local valuen = value:toNumber()
+    local vbits = math.ceil(math.log(valuen)/math.log(2))
+    if outputType:verilogBits()>=math.max(vbits,ty:verilogBits()) then
+      -- we know this has enough bits to not overflow, so no need to truncate...
+    else
+      assert( ty:isUint() )
+      q = quote @[out] = @[out] and (([outputType:toTerraType()](1)<<[outputType:verilogBits()])-1) end
+    end
   end
 
   return terra( a : ty:toTerraType(true), [out] ) 
-    @[out] =  @a+[ty:toTerraType()]([value:toTerra()]) 
+    @[out] =  [outputType:toTerraType()](@a)+[outputType:toTerraType()]([value:toTerra()]) 
     [q]
+  end
+end
+
+function CT.denormalize(ty)
+  if ty.exp<0 then
+    -- throw out frac bits
+    local outbits = ty.precision+ty.exp
+    local outType = ty:replaceVar("precision",outbits):replaceVar("exp",0)
+
+    print("CTDENORM",ty,outType)
+    return terra( inp : &ty:toTerraType(), out : &outType:toTerraType() )
+      var tmp = @inp >> [ty:toTerraType()]([math.max(0,-ty.exp)])
+      --@out = [trunc(`@inp,outType)]
+      @out = tmp
+    end
+  else
+    assert(false)
   end
 end
 

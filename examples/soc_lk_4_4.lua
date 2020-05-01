@@ -23,10 +23,10 @@ print("CONVWIDTH",CONVWIDTH,"V",V)
 local bits = {
   inv22={15,26,0},
   inv22inp={5,5,0}, -- NOTICE THIS IS DIFFERENT THAN WINDOW=6 VERSION
-  d={0,0,0},
-  Apartial={0,0,0},
-  Bpartial={0,0,0},
-  solve={0,0,0}
+--  d={0,0,0},
+--  Apartial={0,0,0},
+--  Bpartial={0,0,0},
+--  solve={0,0,0}
 }
 
 local inputFilename = "trivial_64.raw"
@@ -182,65 +182,58 @@ local Solve = G.SchedulableFunction{"Solve", T.Tuple{T.Array2d(P.NumberType("Ain
     return G.TupleToArray(out_0,out_1)
   end}
 
-local display = J.memoize(function(inpType)
---  f.expectFixed(inpType)
+local Display = G.SchedulableFunction{"Display", T.Array2d(P.NumberType("ity"),2),
+  function(inp)
+    local out = {}
+    for i=0,1 do
+      local I = inp[i]
+      local B = G.MulE{32}(I)
+      print("B",B.type)
+      local FF = G.AddE{128}(B)
 
-  local inp = f.parameter("displayinp",types.array2d(inpType,2))
-  local out = {}
-  for i=0,1 do
-    local I = inp:index(i)
-    if f.isFixedType(inpType)==false then I=I:lift() end
+      FF = G.Abs(FF)
+      FF = G.ItoU(FF)
 
-    
-    print("FIXEDINP",I.type)
-    local B = I*f.constant(32,true,7,0)
-    local FF = (B+f.constant(128,true,9,0)):abs()
-    local FF_den = FF:denormalize()
+      local FF_den = G.Denormalize(FF)
 
-    local FF_trunc = FF_den:truncate(8)
+      local FF_trunc = G.RemoveMSBs{FF_den.type:deInterface().precision-8}(FF_den)
+      assert(FF_trunc.type:deInterface()==T.U8)      
 
-    table.insert(out, FF_trunc:lower(types.uint(8)))
-  end
+      table.insert(out,FF_trunc)
+    end
 
-  out = f.array2d(out,2)
-  return {out:toRigelModule("display"), out:cost()}
-end)
+    local res = G.TupleToArray(unpack(out))
 
-function makeLK( T, internalW, internalH, window, bits )
-  assert(type(window)=="number")
-  assert(type(bits)=="table")
+    return res
+  end}
 
-  print("MAKELK",T,internalW,internalH,window,bits)
-  
-  local cost = 9
-
-  return G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),2),P.SizeValue("imsize")),
+local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),2),P.SizeValue("imsize")),
     function(inp)
                                  
       local frame0 = G.Map{G.Index{0}}(inp)
       local frame1 = G.Map{G.Index{1}}(inp)
   
-      local lb0 = G.Stencil{{-window, 0, -window, 0}}(frame0)
-      local lb1 = G.Stencil{{-window, 0, -window, 0}}(frame1)
+      local lb0 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame0)
+      local lb1 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame1)
 
-      local fdx = G.Map{G.Slice{{window-2, window, window-1, window-1}}}(lb0)
+      local fdx = G.Map{G.Slice{{CONVWIDTH-2, CONVWIDTH, CONVWIDTH-1, CONVWIDTH-1}}}(lb0)
 
       fdx = G.Map{Dx}(fdx)
 
-      local fdx_stencil = G.Stencil{{-window+1, 0, -window+1, 0}}(fdx)
+      local fdx_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdx)
 
-      local fdy = G.Map{G.Slice{{window-1, window-1, window-2, window}}}(lb0)
+      local fdy = G.Map{G.Slice{{CONVWIDTH-1, CONVWIDTH-1, CONVWIDTH-2, CONVWIDTH}}}(lb0)
 
       local fdy = G.Map{Dy}(fdy)
-      local fdy_stencil = G.Stencil{{-window+1, 0, -window+1, 0}}(fdy)
+      local fdy_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdy)
 
       local Ainp = G.Zip( fdx_stencil, fdy_stencil )
       local A = G.Map{CalcA}(Ainp)
 
       local Ainv = G.Map{Invert2x2}(A)
 
-      local f0_slice = G.Map{G.Slice{{0, window-1, 0, window-1}}}(lb0)
-      local f1_slice = G.Map{G.Slice{{0, window-1, 0, window-1}}}(lb1)
+      local f0_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb0)
+      local f1_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb1)
       local binp = G.Zip(f0_slice,f1_slice,fdx_stencil,fdy_stencil)
       local b = G.Map{CalcB}(binp)
 
@@ -249,13 +242,13 @@ function makeLK( T, internalW, internalH, window, bits )
 
       local stype = vectorField.type:deInterface():arrayOver():arrayOver()
 
-      local DISP = display(stype)
-      local displayfn, displaycost = DISP[1], DISP[2]
-      local out = G.Map{displayfn}(vectorField)
+      --local DISP = display(stype)
+      --local displayfn, displaycost = DISP[1], DISP[2]
+      --local out = G.Map{displayfn}(vectorField)
+      local out = G.Map{Display}(vectorField)
+      
       return out
     end}
-  
-end
 
 local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
   function(i)
@@ -265,14 +258,9 @@ local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
     local PadRadiusAligned = J.upToNearest(V,CONVWIDTH/2)
     local PadExtra = PadRadiusAligned - PadRadius
 
-    local internalW = W+PadRadiusAligned*2
-    local internalH = H+CONVWIDTH+1
-
     local padded = G.Pad{{PadRadiusAligned, PadRadiusAligned, PadRadius+1, PadRadius}}(readStream)
-    local lkfn = makeLK( V, internalW, internalH, CONVWIDTH, bits )
-    print("LKFN",lkfn.inputType,lkfn.outputType)
     
-    local out = lkfn(padded)
+    local out = LK(padded)
     out = G.Crop{{PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0}}(out)
     return G.AXIWriteBurst{"out/soc_lk_"..CONVWIDTH.."_"..(V*CONVWIDTH),noc.write}(out)
   end}

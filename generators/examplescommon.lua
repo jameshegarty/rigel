@@ -271,14 +271,17 @@ end)
 ------------
 -- return A*B as a darkroom FN. A,B are types
 -- returns something of type outputType
-C.multiplyConst = memoize(function( A, constValue, X )
+C.multiplyConst = memoize(function( A, constValue, outputType, X )
   err( types.isType(A), "C.multiply: A must be type")
   err( type(constValue)=="number","C.multiplyConst: value must be number, but is: "..tostring(constValue) )
   err(X==nil,"C.multiplyConst: too many arguments" )
+
+  if outputType==nil then outputType = A end
+  assert( types.isType(outputType) )
   
-  local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue)), A, A, nil,
-    function(sinp) return sinp*S.constant(constValue,A) end,
-    function() return CT.multiplyConst(A,constValue) end,
+  local partial = RM.lift( J.sanitize("mult_const_A"..tostring(A).."_value"..tostring(constValue).."_OT"..tostring(outputType)), A, outputType, nil,
+                           function(sinp) return S.cast(sinp,outputType)*S.constant(constValue,outputType:replaceVar("exp",0)) end,
+    function() return CT.multiplyConst(A,constValue,outputType) end,
     "C.multiplyConst" )
 
   return partial
@@ -402,9 +405,7 @@ C.sum = memoize(function( A, B, outputType, async )
   local partial = RM.lift(
     J.sanitize("sum_"..tostring(A)..tostring(B)..tostring(outputType).."_async_"..tostring(async)), types.tuple {A,B}, outputType, delay,
     function(sinp)
-      print("SUM",sinp.type,outputType)
       local sout = S.cast(S.index(sinp,0),outputType)+S.cast(S.index(sinp,1),outputType)
-      print("SOUT",sout.type)
       if async then sout = sout:disablePipelining() end
       return sout
     end,
@@ -2350,20 +2351,60 @@ function C.gaussian(W,sigma)
   return tab
 end
 
-C.plusConst = memoize(function( ty, value_orig, async)
+-- remove fractional component
+C.denormalize = memoize(function( ty )
+  err(types.isType(ty),"denormalize: first argument should be type, but is: ",ty)
+  err( ty:isInt() or ty:isUint(),"denormalize: must be int or uint, but is: ",ty )
+
+  local outbits = ty.precision+ty.exp
+  err( outbits>0,"denormalize: this type is fully fractional, so would disappear! ",ty )
+
+  local outType = ty:replaceVar("precision",outbits):replaceVar("exp",0)
+
+  if ty.exp==0 then
+    -- do nothing
+    return C.identity( ty, J.sanitize("Denormalize_"..tostring(ty) ) )
+  elseif ty.exp>0 then
+    -- make larger
+    local res = RM.lift( J.sanitize("Denormalize_"..tostring(ty)), ty, outType, 0,
+                         function(inp) return S.lshift(S.cast(inp,outType),S.constant(ty.exp,outType)) end)
+    return res
+  else -- ty.exp <0
+    local res = RM.lift( J.sanitize("Denormalize_"..tostring(ty)), ty, outType, 0,
+                         function(inp) return S.cast(S.rshift(inp,S.constant(-ty.exp,ty)), outType) end,
+                         function() return CT.denormalize(ty) end)
+    return res
+  end
+  
+  return res
+end)
+
+C.plusConst = memoize(function( ty, value_orig, async, outputType )
   err(types.isType(ty),"plus100: first argument should be type, but is: ",ty)
+
+  if async==nil then async=false end
+  assert( type(async)=="boolean" )
+
+  if outputType==nil then outputType = ty end
+  assert( types.isType(outputType) )
+
+  assert( ty.exp==outputType.exp )
+
   local value = Uniform(value_orig)
   err( value:isNumber(),"plusConst expected numeric input")
+  value = value * math.pow(2,math.max(-ty.exp,0))  -- rescale by exp, to be in right scale
 
+  print("VALUE",value_orig,value)
+  
   local instanceMap = value:getInstances()
   
-  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty,ty , J.sel(async==true,0,1) ,
+  local plus100mod = RM.lift( J.sanitize("plus_"..tostring(ty).."_"..tostring(value)), ty, outputType , J.sel(async==true,0,1) ,
                               function(plus100inp)
-                                local res = plus100inp + value:toSystolic(ty)
+                                local res = S.cast(plus100inp,outputType) + S.cast(value:toSystolic(ty),outputType)
                                 if async==true then res = res:disablePipelining() end
                                 return res
                               end,
-                              function() return CT.plusConsttfn(ty,value) end, nil,nil, instanceMap )
+                              function() return CT.plusConsttfn( ty, value, outputType ) end, nil,nil, instanceMap )
   return plus100mod
 end)
 

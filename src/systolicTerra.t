@@ -47,7 +47,10 @@ function systolicASTFunctions:toTerra( symbols )
           res = `not [args[1]]
         elseif n.op=="abs" then
           if n.inputs[1].type:isInt() then
-            res = `cstdlib.abs([args[1]])
+            --assert(n.inputs[1].type:verilogBits()<=32)
+            --res = `cstdlib.abs([args[1]])
+            -- don't use stdlib: it's 32 bit only
+            res = `terralib.select([args[1]]>=0,[args[1]], -[args[1]])
           else
             err(false,"systolicAST:toTerra NYI abs with type "..tostring(n.inputs[1].type))
           end

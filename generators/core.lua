@@ -87,21 +87,21 @@ T.VarSeq(T.Par(P.DataType("T")),P.SizeValue("InSize")) )
 -- bits to unsigned
 generators.BtoU = R.FunctionGenerator("core.BtoU",{},{},
 function(args)
-  return C.cast(args.T,types.uint(args.T.precision))
+  return C.cast( args.T, types.uint( args.T.precision ))
 end, P.BitsType("T") )
 
 
 -- convert Uint to Int
 generators.UtoI = R.FunctionGenerator("core.UtoI",{},{},
 function(args)
-  return C.cast(args.T,types.Int(args.T.precision))
+  return C.cast( args.T, types.Int( args.T.precision, args.T.exp ))
 end, P.UintType("T") )
 
 
 -- convert Int to Uint
 generators.ItoU = R.FunctionGenerator("core.ItoU",{},{},
 function(args)
-  return C.cast(args.T,types.Uint(args.T.precision))
+  return C.cast( args.T, types.Uint( args.T.precision, args.T.exp ))
 end, P.IntType("T") )
 
 
@@ -243,7 +243,6 @@ end )
   
 generators.NE = R.FunctionGenerator("core.NE",{},{"async","number"},
 function(args)
-  
   local res = {}
   if args.number~=nil then
     -- add a const (unary op)
@@ -269,9 +268,15 @@ generators.AddE = R.FunctionGenerator("core.Add",{"type","rate"},{"async","numbe
 function(args)
   local res = {}
   if args.number~=nil then
-    assert(false)
+    
+    return R.FunctionGenerator( "core.AddConst", {}, {"async","number"},
+                                function(a)
+                                  local bts = math.ceil(math.log(args.number)/math.log(2))+math.max(-a.T.exp,0)
+                                  local bb = math.max(a.T.precision,bts)+1
+                                  return C.plusConst( a.T, args.number, args.async, a.T:replaceVar("precision",bb) )
+                                end,
+                                P.NumberType("T") ):complete(args)
   else
-
     return R.FunctionGenerator("core.AddENonconst", {}, {"async","number"},
                                function(a)
                                  local OT = a.T:replaceVar("precision",a.T.precision+1)
@@ -324,7 +329,14 @@ end)
 generators.MulE = R.FunctionGenerator("core.MulE",{"type","rate"},{"number","async"},
 function(args)
   if args.number~=nil then
-    assert(false)
+    local bts = math.ceil(math.log(args.number)/math.log(2))
+
+      return R.FunctionGenerator("core.MulEConst",{},{"async","number"},
+                                 function(a)
+                                   local OT = a.L:replaceVar("precision",a.L.precision+bts)
+                                   return C.multiplyConst( a.L, args.number, OT )
+                                 end,
+                                 P.NumberType("L")):complete(args)
   else
     return R.FunctionGenerator("core.MulE",{},{"async","number"},function(a) return C.multiplyE( a.L, a.R, args.async ) end, T.tuple{P.NumberType("L"),P.NumberType("R")}):complete(args)
   end
@@ -354,7 +366,12 @@ end)
 
 generators.Abs = R.FunctionGenerator("core.Abs",{},{"async"},
 function(a) return C.Abs( a.T, a.async ) end,
-T.rv(T.Par(P.NumberType("T"))) )
+P.NumberType("T") )
+
+-- remove fractional component
+generators.Denormalize = R.FunctionGenerator("core.Denormalize",{},{},
+function(a) return C.denormalize( a.T ) end,
+P.NumberType("T") )
 
 generators.And = R.FunctionGenerator("core.And",{"type","rate"},{"async"},
 function(args)
