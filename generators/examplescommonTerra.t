@@ -366,8 +366,10 @@ function CT.plusConsttfn( ty, value_orig, outputType, X)
     if outputType:verilogBits()>=math.max(vbits,ty:verilogBits())+1 then
       -- we know this has enough bits to not overflow, so no need to truncate...
     else
-      assert( ty:isUint() )
-      q = quote @[out] = @[out] and (([outputType:toTerraType()](1)<<[outputType:verilogBits()])-1) end
+
+      --assert( ty:isUint() )
+      --q = quote @[out] = @[out] and (([outputType:toTerraType()](1)<<[outputType:verilogBits()])-1) end
+      q = quote @[out] = [trunc(`@[out],outputType)] end
     end
   end
 

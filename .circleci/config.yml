@@ -32,12 +32,11 @@ jobs:
       - checkout
       # updated needed for z3
       - run: sudo apt-get update 
-      #- run: sudo apt-get install luajit flex bison z3
-      #- run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
-      #- run: verilator --version
+      - run: sudo apt-get install luajit flex bison z3 time
+      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
+      - run: verilator --version
       #- run: which verilator
-      #teswt
-      - run: sudo apt-get install luajit verilator z3 time
+      #- run: sudo apt-get install luajit verilator z3 time
       - run: z3 --version
       - run: cd examples; make verilatorSOC
       - run: cat examples/out/*.luatime.txt      
