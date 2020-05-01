@@ -23,7 +23,7 @@ function systolicAST.new(tab)
   assert(type(tab)=="table")
   assert(type(tab.inputs)=="table")
   err(#tab.inputs==J.keycount(tab.inputs), "systolicAST.new inputs list is not a well formed array ("..tostring(tab.kind)..")")
-  if tab.name==nil then tab.name="unnamed"..tab.kind..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
+  if tab.name==nil then tab.name="un"..tab.kind..__usedNameCnt; __usedNameCnt=__usedNameCnt+1 end
   assert(types.isType(tab.type))
   assert(type(tab.loc)=="string")
   if tab.pipelined==nil then tab.pipelined=true end
