@@ -254,7 +254,7 @@ C.multiplyE = memoize(function( A, B, X )
   local outL = A:replaceVar("precision",A.precision+B.precision)
   local outR = B:replaceVar("precision",A.precision+B.precision)
 
-  local partial = RM.lift( J.sanitize("mult_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, outputType, nil,
+  local partial = RM.lift( J.sanitize("multE_A"..tostring(A).."_B"..tostring(B)), types.tuple {A,B}, outputType, nil,
     function(sinp)
       local i0 = S.index(sinp,0)
       local lhs = S.cast(i0,outL)

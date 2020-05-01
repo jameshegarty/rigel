@@ -265,6 +265,22 @@ function(args)
   end
 end)
 
+generators.AddE = R.FunctionGenerator("core.Add",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    assert(false)
+  else
+
+    return R.FunctionGenerator("core.AddENonconst", {}, {"async","number"},
+                               function(a)
+                                 local OT = a.T:replaceVar("precision",a.T.precision+1)
+                                 return C.sum( a.T, a.T, OT, args.async )
+                               end,
+      T.tuple{P.NumberType("T"),P.NumberType("T")} ):complete(args)
+  end
+end)
+
 -- {{idxType,vType},{idxType,vType}} -> {idxType,vType}
 -- async: 0 cycle delay
 generators.ArgMax = R.FunctionGenerator("core.ArgMax", {}, {"async"},

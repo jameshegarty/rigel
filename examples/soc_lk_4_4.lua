@@ -73,7 +73,7 @@ local Fout = G.SchedulableFunction{"Fout", T.tuple{T.array2d(P.NumberType("AType
     return G.TupleToArray(unpack(OT))
 end}
 
-local Invert2x2 = G.SchedulableFunction{"Invert2x2", T.Array2d(P.NumberType("A"),4),
+local Invert2x2 = G.SchedulableFunction{"Inv", T.Array2d(P.NumberType("A"),4),
   function(i)
     local denom = Fdenom(i)
     local det = C.lutinvert(denom.type:deInterface())(denom)
@@ -162,48 +162,37 @@ local CalcB = G.SchedulableFunction{"CalcB",
     return out
 end}
 
-local solve = J.memoize(function( AinvType, btype, bits )
-  assert( types.isType(AinvType) )
-  assert( types.isType(btype) )
-  assert(type(bits)=="table")
+local Solve = G.SchedulableFunction{"Solve", T.Tuple{T.Array2d(P.NumberType("AinvType"),4),T.Array2d(P.NumberType("btype"),2)},
+  function(i)
+    local Ainv = i[0]
+    local b = i[1]
+    local b0, b1 = b[0], b[1]
+    b0 = G.Neg(b0)
+    b1 = G.Neg(b1)
+    local Ainv0, Ainv1, Ainv2, Ainv3 = Ainv[0], Ainv[1], Ainv[2], Ainv[3]
 
-  local inp = f.parameter( "solveinp", types.tuple{types.array2d(AinvType,4), types.array2d(btype,2)} )
-  local Ainv = inp:index(0)
-  local b = inp:index(1)
-
-  local b0 = b:index(0)
-  if f.isFixedType(btype)==false then b0=b0:lift() end
-  local b1 = b:index(1)
-  if f.isFixedType(btype)==false then b1=b1:lift() end
-
-  local Ainv0 = Ainv:index(0)
-  if f.isFixedType(AinvType)==false then Ainv0=Ainv0:lift() end
-  local Ainv1 = Ainv:index(1)
-  if f.isFixedType(AinvType)==false then Ainv1=Ainv1:lift() end
-  local Ainv2 = Ainv:index(2)
-  if f.isFixedType(AinvType)==false then Ainv2=Ainv2:lift() end
-  local Ainv3 = Ainv:index(3)
-  if f.isFixedType(AinvType)==false then Ainv3=Ainv3:lift() end
-  
-  local out_0 = (Ainv0*(b0:neg())) + (Ainv1*(b1:neg()))
-  bits.solve[3] = out_0:precision()
-  out_0 = out_0:reduceBits(bits.solve[1], bits.solve[2])
-
-  local out_1 = (Ainv2*(b0:neg())) + (Ainv3*(b1:neg()))
-  out_1 = out_1:reduceBits(bits.solve[1], bits.solve[2])
-
-  local out = f.array2d({out_0,out_1},2)
-
-  return {out:toRigelModule("lksolve"), out_0.type, out:cost()}
-end)
+    local out_0_lhs = G.MulE(Ainv0,b0)
+    local out_0_rhs = G.MulE(Ainv1,b1)
+    local out_0 = G.AddE( out_0_lhs, out_0_rhs )
+    
+    local out_1_lhs = G.MulE(Ainv2,b0)
+    local out_1_rhs = G.MulE(Ainv3,b1)
+    local out_1 = G.AddE(out_1_lhs,out_1_rhs)
+    
+    return G.TupleToArray(out_0,out_1)
+  end}
 
 local display = J.memoize(function(inpType)
-  f.expectFixed(inpType)
+--  f.expectFixed(inpType)
 
   local inp = f.parameter("displayinp",types.array2d(inpType,2))
   local out = {}
   for i=0,1 do
     local I = inp:index(i)
+    if f.isFixedType(inpType)==false then I=I:lift() end
+
+    
+    print("FIXEDINP",I.type)
     local B = I*f.constant(32,true,7,0)
     local FF = (B+f.constant(128,true,9,0)):abs()
     local FF_den = FF:denormalize()
@@ -255,12 +244,12 @@ function makeLK( T, internalW, internalH, window, bits )
       local binp = G.Zip(f0_slice,f1_slice,fdx_stencil,fdy_stencil)
       local b = G.Map{CalcB}(binp)
 
-      local SOLV = solve( Ainv.type:deInterface():arrayOver():arrayOver(), b.type:deInterface():arrayOver():arrayOver(), bits )
-      local fSolve, SolveType, SolveCost = SOLV[1],SOLV[2],SOLV[3]
       local sinp = G.Zip(Ainv,b)
-      local vectorField = G.Map{fSolve}(sinp)
+      local vectorField = G.Map{Solve}(sinp)
 
-      local DISP = display(SolveType)
+      local stype = vectorField.type:deInterface():arrayOver():arrayOver()
+
+      local DISP = display(stype)
       local displayfn, displaycost = DISP[1], DISP[2]
       local out = G.Map{displayfn}(vectorField)
       return out
