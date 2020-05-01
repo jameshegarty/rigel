@@ -363,7 +363,7 @@ function CT.plusConsttfn( ty, value_orig, outputType, X)
     --assert(false)
     local valuen = value:toNumber()
     local vbits = math.ceil(math.log(valuen)/math.log(2))
-    if outputType:verilogBits()>=math.max(vbits,ty:verilogBits()) then
+    if outputType:verilogBits()>=math.max(vbits,ty:verilogBits())+1 then
       -- we know this has enough bits to not overflow, so no need to truncate...
     else
       assert( ty:isUint() )

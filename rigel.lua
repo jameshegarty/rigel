@@ -898,7 +898,7 @@ __call=function(tab,...)
     arg = rawarg[1]
   end
   
-  local res = darkroom.apply("un"..darkroom.__unnamedID.."_"..tab.name:sub(1,20), tab, arg)
+  local res = darkroom.apply(J.sanitize("un"..darkroom.__unnamedID.."_"..tab.name:sub(1,20)), tab, arg)
   res.defaultName=true
   darkroom.__unnamedID = darkroom.__unnamedID+1
   return res

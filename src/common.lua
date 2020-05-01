@@ -680,6 +680,11 @@ function common.verilogSanitizeInner(s)
   s = s:gsub("%W","_")
   s = s:gsub('%__','_')
 
+  if string.sub(s,#s)=="_" then
+    -- remove _ at end
+    s = string.sub(s,1,#s-1)
+  end
+  
   return s
 end
 
