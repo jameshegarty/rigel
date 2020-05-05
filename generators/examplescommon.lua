@@ -3141,6 +3141,10 @@ endmodule
     return s
   end
 
+  function res.makeTerra()
+    return CT.Float( res, exp, sig )
+  end
+
   return res
 end)
 
@@ -3180,6 +3184,10 @@ endmodule
     return s
   end
 
+  function res.makeTerra()
+    return CT.FloatRec( res, inputType, exp, sig )
+  end
+  
   return res
 end)
 
@@ -3217,6 +3225,10 @@ endmodule
 ]]
     s:verilog(verilog)
     return s
+  end
+
+  function res.makeTerra()
+    return CT.SumF( res, exp, sig )
   end
 
   return res

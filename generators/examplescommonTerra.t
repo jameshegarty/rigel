@@ -482,4 +482,34 @@ function CT.generalizedChangeRate( res, inputBitsPerCyc, minTotalInputBits_orig,
 
 end
 
+function CT.Float( res, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct Float {}
+  terra Float:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = @inp
+  end
+  return MT.new( Float, res )
+end
+
+function CT.FloatRec( res, inputType, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct FloatRec {}
+  terra FloatRec:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = @inp
+  end
+  return MT.new( FloatRec, res )
+end
+
+function CT.SumF( res, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct SumF {}
+  terra SumF:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = (@inp)._0 + (@inp)._1
+  end
+  return MT.new( SumF, res )
+end
+
 return CT

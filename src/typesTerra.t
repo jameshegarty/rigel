@@ -10,8 +10,12 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     return self.structure:toTerraType(pointer,vectorN)
   end
   
-  if self:isFloat() and self.precision==32 then
-    ttype = terralib.types.float
+  if self:isFloat() or self:isFloatRec() then
+    if self.exp==8 and self.sig==24 then
+      ttype = terralib.types.float
+    else
+      J.err(false, "NYI - lowering non 32 bit float to terra: ",self)
+    end
   elseif self:isFloat() and self.precision==64 then
     ttype = terralib.types.double
   elseif (self:isUint() or self:isBits()) and self.precision<=8 then
