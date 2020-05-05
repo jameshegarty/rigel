@@ -3195,7 +3195,7 @@ C.sumF = J.memoize(function( exp, sig, X )
   local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
   --  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
   local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
-  local addRecFN = C.VerilogFile("generators/hardfloat/source/addRecFn.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN )
+  local addRecFN = C.VerilogFile("generators/hardfloat/source/addRecFN.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN )
 
   local inst = {}
   local intToFloat = addRecFN:instantiate("add")
