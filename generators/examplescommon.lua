@@ -2871,13 +2871,14 @@ end
 -- this will import a Verilog file as a module... the module is basically a stub,
 -- this basically only serves to include the source when we lower to verilog
 -- dependencyList is a list of modules we depend on
-C.VerilogFile = J.memoize(function(filename,dependencyList)
-  if dependencyList==nil then dependencyList={} end
+C.VerilogFile = J.memoize(function( filename, ... )
+    --if dependencyList==nil then dependencyList={} end
+  local dependencyList = {...}
     
   local res = {inputType=types.null(), outputType=types.null(), stateful=false, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, name = J.sanitize(filename), delay=0 }
   res.instanceMap={}
   for _,d in pairs(dependencyList) do
-    assert(R.isModule(d))
+    J.err( R.isModule(d),"dependency should be Rigel module, but is:",d)
     res.instanceMap[d:instantiate()]=1
   end
   
@@ -3104,6 +3105,120 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig,
   res.inputType = inputType
   res.outputType = outputType
   
+  return res
+end)
+
+-- FloatRec to ieee Float
+C.Float = J.memoize(function( exp, sig, X )
+  err( type(exp)=="number" )
+  err( type(sig)=="number" )
+  err( X==nil )
+
+
+  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v")
+  local recFNToFN = C.VerilogFile("generators/hardfloat/source/recFNToFN.v", HardFloat_consts, HardFloat_localFuncs, HardFloat_primitives, HardFloat_rawFN )
+
+  local inst = {}
+  local floatRecToFloat = recFNToFN:instantiate("floatRecToFloat")
+  inst[floatRecToFloat] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatRecToFloat_"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.FloatRec(exp,sig)), outputType=types.rv(types.Float(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    verilog = verilog..[[
+recFNToFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) conv (.in(process_input),.out(process_output));
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  return res
+end)
+
+C.FloatRec = J.memoize(function( inputType, exp, sig, X )
+  err( inputType:isUint() or inputType:isInt() )
+  err( type(exp)=="number","C.FloatRec: exp should be number, but is: ",exp )
+  err( type(sig)=="number" ,"C.FloatRec: sig should be number, but is: ",sig )
+  err( X==nil )
+
+  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local iNToRecFN = C.VerilogFile("generators/hardfloat/source/iNToRecFN.v",HardFloat_consts,HardFloat_specialize,HardFloat_localFuncs,HardFloat_primitives)
+
+  local inst = {}
+  local intToFloat = iNToRecFN:instantiate("intToFloat")
+  inst[intToFloat] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatRec_"..tostring(inputType).."_exp"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(inputType), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    local signed = "1'b0"
+    if inputType:isInt() then signed="1'b1" end
+    
+    verilog = verilog..[[
+wire [4:0] exception;
+iNToRecFN #(.intWidth(]]..inputType:verilogBits()..[[),.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) conv (.control(`flControl_default),.signedIn(]]..signed..[[),.in(process_input),.roundingMode(`round_near_even),.out(process_output),.exceptionFlags(exception));
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  return res
+end)
+
+-- floating point add
+C.sumF = J.memoize(function( exp, sig, X )
+  err( type(exp)=="number","C.FloatRec: exp should be number, but is: ",exp )
+  err( type(sig)=="number" ,"C.FloatRec: sig should be number, but is: ",sig )
+  err( X==nil )
+
+--  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  --  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
+  local addRecFN = C.VerilogFile("generators/hardfloat/source/addRecFn.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN )
+
+  local inst = {}
+  local intToFloat = addRecFN:instantiate("add")
+  inst[intToFloat] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatAdd_"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    local bts = exp+sig+1
+    verilog = verilog..[[
+wire [4:0] exception;
+addRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) add (.control(`flControl_default),.subOp(1'b0),.a(process_input[]]..(bts-1)..[[:0]),.b(process_input[]]..(bts*2-1)..[[:]]..(bts)..[[]),.roundingMode(`round_near_even),.out(process_output),.exceptionFlags(exception));
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
   return res
 end)
 

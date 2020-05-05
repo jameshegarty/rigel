@@ -888,6 +888,40 @@ function(args)
 end,
 T.Array2d(T.Array2d(P.DataType("A"),2),P.SizeValue("size")), false )
 
+-- convert to recoded hardfloat
+generators.FloatRec = R.FunctionGenerator("core.FloatRec",{"type","number"},{},
+function(args)
+  J.err( args.type:deInterface():isUint() or args.type:deInterface():isInt() )
+  J.err( args.number==32 )
+  return C.FloatRec( args.type:deInterface(), 8, 24 )
+end)
+
+-- convert to ieee float
+generators.Float = R.FunctionGenerator("core.Float",{"type"},{},
+function(args)
+  J.err( args.type:deInterface():isFloatRec() )
+  J.err( args.type:deInterface()==types.FloatRec32,"Float: input type should be FloatRec32, but is:",args.type:deInterface() )
+  return C.Float( 8, 24 )
+end)
+
+-- add floats
+-- we intentionally named this something different than regular add, to clearly indicate it is float
+generators.AddF = R.FunctionGenerator("core.Add",{"type","rate"},{"async","number"},
+function(args)
+  
+  local res = {}
+  if args.number~=nil then
+    -- add a const (unary op)
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple() )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2] )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.sumF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig )
+  end
+end)
+
+
 function generators.export(t)
   if t==nil then t=_G end
   for k,v in pairs(generators) do rawset(t,k,v) end

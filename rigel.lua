@@ -2610,6 +2610,12 @@ function darkroom.constant( name, value, ty, X )
     darkroom.__unnamedID = darkroom.__unnamedID+1
     res.value = name
     res.type = value
+    if types.isType(res.value) then
+      -- user gave them in other order: swap
+      res.value, res.type = res.type, res.value
+    end
+    
+    err( types.isType(res.type),"rigel.constant: type should be type, but is: ",res.type)
     err( ty==nil, "rigel.constant: too many arguments" )
   end
   
