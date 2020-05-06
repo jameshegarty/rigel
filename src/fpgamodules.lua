@@ -861,7 +861,7 @@ modules.binop = memoize(function(op,lhsType,rhsType,outType)
   assert(types.isType(rhsType))
   assert(types.isType(outType))
   
-  local str = op.."_"..tostring(lhsType).."_"..tostring(rhsType).."_"..tostring(outType)
+  local str = op.."_"..string.lower(tostring(lhsType)).."_"..string.lower(tostring(rhsType)).."_"..string.lower(tostring(outType))
   return loadVerilogFile( types.tuple{lhsType,rhsType}, outType, str)
 end)
 
