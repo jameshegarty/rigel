@@ -1,6 +1,7 @@
 local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
 local cstdio = terralib.includec("stdio.h",{"-Wno-nullability-completeness"})
 local cstring = terralib.includec("string.h",{"-Wno-nullability-completeness"})
+local cmath = terralib.includec("math.h", {"-Wno-nullability-completeness"})
 local rigel = require "rigel"
 local types = require "types"
 local J = require "common"
@@ -490,6 +491,38 @@ function CT.Float( res, exp, sig )
     @out = @inp
   end
   return MT.new( Float, res )
+end
+
+function CT.Sqrt( res, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct Sqrt { ready:bool; phase:int; buffer:float; bufferSet:bool, readyDownstream:bool }
+  terra Sqrt:reset() self.phase=0; self.bufferSet=false end
+  terra Sqrt:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    if self.phase>0 then
+      self.phase = self.phase-1
+    end
+
+    if valid(inp) and self.ready then
+      self.phase = [sig+3]
+      self.buffer = cmath.sqrt(data(inp))
+      self.bufferSet = true
+    end
+    
+    valid(out) = self.bufferSet and (self.phase==0)
+    data(out) = self.buffer
+
+    if valid(out) and self.readyDownstream then
+      self.bufferSet = false
+    end
+  end
+
+  terra Sqrt:calculateReady( readyDownstream:bool ) 
+    self.readyDownstream = readyDownstream
+    self.ready = (self.phase==0) and readyDownstream
+  end
+
+  return MT.new( Sqrt, res )
 end
 
 function CT.FloatRec( res, inputType, exp, sig )

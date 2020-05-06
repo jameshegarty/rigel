@@ -134,6 +134,8 @@ function TypeFunctions:terraPrint(terraValue)
     return quote Q end
   elseif self:isInt() then
     return quote cstdio.printf("%d",@terraValue) end
+  elseif self:isFloat() then
+    return quote cstdio.printf("%f",@terraValue) end
   elseif self:isBool() then
     return quote if @terraValue then cstdio.printf("true") else cstdio.printf("false") end end
   elseif self:isUint() or self:isBits() then

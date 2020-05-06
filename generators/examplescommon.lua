@@ -60,6 +60,8 @@ C.print = memoize(function(A,str)
   local function constructPrint(A,symb)
     if A:isUint() or A:isInt() or A:isBits() then
       return {A}, "%d", {symb}
+    elseif A:isFloat() then
+      return {A}, "%d", {symb}
     elseif A:isArray() then
       local resTypes={}
       local resStr="["
@@ -3329,6 +3331,109 @@ endmodule
 
   function res.makeTerra()
     return CT.MulF( res, exp, sig )
+  end
+
+  return res
+end)
+
+C.SqrtF = J.memoize(function( exp, sig, X )
+  err( type(exp)=="number" )
+  err( type(sig)=="number" )
+  err( X==nil )
+
+  --local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  --local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v", HardFloat_consts)
+  --local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v", HardFloat_specialize, HardFloat_consts )
+  local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
+  local divSqrtRecFN_small = C.VerilogFile("generators/hardfloat/source/divSqrtRecFN_small.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN )
+
+  local inst = {}
+  local sqrt = divSqrtRecFN_small:instantiate("sqrt")
+  inst[sqrt] = 1
+
+  -- depends on input, but this is what it approximatley is according to the docs
+  local approxCycles = sig+3
+  
+  local res = R.newFunction{ name=J.sanitize("FloatSqrt_"..tostring(exp).."_"..tostring(sig)), inputType = types.RV(types.FloatRec(exp,sig)), outputType=types.RV(types.FloatRec(exp,sig)), sdfInput=SDF{1,approxCycles}, sdfOutput=SDF{1,approxCycles}, stateful=true, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    verilog = verilog..[[
+
+reg bufferEmpty;
+reg [32:0] buffer;
+
+wire unitReady;
+wire outValid;
+wire [32:0] out;
+
+wire validIn;
+assign validIn = ]]..res:vInputValid()..[[;
+
+wire unitValid;
+assign unitValid = validIn && (bufferEmpty==1'b1);
+
+assign ]]..res:vOutputData()..[[ = buffer;
+assign ]]..res:vOutputValid()..[[ = (bufferEmpty==1'b0);
+
+// only accept an input if there is already space available
+assign ]]..res:vInputReady()..[[ = bufferEmpty && unitReady;
+
+always @(posedge CLK) begin
+  if ( reset ) begin
+    bufferEmpty <= 1'b1;
+  end else begin
+    if( outValid ) begin
+      // note: we should never have initiated a sqrt unless the buffer was already empty!
+      // so, we shouldn't have to worry about reads and writes into the buffer overlapping!! hopefully
+      bufferEmpty <= 1'b0;
+      buffer <= out;
+
+      if (bufferEmpty==1'b0) begin
+//        $display("Critical error: there is already something in the sqrt output buffer???\n");
+      end
+    end else if( ]]..res:vOutputReady()..[[ && bufferEmpty==1'b0 ) begin
+      bufferEmpty <= 1'b1;
+    end
+  end
+//  $display("unitValid %d dataIn %d bufferEmpty %d unitReady %d  readyUS %d |  out %d | unitOutValid %d buffer %d readyDS %d validOut %d",unitValid,]]..res:vInputData()..[[, bufferEmpty, unitReady, ready, out, outValid, buffer, ready_downstream, ]]..res:vOutputValid()..[[ );
+end
+
+
+wire sqrtOpOut;
+wire [4:0] exceptionFlags;
+
+divSqrtRecFN_small #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) divsqrtunit (.nReset(!reset),
+.clock(CLK),
+.control(`flControl_default),
+.sqrtOp(1'b1),
+.inReady( unitReady ),
+.inValid( unitValid ),
+.a( ]]..res:vInputData()..[[ ),
+.b( 33'd0 ),
+.roundingMode( `round_near_even ),
+.outValid( outValid ),
+.sqrtOpOut( sqrtOpOut ),
+.out( out ),
+.exceptionFlags( exceptionFlags )
+);
+
+
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    return CT.Sqrt( res, exp, sig )
   end
 
   return res

@@ -889,7 +889,7 @@ end,
 T.Array2d(T.Array2d(P.DataType("A"),2),P.SizeValue("size")), false )
 
 -- convert to recoded hardfloat
-generators.FloatRec = R.FunctionGenerator("core.FloatRec",{"type","number"},{},
+generators.FloatRec = R.FunctionGenerator("core.FloatRec",{"type","rate","number"},{},
 function(args)
   J.err( args.type:deInterface():isUint() or args.type:deInterface():isInt() )
   J.err( args.number==32 )
@@ -897,11 +897,18 @@ function(args)
 end)
 
 -- convert to ieee float
-generators.Float = R.FunctionGenerator("core.Float",{"type"},{},
+generators.Float = R.FunctionGenerator("core.Float",{"type","rate"},{},
 function(args)
   J.err( args.type:deInterface():isFloatRec() )
   J.err( args.type:deInterface()==types.FloatRec32,"Float: input type should be FloatRec32, but is:",args.type:deInterface() )
   return C.Float( 8, 24 )
+end)
+
+generators.SqrtF = R.FunctionGenerator("core.SqrtF",{"type","rate"},{},
+function(args)
+  J.err( args.type:deInterface():isFloatRec() )
+  J.err( args.type:deInterface()==types.FloatRec32,"SqrtF: input type should be FloatRec32, but is:",args.type:deInterface() )
+  return C.SqrtF( 8, 24 )
 end)
 
 -- add floats

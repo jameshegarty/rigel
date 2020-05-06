@@ -4,6 +4,7 @@ local types = require("types")
 local harness = require "generators.harness"
 --local fixed = require "fixed_float"
 local G = require "generators.core"
+local C = require "generators.examplescommon"
 
 W = 64
 H = 32
@@ -24,10 +25,9 @@ local a = G.SchedulableFunction{"a",types.int(32),
 ITYPE = types.array2d( types.int(32), T )
 inp = R.input( types.rv(types.Par(ITYPE)) )
 out = R.apply( "a", G.Map{a}, inp )
+out = C.bitcast( types.Array2d(types.Float32,2), types.Array2d(types.uint(8),8))(out)
 fn = RM.lambda( "fixed_wide", inp, out )
 ------------
 hsfn = RM.makeHandshake(fn)
 
-local OTYPE = types.array2d(types.Float32,T)
-
-harness{ outFile="float_mult", fn=hsfn, inFile="trivial_64.raw", inSize={W,H}, outSize={W,H} }
+harness{ outFile="float_mult", fn=hsfn, inFile="trivial_64.raw", inSize={W,H}, outSize={W*4,H}, outP=8 }
