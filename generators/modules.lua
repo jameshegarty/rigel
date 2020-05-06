@@ -5759,12 +5759,12 @@ function modules.moduleLambda( name, functionList, instanceList, X )
 end
 
 function modules.liftVerilogTab(tab)
-  return modules.liftVerilog( tab.name, tab.inputType, tab.outputType, tab.vstr, tab.globalMetadata, tab.sdfInput, tab.sdfOutput, tab.instanceMap, tab.delay, tab.inputBurstiness, tab.outputBurstiness )
+  return modules.liftVerilog( tab.name, tab.inputType, tab.outputType, tab.vstr, tab.globalMetadata, tab.sdfInput, tab.sdfOutput, tab.instanceMap, tab.delay, tab.inputBurstiness, tab.outputBurstiness, tab.stateful )
 end
 
 -- requires: this is a map of instance callsites (for external requirements)
 -- instanceMap: this is a map of rigel instances of modules this depends on
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globalMetadata, sdfInput, sdfOutput, instanceMap, delay, inputBurstiness, outputBurstiness, X )
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globalMetadata, sdfInput, sdfOutput, instanceMap, delay, inputBurstiness, outputBurstiness, stateful, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
@@ -5775,9 +5775,10 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
   if sdfOutput==nil then sdfOutput=SDF{1,1} end
   err( SDFRate.isSDFRate(sdfOutput), "liftVerilog: sdfOutput must be SDF rate, but is: "..tostring(sdfOutput))
   err( X==nil, "liftVerilog: too many arguments")
-  
+  if stateful==nil then stateful = true end
+
   local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name, instanceMap=instanceMap, delay = delay, inputBurstiness=inputBurstiness, outputBurstiness=outputBurstiness }
-  res.stateful = true
+  res.stateful = stateful
   res.sdfInput=SDF(sdfInput)
   res.sdfOutput=SDF(sdfOutput)
 

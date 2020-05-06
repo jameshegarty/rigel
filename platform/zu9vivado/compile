@@ -10,15 +10,15 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 mkdir -p $BUILDDIR
 $DIR/../../rigelLuajit $DIR/../../platform/axi/wrapper.lua $VERILOG_FILE $METADATA_FILE $VERILOG_FILE.mpsocwrapper.sv $DIR/../../platform/ mpsoc
 cd $BUILDDIR
-echo "read_verilog $VERILOG_FILE.mpsocwrapper.sv" > system.tcl
-echo "synth_design -top MPSOC_Top -part xczu9eg-ffvb1156-2-e" >> system.tcl
+echo "read_verilog $VERILOG_FILE $VERILOG_FILE.mpsocwrapper.sv" > system.tcl
+echo "synth_design -top MPSOC_Top -part xczu9eg-ffvb1156-2-e -retiming" >> system.tcl
 echo "read_xdc $DIR/../zu9vivado/zu9.xdc" >> system.tcl
 echo "opt_design" >> system.tcl
 echo "place_design" >> system.tcl
-echo "phys_opt_design" >> system.tcl
+echo "phys_opt_design -retime" >> system.tcl
 echo "route_design" >> system.tcl
-echo "write_checkpoint final.dcp" >> system.tcl
-echo "write_bitstream system.bit" >> system.tcl
+echo "write_checkpoint -force final.dcp" >> system.tcl
+echo "write_bitstream -force system.bit" >> system.tcl
 echo "report_timing" >> system.tcl
 echo "report_timing_summary" >> system.tcl
 echo "report_utilization -hierarchical -file utilization_h.txt" >> system.tcl

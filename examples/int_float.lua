@@ -5,6 +5,9 @@ local S = require("systolic")
 local harness = require "generators.harness"
 local G = require "generators.core"
 
+-- hardfloat doesn't work with this on
+R.default_nettype_none = false
+
 W = 64
 H = 32
 T = 2

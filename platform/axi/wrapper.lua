@@ -226,9 +226,10 @@ end
 
 -- hack: if verilogFile is 'none', don't concat it
 local HSFN_VERILOG = ""
-if VERILOGFILE~="none" then HSFN_VERILOG = readAll(VERILOGFILE) end
+-- we will just include the file separately in the compile file list - it's cleaner and easier
+--if VERILOGFILE~="none" then HSFN_VERILOG = readAll(VERILOGFILE) end
 
-local hsfnorig = RM.liftVerilogTab{ name=metadata.topModule, inputType=R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), outputType=R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), vstr=HSFN_VERILOG, sdfInput=hsfnSdfInput, sdfOutput=hsfnSdfOutput, delay=1}
+local hsfnorig = RM.liftVerilogTab{ name=metadata.topModule, inputType=R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), outputType=R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), vstr=HSFN_VERILOG, sdfInput=hsfnSdfInput, sdfOutput=hsfnSdfOutput, delay=1, stateful=metadata.stateful}
 local hsfn = axiRateWrapper(hsfnorig,metadata)
 
 local inputBytes, outputBytes

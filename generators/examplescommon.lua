@@ -3118,7 +3118,8 @@ C.Float = J.memoize(function( exp, sig, X )
   local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
   local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
   local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
-  local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v")
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v", HardFloat_specialize )
   local recFNToFN = C.VerilogFile("generators/hardfloat/source/recFNToFN.v", HardFloat_consts, HardFloat_localFuncs, HardFloat_primitives, HardFloat_rawFN )
 
   local inst = {}
@@ -3209,7 +3210,7 @@ C.sumF = J.memoize(function( exp, sig, X )
   local intToFloat = addRecFN:instantiate("add")
   inst[intToFloat] = 1
   
-  local res = R.newFunction{ name=J.sanitize("FloatAdd_"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+  local res = R.newFunction{ name=J.sanitize("FloatAdd_"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=6 }
 
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
@@ -3219,7 +3220,30 @@ C.sumF = J.memoize(function( exp, sig, X )
     local bts = exp+sig+1
     verilog = verilog..[[
 wire [4:0] exception;
-addRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) add (.control(`flControl_default),.subOp(1'b0),.a(process_input[]]..(bts-1)..[[:0]),.b(process_input[]]..(bts*2-1)..[[:]]..(bts)..[[]),.roundingMode(`round_near_even),.out(process_output),.exceptionFlags(exception));
+wire [32:0] out;
+
+(*retiming_forward = 1 *) reg [65:0] in1;
+(*retiming_forward = 1 *) reg [65:0] in2;
+(*retiming_forward = 1 *) reg [65:0] in3;
+always @(posedge CLK) begin
+  in3 <= process_input;
+  in2 <= in3;
+  in1 <= in2;
+end
+
+addRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) add (.control(`flControl_default),.subOp(1'b0),.a(in1[]]..(bts-1)..[[:0]),.b(in1[]]..(bts*2-1)..[[:]]..(bts)..[[]),.roundingMode(`round_near_even),.out(out),.exceptionFlags(exception));
+
+(*retiming_backward = 1 *) reg [32:0] tmp1;
+(*retiming_backward = 1 *) reg [32:0] tmp2;
+(*retiming_backward = 1 *) reg [32:0] tmp3;
+
+always @(posedge CLK) begin
+  tmp1 <= out;
+tmp2 <= tmp1;
+tmp3 <= tmp2;
+end
+
+assign process_output = tmp3;
 endmodule
 
 ]]
