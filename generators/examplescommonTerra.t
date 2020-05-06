@@ -512,4 +512,14 @@ function CT.SumF( res, exp, sig )
   return MT.new( SumF, res )
 end
 
+function CT.MulF( res, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct MulF {}
+  terra MulF:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = (@inp)._0 * (@inp)._1
+  end
+  return MT.new( MulF, res )
+end
+
 return CT

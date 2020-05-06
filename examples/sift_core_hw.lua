@@ -188,13 +188,13 @@ function sift.siftDescriptor(dxdyType)
   if GRAD_INT then
     assert(dxdyType==GRAD_TYPE)
   else
-    assert(dxdyType==types.float(32))
+    assert(dxdyType==types.Float32)
   end
 
   local GAUSS = calcGaussian(GAUSS_SIGMA,TILES_X*4,TILES_Y*4) -- sigma was 5
   GAUSS = tileGaussian(GAUSS,TILES_X*4,TILES_Y*4,4)
 
-  local calcType = types.float(32)
+  local calcType = types.Float32
 
   local ITYPE = types.tuple{dxdyType,dxdyType}
   local inp = R.input(types.rv(types.Par(ITYPE)))
@@ -329,7 +329,7 @@ function sift.siftKernel(dxdyType)
   local dxdy = R.apply("down2", RM.liftHandshake(RM.changeRate(dxdyPair,1,16,1)), dxdy )
   local dxdy = R.apply("down2idx",RM.makeHandshake(C.index(types.array2d(dxdyPair,1),0,0)), dxdy)
   local descFn, descTypeRed = sift.siftDescriptor(dxdyType)
-  local descType = types.float(32)
+  local descType = types.Float32
   local desc = R.apply("desc",RM.makeHandshake(descFn),dxdy)
 
   local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( sift.bucketReduce(descTypeRed,8),16))),desc)

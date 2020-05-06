@@ -44,7 +44,7 @@ function invert2x2( AType, bits )
     local fdet = fdenom:invert()
     local fout = f.array2d({fdet*finp:index(3), (fdet:neg())*(finp:index(1)), (fdet:neg())*(finp:index(2)), fdet*finp:index(0)},4)
     out = R.apply("out", fout:toRigelModule("fout"), inp)
-    output_type = types.float(32)
+    output_type = types.Float32
   else
     --------
     local finp = f.parameter( "finp", types.array2d(AType,4) )

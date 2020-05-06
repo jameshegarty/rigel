@@ -73,7 +73,7 @@ function TypeFunctions:toTerraType(pointer, vectorN)
 end
 
 function TypeFunctions:valueToTerra(value)
-  if self:isUint() or self:isFloat() or self:isInt() or self:isBits() then
+  if self:isUint() or self:isInt() or self:isBits() then
     if self.precision>64 then
       local cnt = self.precision/8
       assert(cnt==math.floor(cnt))
@@ -82,9 +82,12 @@ function TypeFunctions:valueToTerra(value)
       for i=1,cnt do table.insert(tup,`[uint8](0)) end
       return `[uint8[cnt]](array(tup))
     else
-      assert(type(value)=="number")
+      J.err( type(value)=="number", "value to terra: value must be number, but is: ",value)
       return `[self:toTerraType()](value)
     end
+  elseif self:isFloat() then
+    J.err( self.exp==8 and self.sig==24, "NYI - value to terra on floats only works for float32")
+    return `[self:toTerraType()](value)
   elseif self:isBool() then
     J.err(type(value)=="boolean","value '"..tostring(value).."' should be boolean")
     return `[self:toTerraType()](value)
@@ -101,7 +104,7 @@ function TypeFunctions:valueToTerra(value)
   elseif self:isNamed() then
     return self.structure:valueToTerra(value)
   else
-    print("TypeFunctions:valueToTerra",self)
+    print("NYI - TypeFunctions:valueToTerra",self)
     assert(false)
   end
 end

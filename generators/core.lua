@@ -906,7 +906,7 @@ end)
 
 -- add floats
 -- we intentionally named this something different than regular add, to clearly indicate it is float
-generators.AddF = R.FunctionGenerator("core.Add",{"type","rate"},{"async","number"},
+generators.AddF = R.FunctionGenerator("core.AddF",{"type","rate"},{"async","number"},
 function(args)
   
   local res = {}
@@ -918,6 +918,23 @@ function(args)
     J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2] )
     J.err( args.type:deInterface().list[1]:isFloatRec() )
     return C.sumF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig )
+  end
+end)
+
+-- mul floats
+-- we intentionally named this something different than regular add, to clearly indicate it is float
+generators.MulF = R.FunctionGenerator("core.MulF",{"type","rate"},{"async","number"},
+function(args)
+  
+  local res = {}
+  if args.number~=nil then
+    -- add a const (unary op)
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple() )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2] )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.mulF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig )
   end
 end)
 

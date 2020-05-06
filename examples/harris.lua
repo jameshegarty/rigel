@@ -16,7 +16,7 @@ ITYPE = types.array2d(types.uint(8),T)
 --OTYPE = types.uint(8)
 
 OT=2
-OTYPE = types.float(32)
+OTYPE = types.Float32
 ------------
 local function makeDisplay(ty)
   local ainp = fixed.parameter("ainp",ty)

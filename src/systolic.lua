@@ -188,7 +188,7 @@ function systolic.valueToVerilog( value, ty )
     assert(type(value)=="table")
     assert(#value==#ty.list)
     return "{"..table.concat( J.reverse( J.map( value, function(v,k) return systolic.valueToVerilog(v,ty.list[k]) end ) ), "," ).."}"
-  elseif ty==types.float(32) then
+  elseif ty==types.Float32 then
     local ffi = require("ffi")
     local a = ffi.new("float[1]",value)
     local b = ffi.cast("unsigned int*",a)

@@ -494,8 +494,9 @@ function types.meet( a, b, op, loc)
     
   elseif a.kind=="float" and b.kind=="float" then
     
-    local prec = math.max(a.precision,b.precision)
-    local thistype = types.float(prec)
+    --local prec = math.max(a.precision,b.precision)
+    err( a==b, "NYI - float type meet, lhs and rhs must be same type" )
+    local thistype = a
     
     if cmpops[op] then
       return types.bool(), thistype, thistype

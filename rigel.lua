@@ -1062,7 +1062,11 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
     end
     
     if self.stateful or (self.delay~=nil and self.delay>0) then
-      table.insert(v,", input wire "..fnname.."_CE, input wire "..fnname.."_valid")
+      table.insert(v,", input wire "..fnname.."_CE")
+    end
+
+    if self.stateful then
+      table.insert(v,", input wire "..fnname.."_valid")
     end
   else
     print("vHeaderInOut NYI type: "..tostring(self.inputType))
