@@ -891,15 +891,19 @@ T.Array2d(T.Array2d(P.DataType("A"),2),P.SizeValue("size")), false )
 -- convert to recoded hardfloat
 generators.FloatRec = R.FunctionGenerator("core.FloatRec",{"type","rate","number"},{},
 function(args)
-  J.err( args.type:deInterface():isUint() or args.type:deInterface():isInt() )
-  J.err( args.number==32 )
-  return C.FloatRec( args.type:deInterface(), 8, 24 )
+  if args.type:deInterface():isFloat() then
+    return C.FloatToFloatRec( args.type:deInterface().exp, args.type:deInterface().sig )
+  else
+    J.err( args.type:deInterface():isUint() or args.type:deInterface():isInt() )
+    J.err( args.number==32 )
+    return C.FloatRec( args.type:deInterface(), 8, 24 )
+  end
 end)
 
 -- convert to ieee float
 generators.Float = R.FunctionGenerator("core.Float",{"type","rate"},{},
 function(args)
-  J.err( args.type:deInterface():isFloatRec() )
+  J.err( args.type:deInterface():isFloatRec(), "core.Float: input should be FloatRec, but is:",args.type )
   J.err( args.type:deInterface()==types.FloatRec32,"Float: input type should be FloatRec32, but is:",args.type:deInterface() )
   return C.Float( 8, 24 )
 end)
@@ -932,11 +936,11 @@ end)
 -- we intentionally named this something different than regular add, to clearly indicate it is float
 generators.MulF = R.FunctionGenerator("core.MulF",{"type","rate"},{"async","number"},
 function(args)
-  
   local res = {}
   if args.number~=nil then
-    -- add a const (unary op)
-    assert(false)
+    -- mul by a const (unary op)
+    J.err( args.type:deInterface():isFloatRec(), "MulF: when passed a constant, expects a FloatRec input, but is:",args.type )
+    return C.mulFConst( args.type:deInterface().exp, args.type:deInterface().sig, args.number )
   else
     J.err( args.type:deInterface():isTuple() )
     J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2] )

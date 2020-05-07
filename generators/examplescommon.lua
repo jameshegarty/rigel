@@ -3194,6 +3194,45 @@ endmodule
   return res
 end)
 
+C.FloatToFloatRec = J.memoize(function( exp, sig, X )
+  err( type(exp)=="number","C.FloatToFloatRec: exp should be number, but is: ",exp )
+  err( type(sig)=="number" ,"C.FloatToFloatRec: sig should be number, but is: ",sig )
+  err( X==nil )
+
+  --local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  --local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  --local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  --local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local fNToRecFN = C.VerilogFile("generators/hardfloat/source/fNToRecFN.v")
+
+  local inst = {}
+  local ftof = fNToRecFN:instantiate("ftof")
+  inst[ftof] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatToFloatRec_".."_exp"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.Float(exp,sig)), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+    
+    verilog = verilog..[[
+
+fNToRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) ftof (.in(process_input),.out(process_output));
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    return CT.FloatToFloatRec( res, exp, sig )
+  end
+  
+  return res
+end)
+
 -- floating point add
 C.sumF = J.memoize(function( exp, sig, X )
   err( type(exp)=="number","C.FloatRec: exp should be number, but is: ",exp )
@@ -3336,6 +3375,20 @@ endmodule
   return res
 end)
 
+C.mulFConst = J.memoize(function( exp, sig, value, X )
+  err( type(exp)=="number" )
+  err( exp==8 )
+  err( type(sig)=="number" )
+  err( sig==24 )
+  err( X==nil )
+
+  local G = require "generators.core"
+  return G.Function{"MulFConst_"..tostring(exp).."_"..tostring(sig).."_"..tostring(value), types.rv(types.FloatRec(exp,sig)),
+    function(i)
+      return G.MulF(i,G.FloatRec{32}(R.c(types.Float32,value)))
+    end}
+end)
+  
 C.SqrtF = J.memoize(function( exp, sig, X )
   err( type(exp)=="number" )
   err( type(sig)=="number" )
