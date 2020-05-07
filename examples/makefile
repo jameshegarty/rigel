@@ -269,6 +269,8 @@ ASIC = $(patsubst %.lua, $(BUILDDIR)/%.32nm.txt, $(SRCS_ASIC))
 COVERAGE_SRCS = pointwise_wide_handshake.lua convpadcrop_wide_handshake_4_1.lua conv_tr_handshake_4_4.lua campipe_128.lua downsamplex_wide_handshake_2.lua filterseq.lua downsampley_wide_handshake.lua padcrop_wide_handshake.lua shifty_wide_handshake.lua reduceseq_handshake.lua tmux_wide_handshake.lua upsample_wide_handshake_2.lua 4bpp.lua 12bpp.lua fifo_wide_handshake_2.lua  fifo_wide_handshake_2_noloop.lua pad_wide_handshake.lua fifo_wide_handshake_bram.lua pyramid_tr_1.lua stereo_wide_handshake_tiny.lua
 COVERAGE = $(patsubst %.lua,$(BUILDDIR)/%.coverage.txt,$(COVERAGE_SRCS))
 
+SIGGRAPH2016 = out/convpadcrop_wide_handshake_8_8_1080p.zu9vivado.bit out/convpadcrop_wide_handshake_8_4_1080p.zu9vivado.bit out/convpadcrop_wide_handshake_8_2_1080p.zu9vivado.bit out/conv_tr_handshake_8_1_1080p.zu9vivado.bit out/conv_tr_handshake_8_2_1080p.zu9vivado.bit out/conv_tr_handshake_8_4_1080p.zu9vivado.bit out/conv_tr_handshake_8_8_1080p.zu9vivado.bit out/stereo_wide_handshake_full.zu9vivado.bit out/stereo_tr_full_4.zu9vivado.bit out/stereo_tr_full_8.zu9vivado.bit out/stereo_tr_full_16.zu9vivado.bit out/lk_wide_handshake_12_1_axi.zu9vivado.bit out/lk_tr_handshake_12_1_axi.zu9vivado.bit out/lk_tr_handshake_12_2_axi.zu9vivado.bit out/lk_tr_handshake_12_3_axi.zu9vivado.bit out/lk_tr_handshake_12_4_axi.zu9vivado.bit out/lk_tr_handshake_12_6_axi.zu9vivado.bit out/lk_tr_handshake_12_12_axi.zu9vivado.bit out/sift_hw_1080p.zu9vivado.bit
+
 RES = $(TERRAOUT)
 RES += $(VERILATOR)
 RES += $(ISIM)
@@ -357,6 +359,8 @@ asic: $(ASIC)
 
 coverage: $(COVERAGE)
 	touch $(BUILDDIR)/coverage_done.txt
+
+siggraph2016: $(SIGGRAPH2016)
 
 clean:
 	rm -Rf $(BUILDDIR)/*
