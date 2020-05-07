@@ -85,7 +85,7 @@ function TypeFunctions:valueToTerra(value)
       J.err( type(value)=="number", "value to terra: value must be number, but is: ",value)
       return `[self:toTerraType()](value)
     end
-  elseif self:isFloat() then
+  elseif self:isFloat() or self:isFloatRec() then
     J.err( self.exp==8 and self.sig==24, "NYI - value to terra on floats only works for float32")
     return `[self:toTerraType()](value)
   elseif self:isBool() then

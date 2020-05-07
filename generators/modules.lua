@@ -137,7 +137,7 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray, framedW, framedH )
     
     res.inputType = types.tuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) )
     if asArray then
-      J.map( typelist, function(n) err(n==typelist[1], "if asArray==true, all elements in typelist must match") end )
+      J.map( typelist, function(n) err(n==typelist[1], "if asArray==true, all elements in typelist must match, but tuple item 0 types is:",typelist[1]," but item ? type is:",n) end )
       res.outputType = types.array2d(types.array2d(typelist[1],#typelist),W,H)
     else
       res.outputType = types.array2d(types.tuple(typelist),W,H)

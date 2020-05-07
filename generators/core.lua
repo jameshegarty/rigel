@@ -413,6 +413,7 @@ end
 generators.Zip = R.FunctionGenerator("core.Zip",{"type"},{},zipfn(false),
 T.tuple(P.TypeList("list",T.array2d( P.ScheduleType("S$"), P.SizeValue("size"), P.SizeValue("V") ))) )
 
+-- zipToArray could actually be implemented as Zip + TupleToArray...
 generators.ZipToArray = R.FunctionGenerator("core.ZipToArray",{"type"},{},zipfn(true),
 T.tuple(P.TypeList("list",T.array2d( P.ScheduleType("S$"), P.SizeValue("size"), P.SizeValue("V") ))) )
 
@@ -893,10 +894,11 @@ generators.FloatRec = R.FunctionGenerator("core.FloatRec",{"type","rate","number
 function(args)
   if args.type:deInterface():isFloat() then
     return C.FloatToFloatRec( args.type:deInterface().exp, args.type:deInterface().sig )
-  else
-    J.err( args.type:deInterface():isUint() or args.type:deInterface():isInt() )
+  elseif args.type:deInterface():isUint() or args.type:deInterface():isInt() then
     J.err( args.number==32 )
     return C.FloatRec( args.type:deInterface(), 8, 24 )
+  else
+    J.err(false, "FloatRec: unsupported input type:",args.type)
   end
 end)
 
@@ -957,8 +959,8 @@ function(args)
     J.err( args.type:deInterface():isFloatRec(), "MulF: when passed a constant, expects a FloatRec input, but is:",args.type )
     return C.mulFConst( args.type:deInterface().exp, args.type:deInterface().sig, args.number )
   else
-    J.err( args.type:deInterface():isTuple() )
-    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2] )
+    J.err( args.type:deInterface():isTuple(), "MulF: expected tuple input, but was: ",args.type )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "MulF: lhs and rhs must have same types! but input type is: ",args.type )
     J.err( args.type:deInterface().list[1]:isFloatRec() )
     return C.mulF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig )
   end

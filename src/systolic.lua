@@ -193,6 +193,13 @@ function systolic.valueToVerilog( value, ty )
     local a = ffi.new("float[1]",value)
     local b = ffi.cast("unsigned int*",a)
     return "32'd"..tostring(b[0])
+  elseif ty==types.FloatRec32 then
+    -- complete hack...
+    if value==0 then
+      return "33'd0"
+    else
+      J.err(false, "NYI - verilog value for ",ty," value:",value)
+    end
   elseif ty:isFloat() then
     return tostring(ty).."systolic.valueToVerilog_float_garbage)@(*%(*&^*%$)_@)(^&$" -- garbage
   elseif ty:isNamed() then

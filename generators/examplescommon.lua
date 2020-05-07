@@ -3254,7 +3254,7 @@ C.sumF = J.memoize(function( exp, sig, subtract, X )
   local intToFloat = addRecFN:instantiate("add")
   inst[intToFloat] = 1
   
-  local res = R.newFunction{ name=J.sanitize("FloatAdd_"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=6 }
+  local res = R.newFunction{ name=J.sanitize("Float"..J.sel(subtract,"Sub","Add").."_"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=6 }
 
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
