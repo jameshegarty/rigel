@@ -3234,9 +3234,11 @@ endmodule
 end)
 
 -- floating point add
-C.sumF = J.memoize(function( exp, sig, X )
+-- subtract: do a subtract instead
+C.sumF = J.memoize(function( exp, sig, subtract, X )
   err( type(exp)=="number","C.FloatRec: exp should be number, but is: ",exp )
   err( type(sig)=="number" ,"C.FloatRec: sig should be number, but is: ",sig )
+  err( type(subtract)=="boolean" )
   err( X==nil )
 
   --  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
@@ -3275,7 +3277,13 @@ always @(posedge CLK) begin
   end
 end
 
-addRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) add (.control(`flControl_default),.subOp(1'b0),.a(in1[]]..(bts-1)..[[:0]),.b(in1[]]..(bts*2-1)..[[:]]..(bts)..[[]),.roundingMode(`round_near_even),.out(out),.exceptionFlags(exception));
+addRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) add (.control(`flControl_default),
+.subOp(]]..J.sel(subtract,"1'b1","1'b0")..[[),
+.a(in1[]]..(bts-1)..[[:0]),
+.b(in1[]]..(bts*2-1)..[[:]]..(bts)..[[]),
+.roundingMode(`round_near_even),
+.out(out),
+.exceptionFlags(exception));
 
 (*retiming_backward = 1 *) reg [32:0] tmp1;
 (*retiming_backward = 1 *) reg [32:0] tmp2;
@@ -3298,7 +3306,11 @@ endmodule
   end
 
   function res.makeTerra()
-    return CT.SumF( res, exp, sig )
+    if subtract then
+      return CT.SubF( res, exp, sig )
+    else
+      return CT.SumF( res, exp, sig )
+    end
   end
 
   return res

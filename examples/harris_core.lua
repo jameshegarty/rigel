@@ -45,6 +45,8 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(shift)=="number")
   assert(X==nil)
 
+  print("CONVFLOAT",A)
+  
   local inp = R.input( types.rv(types.Par(types.array2d( A, ConvWidth, ConvHeight ))) )
   local r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
 
@@ -61,6 +63,7 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
 end
 
 function harris.makeHarrisKernel(dxType, dyType)
+  print("MAKEHARRIS",dxType,dyType)
   local K = 0.00000001
 
   --print("HARRISTYPE",dxType)
@@ -86,6 +89,7 @@ function harris.makeNMS(ty, boolOutput, X)
   assert(type(boolOutput)=="boolean")
   assert(X==nil)
 
+  print("MAKENHS",ty)
   local THRESH = 0.001
 
   local inp = f.parameter("nmsinp", types.array2d(ty,3,3))
@@ -106,6 +110,9 @@ end
 
 function harris.makeDXDYKernel(ty)
   --print("DXDYINP",ty)
+
+  print("MAKEDXDYkern",ty)
+  
   local inp = f.parameter("dx",types.array2d(ty,3,3))
 
   local dx = (inp:index(2,1))-(inp:index(0,1))

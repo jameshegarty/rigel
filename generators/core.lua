@@ -928,7 +928,22 @@ function(args)
     J.err( args.type:deInterface():isTuple() )
     J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2] )
     J.err( args.type:deInterface().list[1]:isFloatRec() )
-    return C.sumF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig )
+    return C.sumF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, false )
+  end
+end)
+
+generators.SubF = R.FunctionGenerator("core.AddF",{"type","rate"},{"async","number"},
+function(args)
+  
+  local res = {}
+  if args.number~=nil then
+    -- add a const (unary op)
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple() )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2] )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.sumF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, true )
   end
 end)
 
