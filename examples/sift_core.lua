@@ -349,7 +349,7 @@ end
 -- This fn takes in dxdy (tuple pair), turns it into a stencil of size windowXwindow, performs harris on it,
 -- then returns type {dxdyStencil,bool}, where bool is set by harris NMS.
 local function makeHarrisWithDXDY(dxdyType, W,H, window)
-  --print("makeHarrisWithDXDY")
+  print("makeHarrisWithDXDY",dxdyType)
   assert(window==16)
 
   local function res(internalW, internalH)
@@ -367,13 +367,26 @@ local function makeHarrisWithDXDY(dxdyType, W,H, window)
     local filterseqValue = R.concat("fsv",{inp,pos})
     
     local filterseqCond = R.apply("idx",C.index(ITYPE,8,8),inp)
-    local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
-    local filterseqCond = R.apply("harris", harrisFn, filterseqCond)
+    --local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
+    --local filterseqCond = R.apply("harris", harrisFn, filterseqCond)
+
+    filterseqCond = G.TupleToArray(filterseqCond)
+    filterseqCond = G.Map{G.FloatRec{32}}(filterseqCond)
+    filterseqCond = G.ArrayToTuple(filterseqCond)
+  
+    filterseqCond = harris.HarrisKernel(filterseqCond)
+
+    filterseqCond = G.Float(filterseqCond)
+
+    local harrisType = types.Float32
     local filterseqCond = R.apply("AO",C.arrayop(harrisType,1,1),filterseqCond)
     -- now stencilify the harris
     local filterseqCond = R.apply( "harris_st", C.stencilLinebuffer(harrisType,internalW,internalH,1,-2,0,-2,0), filterseqCond)
-    local nmsFn = harris.makeNMS( harrisType, true )
-    local filterseqCond = R.apply("nms", nmsFn, filterseqCond)
+    --local nmsFn = harris.makeNMS( harrisType, true )
+    --local filterseqCond = R.apply("nms", nmsFn, filterseqCond)
+
+    filterseqCond = G.Map{G.FloatRec{32}}(filterseqCond)
+    filterseqCond = harris.NMS(filterseqCond)
     
     local fsinp = R.concat("PTT",{filterseqValue,filterseqCond})
     
@@ -454,6 +467,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local inpraw = R.input(R.Handshake(ITYPE))
   local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
+  local dxdyType = types.Float32
   local out = R.apply("dxdy",dxdyFn,inp)
   
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
@@ -463,6 +477,12 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   
   local harrisFn = makeHarrisWithDXDY(dxdyType, W,H, 16)
 
+  out = G.Map{G.TupleToArray}(out)
+  out = G.Map{G.Map{G.Float}}(out)
+  out = G.Map{G.ArrayToTuple}(out)
+
+    
+  print("OYTT",out.type)
   local out = R.apply("st",C.stencilKernelPadcropUnpure(DXDY_PAIR,W,H,T,7,8,7,8,{0,0},harrisFn,false),out)
 
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,16,16),types.tuple{types.uint(16),types.uint(16)}}
