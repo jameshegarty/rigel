@@ -415,12 +415,18 @@ function sift.siftDesc(W,H,inputT,X)
   local inpraw = R.input(R.Handshake(ITYPE))
   local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
+  --print("DXDYTYPE",dxdyType)
+  local dxdyType = types.Float32
   local out = R.apply("dxdy",dxdyFn,inp)
   
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
   local DXDY_ST = types.array2d(DXDY_PAIR,16,16)
   --- now stencilify dxdy
 
+  out = G.Map{G.TupleToArray}(out)
+  out = G.Map{G.Map{G.Float}}(out)
+  out = G.Map{G.ArrayToTuple}(out)
+  
   local DI = descInner(dxdyType,W,H)
   local out = R.apply("desc_inner",RM.makeHandshake(DI),out)
   local out = R.apply("AO", RM.makeHandshake(C.arrayop(DI.outputType:extractData(),1,1)), out)
