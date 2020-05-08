@@ -468,8 +468,14 @@ function sift.siftDesc(W,H,inputT,X)
   local inpraw = R.input(R.Handshake(ITYPE))
   local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
+  local dxdyType = types.Float32
   local out = R.apply("dxdy",dxdyFn,inp)
 
+  out = G.Map{G.TupleToArray}(out)
+  out = G.Map{G.Map{G.Float}}(out)
+  out = G.Map{G.ArrayToTuple}(out)
+
+    
   if GRAD_INT then
     out = R.apply("dxdy0", RM.makeHandshake(C.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0)), out)
     out = R.apply("dxdyint",RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)),out)
