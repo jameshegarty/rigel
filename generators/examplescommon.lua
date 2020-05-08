@@ -3504,4 +3504,74 @@ endmodule
   return res
 end)
 
+C.CMPF = J.memoize(function( exp, sig, op, X )
+  err( type(exp)=="number","C.mulF: exp should be number, but is: ",exp )
+  err( type(sig)=="number" ,"C.mulF: sig should be number, but is: ",sig )
+  err( type(op)=="string" )
+  err( X==nil )
+
+  --  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+    
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+--  local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v", HardFloat_consts)
+  --  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
+  local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v", HardFloat_specialize, HardFloat_consts )
+  local compareRecFN = C.VerilogFile("generators/hardfloat/source/compareRecFN.v", HardFloat_rawFN, isSigNaNRecFN )
+
+  local inst = {}
+  local cf = compareRecFN:instantiate("cmp")
+  inst[cf] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatCMP_"..tostring(exp).."_"..tostring(sig).."_"..op), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.Bool), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    local bts = exp+sig+1
+    
+    verilog = verilog..[[
+wire [4:0] exception;
+wire [32:0] out;
+
+wire lt;
+wire eq;
+wire gt;
+wire unordered;
+
+compareRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) cmpinst (.a(process_input[]]..(bts-1)..[[:0]),
+.b(process_input[]]..(bts*2-1)..[[:]]..(bts)..[[]),
+.signaling(1'b0), // should it signal exceptions?
+.lt(lt),
+.eq(eq),
+.gt(gt),
+.unordered(unordered),
+.exceptionFlags(exception));
+
+]]
+
+    if op==">" then
+      verilog = verilog.."assign process_output = gt;\n"
+    else
+      assert(false)
+    end
+    
+verilog = verilog..[[    
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    return CT.CMPF( res, exp, sig, op )
+  end
+
+  return res
+end)
+
 return C

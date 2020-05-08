@@ -3967,7 +3967,7 @@ assign ram_readAddr = readAddr[]]..(addrBits-1)..[[:0];
 ]])
         end
 
-        table.insert(verilog,[[assign load_output = {load_valid,ram_readOut};
+        table.insert(verilog,[[assign load_output = {load_valid,ram_readOut[]]..(A:lower():verilogBits())..[[-1:0]};
 assign reading = load_valid && load_ready_downstream;
 
 
@@ -3979,7 +3979,7 @@ assign writing = store_ready && store_valid;
 
 assign ram_WE = 1'b1;
 assign ram_]]..J.sel(brammode,"writeAndReturnOriginal","write")..[[_valid = writing;
-assign ram_writeAddrAndData = {store_input[]]..(A:lower():verilogBits()-1)..[[:0],writeAddr[]]..(addrBits-1)..[[:0]};
+assign ram_writeAddrAndData = {]]..J.sel(brammode and A:verilogBits()<J.upToNearest(8,A:verilogBits()),tostring(J.upToNearest(8,A:verilogBits())-A:verilogBits()).."'d0,","")..[[store_input[]]..(A:lower():verilogBits()-1)..[[:0],writeAddr[]]..(addrBits-1)..[[:0]};
 
 always @(posedge CLK) begin
   if (reset) begin

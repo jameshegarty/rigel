@@ -575,4 +575,19 @@ function CT.MulF( res, exp, sig )
   return MT.new( MulF, res )
 end
 
+function CT.CMPF( res, exp, sig, op )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct CMPF {}
+  if op==">" then
+    terra CMPF:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+      @out = (@inp)._0 > (@inp)._1
+    end
+  else
+    assert(false)
+  end
+
+  return MT.new( CMPF, res )
+end
+
 return CT

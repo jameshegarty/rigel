@@ -118,7 +118,7 @@ harris.HarrisKernel = G.SchedulableFunction{"HarrisKernel",T.Tuple{T.FloatRec32,
     local out = G.SubF( det, G.MulF(trsq,Krigel) )
     return out
   end}
-
+--[=[
 function harris.makeNMS(ty, boolOutput, X)
   assert(types.isType(ty))
   assert(type(boolOutput)=="boolean")
@@ -142,6 +142,28 @@ function harris.makeNMS(ty, boolOutput, X)
 --  if ty:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("nms")
 end
+]=]
+
+harris.NMS = G.Function{"NMS", T.rv(types.Array2d(types.FloatRec32,3,3)),
+  function(i)
+    local N = G.GTF(G.Index{{1,1}}(i),G.Index{{1,0}}(i))
+    local S = G.GTF(G.Index{{1,1}}(i),G.Index{{1,2}}(i))
+    local E = G.GTF(G.Index{{1,1}}(i),G.Index{{2,1}}(i))
+    local W = G.GTF(G.Index{{1,1}}(i),G.Index{{0,1}}(i))
+    local nms = G.And(G.And(G.And(N,S),E),W)
+
+    local THRESH = 0.001
+    local THRESHrigel = G.FloatRec{32}(G.Const{T.Float32,THRESH}(G.ValueToTrigger(i)))
+    local aboveThresh = G.GTF(G.Index{{1,1}}(i),THRESHrigel)
+    local out = G.And(nms, aboveThresh)
+--    if boolOutput==false then
+--      out = G.Sel(out,R.c(255,T,U8),R.c(0,T,U8))
+--    end
+    return out
+end}
+
+harris.BoolToUint8 = G.Function{"BoolToUint8",T.rv(T.Bool),
+  function(i) return G.Sel(i,R.c(255,T.U8),R.c(0,T.U8)) end}
 
 --[=[
 function harris.makeDXDYKernel(ty)
@@ -221,9 +243,13 @@ function harris.makeHarris(W,H,boolOutput,X)
   local out = harris.HarrisKernel(dxdy)
   out = R.apply("AO",RM.makeHandshake(C.arrayop(types.FloatRec32,1,1)),out)
 
-  local nmsFn = harris.makeNMS( types.FloatRec32, boolOutput )
-  local nms = R.apply("nms", C.stencilKernelPadcrop(harrisType,W,H,T,1,1,1,1,0,nmsFn), out)
-
+  --local nmsFn = harris.makeNMS( types.FloatRec32, boolOutput )
+  --local nmsFn = harris.MakeNMS( boolOutput )
+  local nms = R.apply("nms", C.stencilKernelPadcrop( types.FloatRec32, W,H,T,1,1,1,1,0, harris.NMS), out)
+  if boolOutput==false then
+    nms = G.Map{harris.BoolToUint8}(nms)
+  end
+  
   return RM.lambda("Harristop", inp, nms)
 end
 

@@ -375,17 +375,16 @@ P.NumberType("T") )
 
 generators.And = R.FunctionGenerator("core.And",{"type","rate"},{"async"},
 function(args)
-  if args.opt==0 then
+  J.err( args.type:deInterface():isTuple() )
+  local ty = args.type:deInterface().list[1]
+  if ty:isBool() then
     return C.And
-  elseif args.opt==1 then
+  elseif ty:isUint() then
     return C.AndUint(args.T.precision)
   else
     assert(false)
   end
-end,
-P.SumType("opt",
-          {types.rv(types.Par(types.tuple{types.bool(),types.bool()})),
-           types.rv(types.Par(types.tuple{P.UintType("T"),P.UintType("T")}))}) )
+end)
 
 generators.Not = R.FunctionGenerator("core.Not",{"type","rate"},{"bool"},
 function(args)
@@ -966,6 +965,18 @@ function(args)
   end
 end)
 
+generators.GTF = R.FunctionGenerator("core.GTF",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple(), "GTF: expected tuple input, but was: ",args.type )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "GTF: lhs and rhs must have same types! but input type is: ",args.type )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.CMPF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, ">" )
+  end
+end)
 
 function generators.export(t)
   if t==nil then t=_G end
