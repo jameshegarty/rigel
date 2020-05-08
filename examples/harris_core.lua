@@ -58,11 +58,8 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
     r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
   end
   
-  --local packed = R.apply( "packedtup", C.SoAtoAoS(ConvWidth,ConvHeight,{A,A}), R.concat("ptup", {inp,r}) )
   local packed = G.ZipToArray(inp,r)
-  print("PACKED",packed.type)
-  --local FM = floatMult(A)
-  --local conv = R.apply( "partial", RM.map( FM[1], ConvWidth, ConvHeight ), packed )
+
   local conv = packed
   if A:isFloatRec()==false then
     conv = G.Map{G.Map{G.FloatRec{32}}}(packed)
@@ -70,43 +67,15 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   conv = G.Map{G.ArrayToTuple}(conv)
 
   conv = G.Map{G.MulF}(conv)
-  --print("PARTIAL",conv.type)
-  --local SM = floatSum(FM[2])
-  --local conv = R.apply( "sum", RM.reduce( SM[1], ConvWidth, ConvHeight ), conv )
-  --print("CONVTYE",conv.type)
   conv = G.Reduce{G.AddF}(conv)
-  --local Shift = floatShift(SM[2],shift)
-  --local conv = R.apply( "touint8", Shift[1], conv )
   conv = G.MulF{1/math.pow(2,shift)}(conv)
 
   local convolve = RM.lambda( "convolveConstant_W"..tostring(ConvWidth).."_H"..tostring(ConvHeight), inp, conv )
-  return convolve --, Shift[2]
+  return convolve
 end
---[=[
-function harris.makeHarrisKernel(dxType, dyType)
-  print("MAKEHARRIS",dxType,dyType)
-  local K = 0.00000001
-
-  --print("HARRISTYPE",dxType)
-  local inp = f.parameter("harrisinp",types.tuple{dxType,dyType})
-  local inpdx = inp:index(0)
-  local inpdy = inp:index(1)
-  local Ixx = inpdx*inpdx
-  local Ixy = inpdx*inpdy
-  local Iyy = inpdy*inpdy
-  local det = (Ixx*Iyy) - (Ixy*Ixy)
-  local tr = Ixx+Iyy
-  local trsq = tr*tr
-  local out = det - (f.constant(K))*trsq
-  --  out = out:lshift(10):lower(types.uint(8))
---  if dxType:isFloat() then out = out:disablePipelining() end
-  local res = out:toRigelModule("harrisinner")
-  return res, out.type
-  end]=]
 
 harris.HarrisKernel = G.SchedulableFunction{"HarrisKernel",T.Tuple{T.FloatRec32,T.FloatRec32},
   function(i)
-    --local dx, dy = G.FloatRec{32}(i[0]), G.FloatRec{32}(i[1])
     local dx, dy = i[0], i[1]
     local Ixx, Ixy, Iyy = G.MulF(dx,dx), G.MulF(dx,dy), G.MulF(dy,dy)
     local det = G.SubF(G.MulF(Ixx,Iyy),G.MulF(Ixy,Ixy))
@@ -118,31 +87,6 @@ harris.HarrisKernel = G.SchedulableFunction{"HarrisKernel",T.Tuple{T.FloatRec32,
     local out = G.SubF( det, G.MulF(trsq,Krigel) )
     return out
   end}
---[=[
-function harris.makeNMS(ty, boolOutput, X)
-  assert(types.isType(ty))
-  assert(type(boolOutput)=="boolean")
-  assert(X==nil)
-
-  print("MAKENHS",ty)
-  local THRESH = 0.001
-
-  local inp = f.parameter("nmsinp", types.array2d(ty,3,3))
-  local N = (inp:index(1,1)):gt(inp:index(1,0))
-  local S = (inp:index(1,1)):ge(inp:index(1,2))
-  local E = (inp:index(1,1)):gt(inp:index(2,1))
-  local W = (inp:index(1,1)):ge(inp:index(0,1))
-  local nms = N:__and(S)
-  nms = nms:__and(E)
-  nms = nms:__and(W)
-  local out = nms:__and((inp:index(1,1)):gt(f.constant(THRESH)))
-  if boolOutput==false then
-    out = f.select(out,f.plainconstant(255,types.uint(8)),f.plainconstant(0,types.uint(8)))
-  end
---  if ty:isFloat() then out = out:disablePipelining() end
-  return out:toRigelModule("nms")
-end
-]=]
 
 harris.NMS = G.Function{"NMS", T.rv(types.Array2d(types.FloatRec32,3,3)),
   function(i)
@@ -156,38 +100,12 @@ harris.NMS = G.Function{"NMS", T.rv(types.Array2d(types.FloatRec32,3,3)),
     local THRESHrigel = G.FloatRec{32}(G.Const{T.Float32,THRESH}(G.ValueToTrigger(i)))
     local aboveThresh = G.GTF(G.Index{{1,1}}(i),THRESHrigel)
     local out = G.And(nms, aboveThresh)
---    if boolOutput==false then
---      out = G.Sel(out,R.c(255,T,U8),R.c(0,T,U8))
---    end
     return out
 end}
 
 harris.BoolToUint8 = G.Function{"BoolToUint8",T.rv(T.Bool),
   function(i) return G.Sel(i,R.c(255,T.U8),R.c(0,T.U8)) end}
 
---[=[
-function harris.makeDXDYKernel(ty)
-  --print("DXDYINP",ty)
-
-  print("MAKEDXDYkern",ty)
-  
-  local inp = f.parameter("dx",types.array2d(ty,3,3))
-
-  local dx = (inp:index(2,1))-(inp:index(0,1))
-  dx = dx:rshift(1)
-
-  local dy = (inp:index(1,2))-(inp:index(1,0))
-  dy = dy:rshift(1)
-
---  local out = dy:lower(types.uint(8))
---  return out:toRigelModule("DXDY"), types.uint(8)
-
-  local out = f.tuple{dx,dy}
-  --  print("DXDYTYPE",out.type,dx.type)
---  if ty:isFloat() then out = out:disablePipelining() end
-  return out:toRigelModule("DXDY"), dx.type
-end
-]=]
 harris.DXDYKernel = G.Function{"DXDYKernel", types.rv(types.Array2d(types.FloatRec32,3,3)),
   function(i)
     local dx = G.SubF(G.Index{{2,1}}(i),G.Index{{0,1}}(i))
@@ -235,16 +153,11 @@ function harris.makeHarris(W,H,boolOutput,X)
 
   local dxdyfn = harris.makeDXDY(W,H)
   local dxdy = R.apply("dxdy",dxdyfn,inp)
-  --local dxdy = R.apply("dxidx",RM.makeHandshake(C.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0,0)),dxdy)
   local dxdy = G.Index{{0,0}}(dxdy)
 
-  --local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
-  --local out = R.apply("harris", RM.makeHandshake(harrisFn), dxdy)
   local out = harris.HarrisKernel(dxdy)
   out = R.apply("AO",RM.makeHandshake(C.arrayop(types.FloatRec32,1,1)),out)
 
-  --local nmsFn = harris.makeNMS( types.FloatRec32, boolOutput )
-  --local nmsFn = harris.MakeNMS( boolOutput )
   local nms = R.apply("nms", C.stencilKernelPadcrop( types.FloatRec32, W,H,T,1,1,1,1,0, harris.NMS), out)
   if boolOutput==false then
     nms = G.Map{harris.BoolToUint8}(nms)
@@ -263,8 +176,7 @@ function harris.harrisWithStencil(t)
   -- Make DXDY
   local dxdyFn, dxdyType = harris.makeDXDY(t.W,t.H)
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
-  --print("DXDY",DXDY_PAIR)
---  local out = R.apply("ARR",RM.makeHandshake(C.arrayop(types.uint(8),1)), inp)
+
   local out = R.apply("dxdy",dxdyFn, inp)
 
   out = R.apply("pad", RM.liftHandshake(RM.padSeq(DXDY_PAIR, t.W, t.H, 1, 7, 8, 7, 8, {0,0})), out)
@@ -279,7 +191,7 @@ function harris.harrisWithStencil(t)
   -------------------------------
   -- right branch: make the harris bool
   local right = R.selectStream("d1",dxdyBroad,1)
-  --right = C.fifoLoop( fifos, statements, DXDY_PAIR, right, 128, "rightFIFO")
+
   right = C.fifo(DXDY_PAIR,128)(right)
 
   local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)

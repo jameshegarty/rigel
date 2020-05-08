@@ -13,7 +13,7 @@ H = 256
 T = 8
 
 FILTER_FIFO = 128
-FILTER_RATE = 128
+FILTER_OUTPUT_CNT = 510
 
 
 ----------------
@@ -34,7 +34,7 @@ local pos = R.apply("idx0", C.index(PS.outputType:extractData(),0,0), pos )
 local pos = R.apply("cst", touint8pair, pos)
 
 local fsinp = R.concat("PTT",{pos,inp})
-local out = R.apply("FS",RM.filterSeq(types.array2d(types.uint(8),2),W,H,{1,FILTER_RATE},FILTER_FIFO),fsinp)
+local out = R.apply("FS",RM.filterSeq(types.array2d(types.uint(8),2),W,H,{FILTER_OUTPUT_CNT,W*H},FILTER_FIFO,false),fsinp)
 local filterfn = RM.lambda( "filterfnmodule", inpraw, out )
 
 ----------------
@@ -48,8 +48,8 @@ local harrisFn = harris.makeHarris(W,H,true)
 local out = R.apply("harrisfilterinst", harrisFn, inp )
 local out = R.apply("filt", RM.liftHandshake(RM.liftDecimate(filterfn)), out)
 local out = R.apply("AO",RM.makeHandshake(C.arrayop(types.array2d(types.uint(8),2),1,1)),out)
-local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.array2d(types.uint(8),2),1,1,4)), out )
+--local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.array2d(types.uint(8),2),1,1,4)), out )
 fn = RM.lambda( "harris", inpraw, out )
 
 --harness.axi( "harris_filterseq", fn, "box_256.raw", nil, nil, ITYPE, T,W,H, OTYPE,T/2,(W*H)/FILTER_RATE,1)
-harness{ outFile="harris_filterseq", fn=fn, inFile="box_256.raw", inSize={W,H}, outSize={(W*H)/FILTER_RATE,1} }
+harness{ outFile="harris_filterseq", fn=fn, inFile="box_256.raw", inSize={W,H}, outSize={FILTER_OUTPUT_CNT,1} }
