@@ -104,6 +104,11 @@ function(args)
   return C.cast( args.T, types.Uint( args.T.precision, args.T.exp ))
 end, P.IntType("T") )
 
+generators.Bitcast = R.FunctionGenerator("core.Bitcast",{"type","rate","type1"},{},
+function(args)
+  return C.bitcast( args.type:deInterface(), args.type1)
+end, nil, false )
+
 
 generators.LUT = R.FunctionGenerator("core.LUT",{"type1","luaFunction"},{},
 function(args)

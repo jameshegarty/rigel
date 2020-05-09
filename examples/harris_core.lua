@@ -175,9 +175,14 @@ function harris.harrisWithStencil(t)
   ---------------------
   -- Make DXDY
   local dxdyFn, dxdyType = harris.makeDXDY(t.W,t.H)
+  local dxdyType = types.Float32
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
 
   local out = R.apply("dxdy",dxdyFn, inp)
+
+  out = G.Map{G.TupleToArray}(out)
+  out = G.Map{G.Map{G.Float}}(out)
+  out = G.Map{G.ArrayToTuple}(out)
 
   out = R.apply("pad", RM.liftHandshake(RM.padSeq(DXDY_PAIR, t.W, t.H, 1, 7, 8, 7, 8, {0,0})), out)
 
@@ -194,14 +199,28 @@ function harris.harrisWithStencil(t)
 
   right = C.fifo(DXDY_PAIR,128)(right)
 
-  local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
-  local right = R.apply("harris", RM.makeHandshake(harrisFn), right)
+  --local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
+  local harrisType = types.Float32
+  --local right = R.apply("harris", RM.makeHandshake(harrisFn), right)
+
+  right = G.TupleToArray(right)
+  right = G.Map{G.FloatRec{32}}(right)
+  right = G.ArrayToTuple(right)
+  
+  right = harris.HarrisKernel(right)
+
+  right = G.Float(right)
+  
   local right = R.apply("AO",RM.makeHandshake(C.arrayop(harrisType,1,1)), right)
 
   -- now stencilify the harris
   local right = R.apply( "harris_st", RM.makeHandshake(C.stencilLinebuffer(harrisType, internalW, internalH, 1,-2,0,-2,0)), right)
-  local nmsFn = harris.makeNMS( harrisType, true )
-  local right = R.apply("nms", RM.makeHandshake(nmsFn), right)
+  --local nmsFn = harris.makeNMS( harrisType, true )
+  --local right = R.apply("nms", RM.makeHandshake(nmsFn), right)
+
+  right = G.Map{G.FloatRec{32}}(right)
+
+  right = G.Fmap{harris.NMS}(right)
 
   -------------------------------
   -- left branch: make the dxdy int8 stencils

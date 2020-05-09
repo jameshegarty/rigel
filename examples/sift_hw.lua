@@ -21,16 +21,22 @@ function doit(full)
   local T = 8
 
   local FILTER_FIFO = 512
-  local FILTER_RATE = 128
+  local OUTPUT_COUNT = 614
+
+  if full then OUTPUT_COUNT = 3599 end
+  local FILTER_RATE = {OUTPUT_COUNT,W*H}
 
   local ITYPE = types.array2d(types.uint(8),T)
-  local siftFn, siftType = sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO)
+  local siftFn, siftType = sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO )
   local OTYPE = types.array2d(siftType,2)
 
-  local outputCount = ((W*H)/FILTER_RATE)*130
-  local outputBytes = outputCount*4
-  local hsfn
+  --local outputCount = ((W*H)/FILTER_RATE)*130
+  --local outputBytes = outputCount*4
 
+--  print("SIFTFN",siftFn)
+  
+--  local hsfn = siftFn
+--[=[
   if outputBytes/128 ~= math.floor(outputBytes/128) then
 
     local padAmount = 128-(outputBytes%128)
@@ -48,8 +54,8 @@ function doit(full)
   else
     hsfn = siftFn
   end
-
-  harness{ outFile="sift_hw"..J.sel(full,"_1080p",""), fn=hsfn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={outputCount,1} }
+]=]
+  harness{ outFile="sift_hw"..J.sel(full,"_1080p",""), fn=siftFn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={130*4,OUTPUT_COUNT}, outP=8 }
 
 end
 

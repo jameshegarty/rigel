@@ -30,8 +30,9 @@ function descriptor.addPos()
   local inp = rigel.input( R.HS(PTYPE) )
 
   local desc_pack = R.connect{ input = inp, toModule = R.HS(repack) }
+  print("DESC_PACK",desc_pack.type)
   local desc = rigel.apply("addpos",RM.makeHandshake(sift.addDescriptorPos(descType)), desc_pack)
-
+  print("DESC",desc.type)
   return R.defineModule{ input = inp, output = desc }
 end
 

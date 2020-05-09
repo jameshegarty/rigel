@@ -122,7 +122,10 @@ function harnessTop(t)
   if backend=="verilog" or backend=="verilator" then
     H.verilogOnly( outDir.."/"..t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.simCycles, t.harness )
   elseif backend=="terra" then
-    H.terraOnly( outDir.."/"..t.outFile, fn, t.inFile, t.tapType, t.tapValue, iover, inputP, t.inSize[1], t.inSize[2], oover, outputP, t.outSize[1], t.outSize[2], t.underflowTest, t.earlyOverride,  t.doHalfTest, t.simCycles, t.harness, t.ramFile )
+    H.terraOnly( outDir.."/"..t.outFile, fn, t.inFile, t.tapType, t.tapValue,
+                 iover, inputP, t.inSize[1], t.inSize[2],
+                 oover, outputP, t.outSize[1], t.outSize[2], Uniform(fn.sdfOutput[1][1]):toNumber(), Uniform(fn.sdfOutput[1][2]):toNumber(),
+                 t.underflowTest, t.earlyOverride,  t.doHalfTest, t.simCycles, t.harness, t.ramFile )
   else
     print("unknown build target ",backend)
     assert(false)
@@ -140,7 +143,14 @@ function harnessTop(t)
   local harnessOption = t.harness
   if harnessOption==nil then harnessOption=1 end
   
-  local MD = {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP), inputWidth=t.inSize[1], inputHeight=t.inSize[2], outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2], inputImage=t.inFile, topModule= fn.name, inputV=inputP, outputV=outputP, simCycles=t.simCycles, tapBits=tapBits, tapValue=tapValueString, harness=harnessOption, ramFile=t.ramFile, stateful=fn.stateful, delay=fn.delay, MONITOR_FIFOS=R.MONITOR_FIFOS}
+  local MD = {inputBitsPerPixel=R.extractData(iover):verilogBits()/(inputP),
+              inputWidth=t.inSize[1], inputHeight=t.inSize[2],
+              outputBitsPerPixel=oover:verilogBits()/(outputP), outputWidth=t.outSize[1], outputHeight=t.outSize[2],
+              inputImage=t.inFile, topModule= fn.name, inputV=inputP, outputV=outputP,
+              simCycles=t.simCycles,
+              tapBits=tapBits, tapValue=tapValueString,
+              harness=harnessOption, ramFile=t.ramFile,
+              stateful=fn.stateful, delay=fn.delay, MONITOR_FIFOS=R.MONITOR_FIFOS}
 
   if fn.sdfInput~=nil then
     assert(#fn.sdfInput==1)

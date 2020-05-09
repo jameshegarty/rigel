@@ -402,6 +402,7 @@ end
 ----------------
 -- This fn takes in dxdy (tuple pair), turns it into a stencil of size windowXwindow, performs harris on it,
 -- then returns type {dxdyStencil,bool}, where bool is set by harris NMS.
+--[=[
 local function makeHarrisWithDXDY(dxdyType, W,H)
   local function res(internalW, internalH)
     local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},TILES_X*4,TILES_Y*4)
@@ -433,6 +434,7 @@ local function makeHarrisWithDXDY(dxdyType, W,H)
 
   return res
 end
+]=]
 ----------------
 
 function sift.addPos(dxdyType,W,H,subX,subY)
@@ -517,9 +519,14 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local inpraw = R.input(R.Handshake(ITYPE))
   local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
+  local dxdyType = types.Float32
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
 
   local out = R.apply("dxdy",dxdyFn,inp)
+
+  out = G.Map{G.TupleToArray}(out)
+  out = G.Map{G.Map{G.Float}}(out)
+  out = G.Map{G.ArrayToTuple}(out)
 
   out = R.apply("pad", RM.liftHandshake(RM.padSeq(DXDY_PAIR, W, H, 1, 7, 8, 7, 8, {0,0})), out)
 
@@ -536,14 +543,23 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   --right = C.fifoLoop( fifos, statements, DXDY_PAIR, right, 128, "rightFIFO")
   right = C.fifo(DXDY_PAIR,128)(right)
 
-  local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
-  local right = R.apply("harris", RM.makeHandshake(harrisFn), right)
+  right = G.TupleToArray(right)
+  right = G.Map{G.FloatRec{32}}(right)
+  right = G.ArrayToTuple(right)
+
+  --local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
+  --local right = R.apply("harris", RM.makeHandshake(harrisFn), right)
+  right = harris.HarrisKernel(right)
+  right = G.Float(right)
+  local harrisType = types.Float32
   local right = R.apply("AO",RM.makeHandshake(C.arrayop(harrisType,1,1)), right)
 
   -- now stencilify the harris
   local right = R.apply( "harris_st", RM.makeHandshake(C.stencilLinebuffer(harrisType, internalW, internalH, 1,-2,0,-2,0)), right)
-  local nmsFn = harris.makeNMS( harrisType, true )
-  local right = R.apply("nms", RM.makeHandshake(nmsFn), right)
+  --local nmsFn = harris.makeNMS( harrisType, true )
+  --local right = R.apply("nms", RM.makeHandshake(nmsFn), right)
+  right = G.Map{G.FloatRec{32}}(right)
+  right = G.Fmap{harris.NMS}(right)
 
   -------------------------------
   -- left branch: make the dxdy int8 stencils
@@ -577,7 +593,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local out = R.apply("crp", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(FILTER_PAIR,W+15,H+15,1,15,0,15,0))), out)
   local out = R.apply("crpidx", RM.makeHandshake(C.index(types.array2d(FILTER_PAIR,1,1),0,0)), out)
   
-  local filterFn = RM.filterSeq(FILTER_TYPE,W,H,{1,FILTER_RATE},FILTER_FIFO)
+  local filterFn = RM.filterSeq( FILTER_TYPE, W, H, FILTER_RATE, FILTER_FIFO, false )
 
   local out = R.apply("FS",RM.liftHandshake(RM.liftDecimate(filterFn)),out)
   --local out = C.fifoLoop( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", false)
@@ -587,6 +603,9 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local out = R.apply("sft", siftFn, out)
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2)), out )
 
+  -- bitcast to uint8[8] for display...
+  out = G.Fmap{C.bitcast(types.array2d(types.Float32,2),types.Array2d(types.uint(8),8))}(out)
+  
   table.insert( statements, 1, out )
   local fn = RM.lambda( "harris", inpraw, R.statements(statements), fifos )
 
