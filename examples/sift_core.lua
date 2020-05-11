@@ -248,12 +248,11 @@ local function addDescriptorPos(descType)
   if descType:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("addDescriptorPos")
 end
+
 ----------------
 -- input: {{dx,dy}[16,16],{posX,posY}}
 -- output: descType[128+2], descType
 local function siftKernel(dxdyType)
-  --print("sift")
-
   local dxdyPair = types.tuple{dxdyType,dxdyType}
   local posType = types.uint(16)
   local PTYPE = types.tuple{posType,posType}
@@ -265,21 +264,20 @@ local function siftKernel(dxdyType)
   local inp = R.input(R.Handshake(ITYPE))
   local inp_broad = R.apply("inp_broad", RM.broadcastStream(types.Par(ITYPE),2), inp)
 
-  --local inp_pos = C.fifoLoop( fifos, statements, ITYPE, R.selectStream("i0",inp_broad,0), 1, "p0", true)
+
   local inp_pos = C.fifo(ITYPE,1,nil,true)(R.selectStream("i0",inp_broad,0))
   local pos = R.apply("p",RM.makeHandshake(C.index(ITYPE,1)), inp_pos)
-  --local pos = C.fifoLoop( fifos, statements, PTYPE, pos, 1024, "posfifo")
+
   local pos = C.fifo(PTYPE,1024)(pos)
   local posL, posR = RS.fanOut{input=pos,branches=2}
---  local pos = C.fifo( fifos, statements, PTYPE, pos, 1024, "p0")
+
   local posX = R.apply("px",RM.makeHandshake(C.index(PTYPE,0)),posL)
-  --local posX = C.fifoLoop( fifos, statements, posType, posX, 1024, "pxfifo" )
+
   local posX = C.fifo(posType,1024)(posX)
   local posY = R.apply("py",RM.makeHandshake(C.index(PTYPE,1)),posR)
-  --local posY = C.fifoLoop( fifos, statements, posType, posY, 1024, "pyfifo" )
+
   local posY = C.fifo(posType,1024)(posY)
 
-  --local inp_dxdy = C.fifoLoop( fifos, statements, ITYPE, R.selectStream("i1",inp_broad,1), 1, "p1", true)
   local inp_dxdy = C.fifo(ITYPE,1,nil,true)(R.selectStream("i1",inp_broad,1))
   local dxdy = R.apply("dxdy",RM.makeHandshake(C.index(ITYPE,0,0)), inp_dxdy)
   local dxdyTile = R.apply("TLE",RM.makeHandshake(tile(16,16,4,dxdyPair)),dxdy)
@@ -295,7 +293,7 @@ local function siftKernel(dxdyType)
   -- it seems like we shouldn't need a FIFO here, but we do: the changeRate downstream will only be ready every 1/8 cycles.
   -- We need a tiny fifo to hold the reduceseq output, to keep it from stalling. (the scheduling isn't smart enough to know
   -- that reduceSeq only has an output every 16 cycles, so it can't overlap them)
-  --local desc = C.fifoLoop(fifos,statements,types.array2d(descType,8),desc,1,"lol",true)
+
   local desc = C.fifo(types.array2d(descType,8),1,nil,true)(desc)
 
   local desc = R.apply("up",RM.liftHandshake(RM.changeRate(descType,1,8,1)),desc)
@@ -331,7 +329,6 @@ local function siftKernel(dxdyType)
 
   local siftfn = RM.lambda("siftd",inp,R.statements(statements),fifos)
   
-  --print("SIFTSDF",SDFRate.fracToNumber(siftfn.sdfInput[1]),SDFRate.fracToNumber(siftfn.sdfOutput[1]))
   return siftfn, descType
 end
 
@@ -349,12 +346,10 @@ end
 -- This fn takes in dxdy (tuple pair), turns it into a stencil of size windowXwindow, performs harris on it,
 -- then returns type {dxdyStencil,bool}, where bool is set by harris NMS.
 local function makeHarrisWithDXDY(dxdyType, W,H, window)
-  --print("makeHarrisWithDXDY")
+  print("makeHarrisWithDXDY",dxdyType)
   assert(window==16)
 
   local function res(internalW, internalH)
-    --print("MAKE HARRIS",internalW, internalH)
-
     local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},window,window)
     
     local inp = R.input(types.rv(types.Par(ITYPE)))
@@ -367,13 +362,22 @@ local function makeHarrisWithDXDY(dxdyType, W,H, window)
     local filterseqValue = R.concat("fsv",{inp,pos})
     
     local filterseqCond = R.apply("idx",C.index(ITYPE,8,8),inp)
-    local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
-    local filterseqCond = R.apply("harris", harrisFn, filterseqCond)
+
+    filterseqCond = G.TupleToArray(filterseqCond)
+    filterseqCond = G.Map{G.FloatRec{32}}(filterseqCond)
+    filterseqCond = G.ArrayToTuple(filterseqCond)
+  
+    filterseqCond = harris.HarrisKernel(filterseqCond)
+
+    filterseqCond = G.Float(filterseqCond)
+
+    local harrisType = types.Float32
     local filterseqCond = R.apply("AO",C.arrayop(harrisType,1,1),filterseqCond)
     -- now stencilify the harris
     local filterseqCond = R.apply( "harris_st", C.stencilLinebuffer(harrisType,internalW,internalH,1,-2,0,-2,0), filterseqCond)
-    local nmsFn = harris.makeNMS( harrisType, true )
-    local filterseqCond = R.apply("nms", nmsFn, filterseqCond)
+
+    filterseqCond = G.Map{G.FloatRec{32}}(filterseqCond)
+    filterseqCond = harris.NMS(filterseqCond)
     
     local fsinp = R.concat("PTT",{filterseqValue,filterseqCond})
     
@@ -415,12 +419,18 @@ function sift.siftDesc(W,H,inputT,X)
   local inpraw = R.input(R.Handshake(ITYPE))
   local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
+
+  local dxdyType = types.Float32
   local out = R.apply("dxdy",dxdyFn,inp)
   
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
   local DXDY_ST = types.array2d(DXDY_PAIR,16,16)
   --- now stencilify dxdy
 
+  out = G.Map{G.TupleToArray}(out)
+  out = G.Map{G.Map{G.Float}}(out)
+  out = G.Map{G.ArrayToTuple}(out)
+  
   local DI = descInner(dxdyType,W,H)
   local out = R.apply("desc_inner",RM.makeHandshake(DI),out)
   local out = R.apply("AO", RM.makeHandshake(C.arrayop(DI.outputType:extractData(),1,1)), out)
@@ -448,6 +458,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local inpraw = R.input(R.Handshake(ITYPE))
   local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
+  local dxdyType = types.Float32
   local out = R.apply("dxdy",dxdyFn,inp)
   
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
@@ -457,6 +468,12 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   
   local harrisFn = makeHarrisWithDXDY(dxdyType, W,H, 16)
 
+  out = G.Map{G.TupleToArray}(out)
+  out = G.Map{G.Map{G.Float}}(out)
+  out = G.Map{G.ArrayToTuple}(out)
+
+    
+  print("OYTT",out.type)
   local out = R.apply("st",C.stencilKernelPadcropUnpure(DXDY_PAIR,W,H,T,7,8,7,8,{0,0},harrisFn,false),out)
 
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,16,16),types.tuple{types.uint(16),types.uint(16)}}
@@ -465,7 +482,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local filterFn = RM.filterSeq(FILTER_TYPE,W,H,{1,FILTER_RATE},FILTER_FIFO)
 
   local out = R.apply("FS",RM.liftHandshake(RM.liftDecimate(filterFn)),out)
-  --local out = C.fifoLoop( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", true)
+
   out = C.fifo(FILTER_TYPE,FILTER_FIFO,nil,true)(out)
 
   local siftFn, descType = siftKernel(dxdyType)

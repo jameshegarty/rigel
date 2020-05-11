@@ -1062,7 +1062,11 @@ function darkroomFunctionFunctions:vHeaderInOut(fnname)
     end
     
     if self.stateful or (self.delay~=nil and self.delay>0) then
-      table.insert(v,", input wire "..fnname.."_CE, input wire "..fnname.."_valid")
+      table.insert(v,", input wire "..fnname.."_CE")
+    end
+
+    if self.stateful then
+      table.insert(v,", input wire "..fnname.."_valid")
     end
   else
     print("vHeaderInOut NYI type: "..tostring(self.inputType))
@@ -2610,6 +2614,12 @@ function darkroom.constant( name, value, ty, X )
     darkroom.__unnamedID = darkroom.__unnamedID+1
     res.value = name
     res.type = value
+    if types.isType(res.value) then
+      -- user gave them in other order: swap
+      res.value, res.type = res.type, res.value
+    end
+    
+    err( types.isType(res.type),"rigel.constant: type should be type, but is: ",res.type)
     err( ty==nil, "rigel.constant: too many arguments" )
   end
   

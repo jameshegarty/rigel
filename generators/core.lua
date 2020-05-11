@@ -104,6 +104,11 @@ function(args)
   return C.cast( args.T, types.Uint( args.T.precision, args.T.exp ))
 end, P.IntType("T") )
 
+generators.Bitcast = R.FunctionGenerator("core.Bitcast",{"type","rate","type1"},{},
+function(args)
+  return C.bitcast( args.type:deInterface(), args.type1)
+end, nil, false )
+
 
 generators.LUT = R.FunctionGenerator("core.LUT",{"type1","luaFunction"},{},
 function(args)
@@ -375,17 +380,16 @@ P.NumberType("T") )
 
 generators.And = R.FunctionGenerator("core.And",{"type","rate"},{"async"},
 function(args)
-  if args.opt==0 then
+  J.err( args.type:deInterface():isTuple() )
+  local ty = args.type:deInterface().list[1]
+  if ty:isBool() then
     return C.And
-  elseif args.opt==1 then
+  elseif ty:isUint() then
     return C.AndUint(args.T.precision)
   else
     assert(false)
   end
-end,
-P.SumType("opt",
-          {types.rv(types.Par(types.tuple{types.bool(),types.bool()})),
-           types.rv(types.Par(types.tuple{P.UintType("T"),P.UintType("T")}))}) )
+end)
 
 generators.Not = R.FunctionGenerator("core.Not",{"type","rate"},{"bool"},
 function(args)
@@ -413,6 +417,7 @@ end
 generators.Zip = R.FunctionGenerator("core.Zip",{"type"},{},zipfn(false),
 T.tuple(P.TypeList("list",T.array2d( P.ScheduleType("S$"), P.SizeValue("size"), P.SizeValue("V") ))) )
 
+-- zipToArray could actually be implemented as Zip + TupleToArray...
 generators.ZipToArray = R.FunctionGenerator("core.ZipToArray",{"type"},{},zipfn(true),
 T.tuple(P.TypeList("list",T.array2d( P.ScheduleType("S$"), P.SizeValue("size"), P.SizeValue("V") ))) )
 
@@ -887,6 +892,96 @@ function(args)
   return C.SAD( args.A, args.type1, args.size[1] )
 end,
 T.Array2d(T.Array2d(P.DataType("A"),2),P.SizeValue("size")), false )
+
+-- convert to recoded hardfloat
+generators.FloatRec = R.FunctionGenerator("core.FloatRec",{"type","rate","number"},{},
+function(args)
+  if args.type:deInterface():isFloat() then
+    return C.FloatToFloatRec( args.type:deInterface().exp, args.type:deInterface().sig )
+  elseif args.type:deInterface():isUint() or args.type:deInterface():isInt() then
+    J.err( args.number==32 )
+    return C.FloatRec( args.type:deInterface(), 8, 24 )
+  else
+    J.err(false, "FloatRec: unsupported input type:",args.type)
+  end
+end)
+
+-- convert to ieee float
+generators.Float = R.FunctionGenerator("core.Float",{"type","rate"},{},
+function(args)
+  J.err( args.type:deInterface():isFloatRec(), "core.Float: input should be FloatRec, but is:",args.type )
+  J.err( args.type:deInterface()==types.FloatRec32,"Float: input type should be FloatRec32, but is:",args.type:deInterface() )
+  return C.Float( 8, 24 )
+end)
+
+generators.SqrtF = R.FunctionGenerator("core.SqrtF",{"type","rate"},{},
+function(args)
+  J.err( args.type:deInterface():isFloatRec() )
+  J.err( args.type:deInterface()==types.FloatRec32,"SqrtF: input type should be FloatRec32, but is:",args.type:deInterface() )
+  return C.SqrtF( 8, 24 )
+end)
+
+-- add floats
+-- we intentionally named this something different than regular add, to clearly indicate it is float
+generators.AddF = R.FunctionGenerator("core.AddF",{"type","rate"},{"async","number"},
+function(args)
+  
+  local res = {}
+  if args.number~=nil then
+    -- add a const (unary op)
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple() )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2] )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.sumF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, false )
+  end
+end)
+
+generators.SubF = R.FunctionGenerator("core.AddF",{"type","rate"},{"async","number"},
+function(args)
+  
+  local res = {}
+  if args.number~=nil then
+    -- add a const (unary op)
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple() )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2] )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.sumF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, true )
+  end
+end)
+
+-- mul floats
+-- we intentionally named this something different than regular add, to clearly indicate it is float
+generators.MulF = R.FunctionGenerator("core.MulF",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    -- mul by a const (unary op)
+    J.err( args.type:deInterface():isFloatRec(), "MulF: when passed a constant, expects a FloatRec input, but is:",args.type )
+    return C.mulFConst( args.type:deInterface().exp, args.type:deInterface().sig, args.number )
+  else
+    J.err( args.type:deInterface():isTuple(), "MulF: expected tuple input, but was: ",args.type )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "MulF: lhs and rhs must have same types! but input type is: ",args.type )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.mulF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig )
+  end
+end)
+
+generators.GTF = R.FunctionGenerator("core.GTF",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple(), "GTF: expected tuple input, but was: ",args.type )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "GTF: lhs and rhs must have same types! but input type is: ",args.type )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.CMPF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, ">" )
+  end
+end)
 
 function generators.export(t)
   if t==nil then t=_G end

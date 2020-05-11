@@ -42,7 +42,10 @@ local terraWrapper = J.memoize(function(fn,inputFilename,inputType,tapType,tapVa
   return res
 end)
 
-return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inputT, inputW, inputH, outputType, outputT, outputW, outputH, underflowTest, earlyOverride, doHalfTest, simCycles, harnessoption, ramFile, X)
+return function(filename, hsfn, inputFilename, tapType, tapValue,
+                inputType, inputT, inputW, inputH, outputType,
+                outputT, outputW, outputH, outputN, outputD,
+                underflowTest, earlyOverride, doHalfTest, simCycles, harnessoption, ramFile, X)
 
   if doHalfTest==nil then doHalfTest=true end
   assert(X==nil)
@@ -69,7 +72,7 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
       incQ = quote end
     else
       callQ = quote m:process(&[valid_in],&[valid_out]) end
-      incQ = quote if m.ready then incnt = incnt+1 end end
+      incQ = quote if m.ready and valid([valid_in]) then incnt = incnt+1 end end
     end
 
     local setTap = quote end
@@ -112,6 +115,12 @@ return function(filename, hsfn, inputFilename, tapType, tapValue, inputType, inp
         
         callQ
         if valid(valid_out) then cnt=cnt+1 end
+
+        var expectedOutputsAtThisPoint : float = ([float](cycles)*outputN)/outputD
+        if expectedOutputsAtThisPoint > cnt*16+40960*8 then
+          cstdio.printf("Simulation went on for too long, giving up! cycles: %d outputsSeen: %d expectedTotalOutputs:%d inputsSent:%d expectedTotalInputs:%d outputRate:%d/%d\n", cycles, cnt, outputCount, [incnt], inputCount, outputN, outputD )
+          cstdlib.exit(1)
+        end
         
         cycles = cycles+1
       end

@@ -5,11 +5,12 @@ local R = require "rigelSimple"
 local harris = require "harris_core"
 local descriptor = require "descriptor_core"
 local G = require "generators.core"
-
+local types = require "types"
 
 W, H = 256, 256
 TILES_X, TILES_Y = 4, 4
-FILTER_RATE, FILTER_FIFO = 1/128, 512
+OUTPUT_COUNT = 614
+FILTER_RATE, FILTER_FIFO = {OUTPUT_COUNT,W*H}, 512
 --fifoList = {}
 
 -----------------------------------
@@ -24,7 +25,7 @@ POS_TYPE = R.tuple{ R.uint16, R.uint16 }
 FILTER_TYPE = R.tuple{ R.array2d( DXDY_TYPE, TILES_X*4, TILES_Y*4 ), POS_TYPE }
 
 filterSeqOut = R.connect{ input = harrisOut, toModule = R.HS(R.modules.filterSeq{ 
-  type=FILTER_TYPE, size={W,H}, rate=FILTER_RATE, fifoSize=FILTER_FIFO }) }
+  type=FILTER_TYPE, size={W,H}, rate=FILTER_RATE, fifoSize=FILTER_FIFO, coerce=false }) }
 
 --filterSeqOut = R.fifoLoop{ input = filterSeqOut, depth = 512, fifoList = fifoList }
 filterSeqOut = G.FIFO{512}(filterSeqOut)
@@ -108,10 +109,12 @@ branch3_descnorm = R.connect{ input = branch3, toModule =
 desc = R.connect{ input = R.fanIn{branch3_descnorm,branch0_pos}, toModule = 
   descriptor.addPos() }
 
+desc = G.Bitcast{types.array2d(types.uint(8),130*4)}(desc)
+
 -----------------------
 descriptorPipeline = R.defineModule{ input=inp, output=desc }
 
 R.harness{ fn = descriptorPipeline, 
             inFile = "boxanim_256.raw", inSize = {W,H},
-            outFile = "featuredescriptor", outSize = {W*H*FILTER_RATE*130, 1} }
+            outFile = "featuredescriptor", outSize = {130*4, OUTPUT_COUNT}, outP=130*4 }
             

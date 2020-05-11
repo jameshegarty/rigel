@@ -10,8 +10,12 @@ function TypeFunctions:toTerraType(pointer, vectorN)
     return self.structure:toTerraType(pointer,vectorN)
   end
   
-  if self:isFloat() and self.precision==32 then
-    ttype = terralib.types.float
+  if self:isFloat() or self:isFloatRec() then
+    if self.exp==8 and self.sig==24 then
+      ttype = terralib.types.float
+    else
+      J.err(false, "NYI - lowering non 32 bit float to terra: ",self)
+    end
   elseif self:isFloat() and self.precision==64 then
     ttype = terralib.types.double
   elseif (self:isUint() or self:isBits()) and self.precision<=8 then
@@ -69,7 +73,7 @@ function TypeFunctions:toTerraType(pointer, vectorN)
 end
 
 function TypeFunctions:valueToTerra(value)
-  if self:isUint() or self:isFloat() or self:isInt() or self:isBits() then
+  if self:isUint() or self:isInt() or self:isBits() then
     if self.precision>64 then
       local cnt = self.precision/8
       assert(cnt==math.floor(cnt))
@@ -78,9 +82,12 @@ function TypeFunctions:valueToTerra(value)
       for i=1,cnt do table.insert(tup,`[uint8](0)) end
       return `[uint8[cnt]](array(tup))
     else
-      assert(type(value)=="number")
+      J.err( type(value)=="number", "value to terra: value must be number, but is: ",value)
       return `[self:toTerraType()](value)
     end
+  elseif self:isFloat() or self:isFloatRec() then
+    J.err( self.exp==8 and self.sig==24, "NYI - value to terra on floats only works for float32")
+    return `[self:toTerraType()](value)
   elseif self:isBool() then
     J.err(type(value)=="boolean","value '"..tostring(value).."' should be boolean")
     return `[self:toTerraType()](value)
@@ -97,7 +104,7 @@ function TypeFunctions:valueToTerra(value)
   elseif self:isNamed() then
     return self.structure:valueToTerra(value)
   else
-    print("TypeFunctions:valueToTerra",self)
+    print("NYI - TypeFunctions:valueToTerra",self)
     assert(false)
   end
 end
@@ -127,6 +134,8 @@ function TypeFunctions:terraPrint(terraValue)
     return quote Q end
   elseif self:isInt() then
     return quote cstdio.printf("%d",@terraValue) end
+  elseif self:isFloat() then
+    return quote cstdio.printf("%f",@terraValue) end
   elseif self:isBool() then
     return quote if @terraValue then cstdio.printf("true") else cstdio.printf("false") end end
   elseif self:isUint() or self:isBits() then

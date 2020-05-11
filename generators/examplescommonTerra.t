@@ -1,6 +1,7 @@
 local cstdlib = terralib.includec("stdlib.h", {"-Wno-nullability-completeness"})
 local cstdio = terralib.includec("stdio.h",{"-Wno-nullability-completeness"})
 local cstring = terralib.includec("string.h",{"-Wno-nullability-completeness"})
+local cmath = terralib.includec("math.h", {"-Wno-nullability-completeness"})
 local rigel = require "rigel"
 local types = require "types"
 local J = require "common"
@@ -480,6 +481,113 @@ function CT.generalizedChangeRate( res, inputBitsPerCyc, minTotalInputBits_orig,
   end
   return MT.new( GeneralizedChangeRate, res )
 
+end
+
+function CT.Float( res, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct Float {}
+  terra Float:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = @inp
+  end
+  return MT.new( Float, res )
+end
+
+function CT.Sqrt( res, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct Sqrt { ready:bool; phase:int; buffer:float; bufferSet:bool, readyDownstream:bool }
+  terra Sqrt:reset() self.phase=0; self.bufferSet=false end
+  terra Sqrt:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    if self.phase>0 then
+      self.phase = self.phase-1
+    end
+
+    if valid(inp) and self.ready then
+      self.phase = [sig+3]
+      self.buffer = cmath.sqrt(data(inp))
+      self.bufferSet = true
+    end
+    
+    valid(out) = self.bufferSet and (self.phase==0)
+    data(out) = self.buffer
+
+    if valid(out) and self.readyDownstream then
+      self.bufferSet = false
+    end
+  end
+
+  terra Sqrt:calculateReady( readyDownstream:bool ) 
+    self.readyDownstream = readyDownstream
+    self.ready = (self.phase==0) and readyDownstream
+  end
+
+  return MT.new( Sqrt, res )
+end
+
+function CT.FloatRec( res, inputType, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct FloatRec {}
+  terra FloatRec:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = @inp
+  end
+  return MT.new( FloatRec, res )
+end
+
+function CT.FloatToFloatRec( res, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct FloatToFloatRec {}
+  terra FloatToFloatRec:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = @inp
+  end
+  return MT.new( FloatToFloatRec, res )
+end
+
+function CT.SumF( res, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct SumF {}
+  terra SumF:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = (@inp)._0 + (@inp)._1
+  end
+  return MT.new( SumF, res )
+end
+
+function CT.SubF( res, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct SubF {}
+  terra SubF:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = (@inp)._0 - (@inp)._1
+  end
+  return MT.new( SubF, res )
+end
+
+function CT.MulF( res, exp, sig )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct MulF {}
+  terra MulF:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = (@inp)._0 * (@inp)._1
+  end
+  return MT.new( MulF, res )
+end
+
+function CT.CMPF( res, exp, sig, op )
+  assert( exp==8 )
+  assert( sig==24 )
+  local struct CMPF {}
+  if op==">" then
+    terra CMPF:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+      @out = (@inp)._0 > (@inp)._1
+    end
+  else
+    assert(false)
+  end
+
+  return MT.new( CMPF, res )
 end
 
 return CT

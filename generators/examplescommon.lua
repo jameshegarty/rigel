@@ -60,6 +60,8 @@ C.print = memoize(function(A,str)
   local function constructPrint(A,symb)
     if A:isUint() or A:isInt() or A:isBits() then
       return {A}, "%d", {symb}
+    elseif A:isFloat() then
+      return {A}, "%d", {symb}
     elseif A:isArray() then
       local resTypes={}
       local resStr="["
@@ -2871,13 +2873,14 @@ end
 -- this will import a Verilog file as a module... the module is basically a stub,
 -- this basically only serves to include the source when we lower to verilog
 -- dependencyList is a list of modules we depend on
-C.VerilogFile = J.memoize(function(filename,dependencyList)
-  if dependencyList==nil then dependencyList={} end
+C.VerilogFile = J.memoize(function( filename, ... )
+    --if dependencyList==nil then dependencyList={} end
+  local dependencyList = {...}
     
   local res = {inputType=types.null(), outputType=types.null(), stateful=false, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, name = J.sanitize(filename), delay=0 }
   res.instanceMap={}
   for _,d in pairs(dependencyList) do
-    assert(R.isModule(d))
+    J.err( R.isModule(d),"dependency should be Rigel module, but is:",d)
     res.instanceMap[d:instantiate()]=1
   end
   
@@ -3104,6 +3107,470 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig,
   res.inputType = inputType
   res.outputType = outputType
   
+  return res
+end)
+
+-- FloatRec to ieee Float
+C.Float = J.memoize(function( exp, sig, X )
+  err( type(exp)=="number" )
+  err( type(sig)=="number" )
+  err( X==nil )
+
+
+  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v", HardFloat_specialize, HardFloat_consts )
+  local recFNToFN = C.VerilogFile("generators/hardfloat/source/recFNToFN.v", HardFloat_consts, HardFloat_localFuncs, HardFloat_primitives, HardFloat_rawFN )
+
+  local inst = {}
+  local floatRecToFloat = recFNToFN:instantiate("floatRecToFloat")
+  inst[floatRecToFloat] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatRecToFloat_"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.FloatRec(exp,sig)), outputType=types.rv(types.Float(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    verilog = verilog..[[
+recFNToFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) conv (.in(process_input),.out(process_output));
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    return CT.Float( res, exp, sig )
+  end
+
+  return res
+end)
+
+C.FloatRec = J.memoize(function( inputType, exp, sig, X )
+  err( inputType:isUint() or inputType:isInt() )
+  err( type(exp)=="number","C.FloatRec: exp should be number, but is: ",exp )
+  err( type(sig)=="number" ,"C.FloatRec: sig should be number, but is: ",sig )
+  err( X==nil )
+
+  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local iNToRecFN = C.VerilogFile("generators/hardfloat/source/iNToRecFN.v",HardFloat_consts,HardFloat_specialize,HardFloat_localFuncs,HardFloat_primitives)
+
+  local inst = {}
+  local intToFloat = iNToRecFN:instantiate("intToFloat")
+  inst[intToFloat] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatRec_"..tostring(inputType).."_exp"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(inputType), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    local signed = "1'b0"
+    if inputType:isInt() then signed="1'b1" end
+    
+    verilog = verilog..[[
+wire [4:0] exception;
+iNToRecFN #(.intWidth(]]..inputType:verilogBits()..[[),.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) conv (.control(`flControl_default),.signedIn(]]..signed..[[),.in(process_input),.roundingMode(`round_near_even),.out(process_output),.exceptionFlags(exception));
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    return CT.FloatRec( res, inputType, exp, sig )
+  end
+  
+  return res
+end)
+
+C.FloatToFloatRec = J.memoize(function( exp, sig, X )
+  err( type(exp)=="number","C.FloatToFloatRec: exp should be number, but is: ",exp )
+  err( type(sig)=="number" ,"C.FloatToFloatRec: sig should be number, but is: ",sig )
+  err( X==nil )
+
+  --local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  --local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  --local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  --local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local fNToRecFN = C.VerilogFile("generators/hardfloat/source/fNToRecFN.v")
+
+  local inst = {}
+  local ftof = fNToRecFN:instantiate("ftof")
+  inst[ftof] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatToFloatRec_".."_exp"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.Float(exp,sig)), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+    
+    verilog = verilog..[[
+
+fNToRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) ftof (.in(process_input),.out(process_output));
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    return CT.FloatToFloatRec( res, exp, sig )
+  end
+  
+  return res
+end)
+
+-- floating point add
+-- subtract: do a subtract instead
+C.sumF = J.memoize(function( exp, sig, subtract, X )
+  err( type(exp)=="number","C.FloatRec: exp should be number, but is: ",exp )
+  err( type(sig)=="number" ,"C.FloatRec: sig should be number, but is: ",sig )
+  err( type(subtract)=="boolean" )
+  err( X==nil )
+
+  --  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v", HardFloat_consts)
+
+  --  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
+  local addRecFN = C.VerilogFile("generators/hardfloat/source/addRecFN.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN )
+
+  local inst = {}
+  local intToFloat = addRecFN:instantiate("add")
+  inst[intToFloat] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("Float"..J.sel(subtract,"Sub","Add").."_"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=6 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    local bts = exp+sig+1
+    verilog = verilog..[[
+wire [4:0] exception;
+wire [32:0] out;
+
+(*retiming_forward = 1 *) reg [65:0] in1;
+(*retiming_forward = 1 *) reg [65:0] in2;
+(*retiming_forward = 1 *) reg [65:0] in3;
+always @(posedge CLK) begin
+  if( process_CE) begin
+    in3 <= process_input;
+    in2 <= in3;
+    in1 <= in2;
+  end
+end
+
+addRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) add (.control(`flControl_default),
+.subOp(]]..J.sel(subtract,"1'b1","1'b0")..[[),
+.a(in1[]]..(bts-1)..[[:0]),
+.b(in1[]]..(bts*2-1)..[[:]]..(bts)..[[]),
+.roundingMode(`round_near_even),
+.out(out),
+.exceptionFlags(exception));
+
+(*retiming_backward = 1 *) reg [32:0] tmp1;
+(*retiming_backward = 1 *) reg [32:0] tmp2;
+(*retiming_backward = 1 *) reg [32:0] tmp3;
+
+always @(posedge CLK) begin
+  if( process_CE) begin
+    tmp1 <= out;
+    tmp2 <= tmp1;
+    tmp3 <= tmp2;
+  end
+end
+
+assign process_output = tmp3;
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    if subtract then
+      return CT.SubF( res, exp, sig )
+    else
+      return CT.SumF( res, exp, sig )
+    end
+  end
+
+  return res
+end)
+
+-- floating point add
+C.mulF = J.memoize(function( exp, sig, X )
+  err( type(exp)=="number","C.mulF: exp should be number, but is: ",exp )
+  err( type(sig)=="number" ,"C.mulF: sig should be number, but is: ",sig )
+  err( X==nil )
+
+  --  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+    
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v", HardFloat_consts)
+  --  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
+  local mulRecFN = C.VerilogFile("generators/hardfloat/source/mulRecFN.v", HardFloat_consts, isSigNaNRecFN, HardFloat_specializev  )
+
+  local inst = {}
+  local mf = mulRecFN:instantiate("mul")
+  inst[mf] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatMul_"..tostring(exp).."_"..tostring(sig)), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.FloatRec(exp,sig)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=6 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    local bts = exp+sig+1
+    verilog = verilog..[[
+wire [4:0] exception;
+wire [32:0] out;
+
+(*retiming_forward = 1 *) reg [65:0] in1;
+(*retiming_forward = 1 *) reg [65:0] in2;
+(*retiming_forward = 1 *) reg [65:0] in3;
+always @(posedge CLK) begin
+  if(process_CE) begin
+    in3 <= process_input;
+    in2 <= in3;
+    in1 <= in2;
+  end
+end
+
+mulRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) mulinst (.control(`flControl_default),.a(in1[]]..(bts-1)..[[:0]),.b(in1[]]..(bts*2-1)..[[:]]..(bts)..[[]),.roundingMode(`round_near_even),.out(out),.exceptionFlags(exception));
+
+(*retiming_backward = 1 *) reg [32:0] tmp1;
+(*retiming_backward = 1 *) reg [32:0] tmp2;
+(*retiming_backward = 1 *) reg [32:0] tmp3;
+
+always @(posedge CLK) begin
+  if(process_CE) begin
+    tmp1 <= out;
+    tmp2 <= tmp1;
+    tmp3 <= tmp2;
+  end
+end
+
+assign process_output = tmp3;
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    return CT.MulF( res, exp, sig )
+  end
+
+  return res
+end)
+
+C.mulFConst = J.memoize(function( exp, sig, value, X )
+  err( type(exp)=="number" )
+  err( exp==8 )
+  err( type(sig)=="number" )
+  err( sig==24 )
+  err( X==nil )
+
+  local G = require "generators.core"
+  return G.Function{"MulFConst_"..tostring(exp).."_"..tostring(sig).."_"..tostring(value), types.rv(types.FloatRec(exp,sig)),
+    function(i)
+      return G.MulF(i,G.FloatRec{32}(R.c(types.Float32,value)))
+    end}
+end)
+  
+C.SqrtF = J.memoize(function( exp, sig, X )
+  err( type(exp)=="number" )
+  err( type(sig)=="number" )
+  err( X==nil )
+
+  --local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  --local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v", HardFloat_consts)
+  --local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v", HardFloat_specialize, HardFloat_consts )
+  local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
+  local divSqrtRecFN_small = C.VerilogFile("generators/hardfloat/source/divSqrtRecFN_small.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN )
+
+  local inst = {}
+  local sqrt = divSqrtRecFN_small:instantiate("sqrt")
+  inst[sqrt] = 1
+
+  -- depends on input, but this is what it approximatley is according to the docs
+  local approxCycles = sig+3
+  
+  local res = R.newFunction{ name=J.sanitize("FloatSqrt_"..tostring(exp).."_"..tostring(sig)), inputType = types.RV(types.FloatRec(exp,sig)), outputType=types.RV(types.FloatRec(exp,sig)), sdfInput=SDF{1,approxCycles}, sdfOutput=SDF{1,approxCycles}, stateful=true, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    verilog = verilog..[[
+
+reg bufferEmpty;
+reg [32:0] buffer;
+
+wire unitReady;
+wire outValid;
+wire [32:0] out;
+
+wire validIn;
+assign validIn = ]]..res:vInputValid()..[[;
+
+wire unitValid;
+assign unitValid = validIn && (bufferEmpty==1'b1);
+
+assign ]]..res:vOutputData()..[[ = buffer;
+assign ]]..res:vOutputValid()..[[ = (bufferEmpty==1'b0);
+
+// only accept an input if there is already space available
+assign ]]..res:vInputReady()..[[ = bufferEmpty && unitReady;
+
+always @(posedge CLK) begin
+  if ( reset ) begin
+    bufferEmpty <= 1'b1;
+  end else begin
+    if( outValid ) begin
+      // note: we should never have initiated a sqrt unless the buffer was already empty!
+      // so, we shouldn't have to worry about reads and writes into the buffer overlapping!! hopefully
+      bufferEmpty <= 1'b0;
+      buffer <= out;
+
+      if (bufferEmpty==1'b0) begin
+//        $display("Critical error: there is already something in the sqrt output buffer???\n");
+      end
+    end else if( ]]..res:vOutputReady()..[[ && bufferEmpty==1'b0 ) begin
+      bufferEmpty <= 1'b1;
+    end
+  end
+//  $display("unitValid %d dataIn %d bufferEmpty %d unitReady %d  readyUS %d |  out %d | unitOutValid %d buffer %d readyDS %d validOut %d",unitValid,]]..res:vInputData()..[[, bufferEmpty, unitReady, ready, out, outValid, buffer, ready_downstream, ]]..res:vOutputValid()..[[ );
+end
+
+
+wire sqrtOpOut;
+wire [4:0] exceptionFlags;
+
+divSqrtRecFN_small #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) divsqrtunit (.nReset(!reset),
+.clock(CLK),
+.control(`flControl_default),
+.sqrtOp(1'b1),
+.inReady( unitReady ),
+.inValid( unitValid ),
+.a( ]]..res:vInputData()..[[ ),
+.b( 33'd0 ),
+.roundingMode( `round_near_even ),
+.outValid( outValid ),
+.sqrtOpOut( sqrtOpOut ),
+.out( out ),
+.exceptionFlags( exceptionFlags )
+);
+
+
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    return CT.Sqrt( res, exp, sig )
+  end
+
+  return res
+end)
+
+C.CMPF = J.memoize(function( exp, sig, op, X )
+  err( type(exp)=="number","C.mulF: exp should be number, but is: ",exp )
+  err( type(sig)=="number" ,"C.mulF: sig should be number, but is: ",sig )
+  err( type(op)=="string" )
+  err( X==nil )
+
+  --  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+    
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+--  local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v", HardFloat_consts)
+  --  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
+  local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v", HardFloat_specialize, HardFloat_consts )
+  local compareRecFN = C.VerilogFile("generators/hardfloat/source/compareRecFN.v", HardFloat_rawFN, isSigNaNRecFN )
+
+  local inst = {}
+  local cf = compareRecFN:instantiate("cmp")
+  inst[cf] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatCMP_"..tostring(exp).."_"..tostring(sig).."_"..op), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.Bool), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    local bts = exp+sig+1
+    
+    verilog = verilog..[[
+wire [4:0] exception;
+wire [32:0] out;
+
+wire lt;
+wire eq;
+wire gt;
+wire unordered;
+
+compareRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) cmpinst (.a(process_input[]]..(bts-1)..[[:0]),
+.b(process_input[]]..(bts*2-1)..[[:]]..(bts)..[[]),
+.signaling(1'b0), // should it signal exceptions?
+.lt(lt),
+.eq(eq),
+.gt(gt),
+.unordered(unordered),
+.exceptionFlags(exception));
+
+]]
+
+    if op==">" then
+      verilog = verilog.."assign process_output = gt;\n"
+    else
+      assert(false)
+    end
+    
+verilog = verilog..[[    
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    return CT.CMPF( res, exp, sig, op )
+  end
+
   return res
 end)
 

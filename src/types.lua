@@ -31,7 +31,17 @@ TypeMT = {__index=TypeFunctions, __tostring=function(ty)
   elseif ty.kind=="bits" then
     res = "bits"..ty.precision
   elseif ty.kind=="float" then
-    res = "float"..ty.precision
+    if ty==types.Float32 then
+      res = "Float32"
+    else
+      res = "float_"..ty.exp.."_"..ty.sig
+    end
+  elseif ty.kind=="floatRec" then
+    if ty==types.FloatRec32 then
+      res = "FloatRec32"
+    else
+      res = "floatRec_"..ty.exp.."_"..ty.sig
+    end
   elseif ty.kind=="array" then
     if ty.size==ty.V then
       res = tostring(ty.over).."["..J.sel(ty.var,"<=","")..tostring(ty.size).."]"
@@ -169,13 +179,30 @@ end)
 types.I = types.int
 types.Int=types.int
 
-types._float={}
-function types.float( prec, X )
-  assert(prec==math.floor(prec))
-  err( X==nil, "types.float: too many arguments" )
-  types._float[prec] = types._float[prec] or setmetatable({kind="float",precision=prec},TypeMT)
-  return types._float[prec]
-end
+types.Float = J.memoize(function( exp, sig, X )
+  err( type(exp)=="number", "Float: exp must be number" )
+  err( type(sig)=="number", "Float: sig must be number" )
+  err( exp==math.floor(exp) )
+  err( sig==math.floor(sig) )
+  err( X==nil, "types.Float: too many arguments" )
+  
+  return setmetatable({kind="float", exp=exp, sig=sig },TypeMT)
+end)
+types.Float32 = types.Float( 8, 24 )
+types.Float16 = types.Float( 5, 11 )
+
+types.FloatRec = J.memoize(function( exp, sig, X )
+  err( type(exp)=="number", "types.FloatRec: exp must be number" )
+  err( type(sig)=="number", "types.FloatRec: sig must be number" )
+  err( exp==math.floor(exp) )
+  err( sig==math.floor(sig) )
+  err( X==nil, "types.FloatRec: too many arguments" )
+  
+  return setmetatable({kind="floatRec", exp=exp, sig=sig },TypeMT)
+end)
+types.FloatRec32 = types.FloatRec( 8, 24 )
+types.FloatRec16 = types.FloatRec( 5, 11 )
+
 
 types._array={}
 
@@ -467,8 +494,9 @@ function types.meet( a, b, op, loc)
     
   elseif a.kind=="float" and b.kind=="float" then
     
-    local prec = math.max(a.precision,b.precision)
-    local thistype = types.float(prec)
+    --local prec = math.max(a.precision,b.precision)
+    err( a==b, "NYI - float type meet, lhs and rhs must be same type" )
+    local thistype = a
     
     if cmpops[op] then
       return types.bool(), thistype, thistype
@@ -857,7 +885,9 @@ function TypeFunctions:verilogBits()
   elseif self:isBits() then
     return self.precision
   elseif self:isFloat() then
-    return self.precision
+    return self.exp+self.sig
+  elseif self:isFloatRec() then
+    return self.exp+self.sig+1
   elseif self:isNamed() then
     return self.structure:verilogBits()
   else
@@ -914,6 +944,7 @@ function TypeFunctions:isInterface()
 end
 
 function TypeFunctions:isFloat() return self.kind=="float" end
+function TypeFunctions:isFloatRec() return self.kind=="floatRec" end
 function TypeFunctions:isBool() return self.kind=="bool" end
 function TypeFunctions:isInt() return self.kind=="int" end
 function TypeFunctions:isUint() return self.kind=="uint" end
@@ -931,7 +962,7 @@ end
 
 types.TriggerFakeValue = {} -- table indices can't be nil
 function TypeFunctions:fakeValue()
-  if self:isInt() or self:isUint() or self:isFloat() or self:isBits() then
+  if self:isInt() or self:isUint() or self:isFloat() or self:isFloatRec() or self:isBits() then
     return 0
   elseif self:isArray() then
     local t = {}
@@ -969,7 +1000,7 @@ function TypeFunctions:checkLuaValue(v)
     err( type(v)=="table", "if type is "..tostring(self)..", value must be a table, but is: "..tostring(v))
     err( #v==#self.list, "incorrect number of channels, is "..(#v).." but should be "..#self.list )
     J.map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
-  elseif self:isFloat() then
+  elseif self:isFloat() or self:isFloatRec() then
     err( type(v)=="number", "float must be number")
   elseif self:isInt() then
     err( type(v)=="number", "int must be number")
@@ -1154,7 +1185,7 @@ function types.isBasic(A)
       end
     end
     return true
-  elseif A:is("uint") or A:is("bool") or A:is("int") or A:is("float") or A:is("bits") or A:is("null") then
+  elseif A:is("uint") or A:is("bool") or A:is("int") or A:is("float") or A:is("floatRec") or A:is("bits") or A:is("null") then
     return true
   elseif A:is("null") then
     return false

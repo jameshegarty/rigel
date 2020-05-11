@@ -861,16 +861,16 @@ modules.binop = memoize(function(op,lhsType,rhsType,outType)
   assert(types.isType(rhsType))
   assert(types.isType(outType))
   
-  local str = op.."_"..tostring(lhsType).."_"..tostring(rhsType).."_"..tostring(outType)
+  local str = op.."_"..string.lower(tostring(lhsType)).."_"..string.lower(tostring(rhsType)).."_"..string.lower(tostring(outType))
   return loadVerilogFile( types.tuple{lhsType,rhsType}, outType, str)
 end)
 
 modules.multiply = function(lhsType,rhsType,outType) return modules.binop("mul",lhsType,rhsType,outType) end
 
-modules.intToFloat = loadVerilogFile(types.int(32),types.float(32),"int32_to_float")
-modules.floatToInt = loadVerilogFile(types.float(32),types.int(32),"float32_to_int")
-modules.floatSqrt = loadVerilogFile(types.float(32),types.float(32),"sqrt_float_float")
-modules.floatInvert = loadVerilogFile(types.float(32),types.float(32),"invert_float_float")
+modules.intToFloat = loadVerilogFile(types.int(32),types.Float32,"int32_to_float")
+modules.floatToInt = loadVerilogFile(types.Float32,types.int(32),"float32_to_int")
+modules.floatSqrt = loadVerilogFile(types.Float32,types.Float32,"sqrt_float_float")
+modules.floatInvert = loadVerilogFile(types.Float32,types.Float32,"invert_float_float")
 
 function modules.verilatorDiv(ty)
   local fns = {}

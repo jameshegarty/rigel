@@ -13,7 +13,7 @@ local C = require "generators.examplescommon"
 local descriptor = {}
 
 function descriptor.addPos()
-  local descType = types.float(32)
+  local descType = types.Float32
   local PTYPE = R.tuple{types.array2d(descType,TILES_X*TILES_Y*8),R.tuple{R.uint16,R.uint16}}
   local POS_TYPE = R.tuple{R.uint16,R.uint16}
 
@@ -30,6 +30,7 @@ function descriptor.addPos()
   local inp = rigel.input( R.HS(PTYPE) )
 
   local desc_pack = R.connect{ input = inp, toModule = R.HS(repack) }
+
   local desc = rigel.apply("addpos",RM.makeHandshake(sift.addDescriptorPos(descType)), desc_pack)
 
   return R.defineModule{ input = inp, output = desc }

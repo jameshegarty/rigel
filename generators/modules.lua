@@ -137,7 +137,7 @@ modules.SoAtoAoS = memoize(function( W, H, typelist, asArray, framedW, framedH )
     
     res.inputType = types.tuple( J.map(typelist, function(t) return types.array2d(t,W,H) end) )
     if asArray then
-      J.map( typelist, function(n) err(n==typelist[1], "if asArray==true, all elements in typelist must match") end )
+      J.map( typelist, function(n) err(n==typelist[1], "if asArray==true, all elements in typelist must match, but tuple item 0 types is:",typelist[1]," but item ? type is:",n) end )
       res.outputType = types.array2d(types.array2d(typelist[1],#typelist),W,H)
     else
       res.outputType = types.array2d(types.tuple(typelist),W,H)
@@ -3967,7 +3967,7 @@ assign ram_readAddr = readAddr[]]..(addrBits-1)..[[:0];
 ]])
         end
 
-        table.insert(verilog,[[assign load_output = {load_valid,ram_readOut};
+        table.insert(verilog,[[assign load_output = {load_valid,ram_readOut[]]..(A:lower():verilogBits())..[[-1:0]};
 assign reading = load_valid && load_ready_downstream;
 
 
@@ -3979,7 +3979,7 @@ assign writing = store_ready && store_valid;
 
 assign ram_WE = 1'b1;
 assign ram_]]..J.sel(brammode,"writeAndReturnOriginal","write")..[[_valid = writing;
-assign ram_writeAddrAndData = {store_input[]]..(A:lower():verilogBits()-1)..[[:0],writeAddr[]]..(addrBits-1)..[[:0]};
+assign ram_writeAddrAndData = {]]..J.sel(brammode and A:lower():verilogBits()<J.upToNearest(8,A:lower():verilogBits()),tostring(J.upToNearest(8,A:lower():verilogBits())-A:lower():verilogBits()).."'d0,","")..[[store_input[]]..(A:lower():verilogBits()-1)..[[:0],writeAddr[]]..(addrBits-1)..[[:0]};
 
 always @(posedge CLK) begin
   if (reset) begin
@@ -5759,12 +5759,12 @@ function modules.moduleLambda( name, functionList, instanceList, X )
 end
 
 function modules.liftVerilogTab(tab)
-  return modules.liftVerilog( tab.name, tab.inputType, tab.outputType, tab.vstr, tab.globalMetadata, tab.sdfInput, tab.sdfOutput, tab.instanceMap, tab.delay, tab.inputBurstiness, tab.outputBurstiness )
+  return modules.liftVerilog( tab.name, tab.inputType, tab.outputType, tab.vstr, tab.globalMetadata, tab.sdfInput, tab.sdfOutput, tab.instanceMap, tab.delay, tab.inputBurstiness, tab.outputBurstiness, tab.stateful )
 end
 
 -- requires: this is a map of instance callsites (for external requirements)
 -- instanceMap: this is a map of rigel instances of modules this depends on
-modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globalMetadata, sdfInput, sdfOutput, instanceMap, delay, inputBurstiness, outputBurstiness, X )
+modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globalMetadata, sdfInput, sdfOutput, instanceMap, delay, inputBurstiness, outputBurstiness, stateful, X )
   err( type(name)=="string", "liftVerilog: name must be string")
   err( types.isType(inputType), "liftVerilog: inputType must be type")
   err( types.isType(outputType), "liftVerilog: outputType must be type")
@@ -5775,9 +5775,10 @@ modules.liftVerilog = memoize(function( name, inputType, outputType, vstr, globa
   if sdfOutput==nil then sdfOutput=SDF{1,1} end
   err( SDFRate.isSDFRate(sdfOutput), "liftVerilog: sdfOutput must be SDF rate, but is: "..tostring(sdfOutput))
   err( X==nil, "liftVerilog: too many arguments")
-  
+  if stateful==nil then stateful = true end
+
   local res = { kind="liftVerilog", inputType=inputType, outputType=outputType, verilogString=vstr, name=name, instanceMap=instanceMap, delay = delay, inputBurstiness=inputBurstiness, outputBurstiness=outputBurstiness }
-  res.stateful = true
+  res.stateful = stateful
   res.sdfInput=SDF(sdfInput)
   res.sdfOutput=SDF(sdfOutput)
 

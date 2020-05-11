@@ -188,11 +188,18 @@ function systolic.valueToVerilog( value, ty )
     assert(type(value)=="table")
     assert(#value==#ty.list)
     return "{"..table.concat( J.reverse( J.map( value, function(v,k) return systolic.valueToVerilog(v,ty.list[k]) end ) ), "," ).."}"
-  elseif ty==types.float(32) then
+  elseif ty==types.Float32 then
     local ffi = require("ffi")
     local a = ffi.new("float[1]",value)
     local b = ffi.cast("unsigned int*",a)
     return "32'd"..tostring(b[0])
+  elseif ty==types.FloatRec32 then
+    -- complete hack...
+    if value==0 then
+      return "33'd0"
+    else
+      J.err(false, "NYI - verilog value for ",ty," value:",value)
+    end
   elseif ty:isFloat() then
     return tostring(ty).."systolic.valueToVerilog_float_garbage)@(*%(*&^*%$)_@)(^&$" -- garbage
   elseif ty:isNamed() then

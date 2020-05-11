@@ -20,7 +20,7 @@ local function getloc()
 end
 
 function fixed.isFixedType(ty)
-  return ty==types.float(32)
+  return ty==types.Float32
 end
 
 function fixed.expectFixed(ty)
@@ -38,17 +38,17 @@ local fixedASTMT={__index = fixedASTFunctions,
 __add=function(l,r)
   assert(fixed.isFixedType(l.type))
   assert(fixed.isFixedType(r.type))
-  return fixed.new({kind="binop",op="+",inputs={l,r}, type=types.float(32), loc=getloc()})
+  return fixed.new({kind="binop",op="+",inputs={l,r}, type=types.Float32, loc=getloc()})
 end, 
 __sub=function(l,r) 
-  return fixed.new({kind="binop",op="-",inputs={l,r}, type=types.float(32), loc=getloc()})
+  return fixed.new({kind="binop",op="-",inputs={l,r}, type=types.Float32, loc=getloc()})
  end,
 __mul=function(l,r)
   --print("FLOAT_MUL",l,r)
-  return fixed.new({kind="binop",op="*",inputs={l,r}, type=types.float(32), loc=getloc()})
+  return fixed.new({kind="binop",op="*",inputs={l,r}, type=types.Float32, loc=getloc()})
  end,
 __div=function(l,r) 
-  return fixed.new({kind="binop",op="/",inputs={l,r}, type=types.float(32), loc=getloc()})
+  return fixed.new({kind="binop",op="/",inputs={l,r}, type=types.Float32, loc=getloc()})
  end,
   __newindex = function(table, key, value)
                     error("Attempt to modify systolic AST node")
@@ -126,7 +126,7 @@ end
 
 function fixed.constant( value, signed, precision, exp )
   assert(exp==nil or exp==0)
-  return fixed.new{kind="constant", value=value, type=types.float(32),inputs={},loc=getloc()}
+  return fixed.new{kind="constant", value=value, type=types.Float32,inputs={},loc=getloc()}
 end
 
 function fixed.plainconstant( value, ty )
@@ -136,7 +136,7 @@ end
 
 function fixedASTFunctions:lift(exponant)
   err(fixed.isFixedType(self.type)==false, "expected non-fixed type: "..self.loc)
-  return fixed.new{kind="lift",type=types.float(32), exp=exponant,inputs={self},loc=getloc()}
+  return fixed.new{kind="lift",type=types.Float32, exp=exponant,inputs={self},loc=getloc()}
 end
 
 function fixedASTFunctions:normalize(precision)
@@ -180,12 +180,12 @@ end
 
 function fixedASTFunctions:rshift(N)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
-  return fixed.new{kind="rshift", type=types.float(32),shift=N,inputs={self},loc=getloc()}
+  return fixed.new{kind="rshift", type=types.Float32,shift=N,inputs={self},loc=getloc()}
 end
 
 function fixedASTFunctions:lshift(N)
   err( fixed.isFixedType(self.type), "expected fixed type: "..self.loc)
-  return fixed.new{kind="lshift", type=types.float(32),shift=N,inputs={self},loc=getloc()}
+  return fixed.new{kind="lshift", type=types.Float32,shift=N,inputs={self},loc=getloc()}
 end
 
 function fixedASTFunctions:cast(to)
@@ -230,7 +230,7 @@ end
 
 function fixedASTFunctions:abs()
   err(fixed.isFixedType(self.type), "expected fixed point type: "..self.loc)
-  return fixed.new{kind="abs", type=types.float(32), inputs={self}, loc=getloc()}
+  return fixed.new{kind="abs", type=types.Float32, inputs={self}, loc=getloc()}
 end
 
 function fixedASTFunctions:neg()
@@ -301,20 +301,20 @@ function fixedASTFunctions:toSystolic(inp)
         if n.type:isUint() then
           res = S.rshift(arg[1],n.shift)
         elseif n.type:isFloat() then
-          local I = fpgamodules.multiply(types.float(32),types.float(32),types.float(32)):instantiate("MUL_FLOAT"..tostring(#instances))
+          local I = fpgamodules.multiply(types.Float32,types.Float32,types.Float32):instantiate("MUL_FLOAT"..tostring(#instances))
           table.insert(instances,I)
-          res = I:process(S.tuple{args[1],S.constant(1/math.pow(2,n.shift),types.float(32))})
+          res = I:process(S.tuple{args[1],S.constant(1/math.pow(2,n.shift),types.Float32)})
         else
           print("TY",n.type)
           assert(false)
         end
       elseif n.kind=="binop" then
-        if n.inputs[1].type==types.float(32) and n.inputs[2].type==types.float(32) and (n.type==types.float(32)  or n.type==types.bool()) then
+        if n.inputs[1].type==types.Float32 and n.inputs[2].type==types.Float32 and (n.type==types.Float32  or n.type==types.bool()) then
 
           local opremap={["*"]="mul",["+"]="add",["-"]="sub",[">"]="gt",["<"]="lt",["<="]="lte",[">="]="gte"}
 
           if opremap[n.op]~=nil then
-            local I = fpgamodules.binop(opremap[n.op],types.float(32),types.float(32),n.type):instantiate(opremap[n.op].."_FLOAT"..tostring(#instances))
+            local I = fpgamodules.binop(opremap[n.op],types.Float32,types.Float32,n.type):instantiate(opremap[n.op].."_FLOAT"..tostring(#instances))
             table.insert(instances,I)
             res = I:process(S.tuple{args[1],args[2]})
           else
@@ -340,13 +340,13 @@ function fixedASTFunctions:toSystolic(inp)
       elseif n.kind=="not" then
         res = S.__not(args[1])
       elseif n.kind=="neg" then
-        local I = fpgamodules.binop("sub",types.float(32),types.float(32),n.type):instantiate("neg_FLOAT"..tostring(#instances))
+        local I = fpgamodules.binop("sub",types.Float32,types.Float32,n.type):instantiate("neg_FLOAT"..tostring(#instances))
         table.insert(instances,I)
-        res = I:process(S.tuple{S.constant(0,types.float(32)),args[1]})
+        res = I:process(S.tuple{S.constant(0,types.Float32),args[1]})
       elseif n.kind=="invert" then
         local I = fpgamodules.floatInvert:instantiate("FLOAT_INV"..tostring(#instances))
         table.insert(instances,I)
-        res = S.select(S.eq(args[1],S.constant(0,types.float(32))),S.constant(0,types.float(32)),I:process(args[1]))
+        res = S.select(S.eq(args[1],S.constant(0,types.Float32)),S.constant(0,types.Float32),I:process(args[1]))
       elseif n.kind=="tuple" then
         res = S.tuple(args)
       elseif n.kind=="constant" then
