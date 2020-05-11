@@ -10,13 +10,6 @@ H = 32
 T = 2
 
 ------------
---local ainp = fixed.parameter("ainp",types.int(32))
---local af = ainp:lift(0) 
---local aff = af*af
---local aff = af*af
---local afgt = aff:gt(fixed.constant(1000000000*1000000000))
---local a = (fixed.select(afgt,fixed.plainconstant(65535,types.uint(32)),fixed.plainconstant(0,types.uint(32)))):toRigelModule("a")
-
 local a = G.Function{"a",types.rv(types.Int(32)),
   function(i)
     local iflt = G.FloatRec{32}(i)

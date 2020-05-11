@@ -13,13 +13,6 @@ H = 32
 T = 2
 
 ------------
---local ainp = fixed.parameter("ainp",types.int(32))
---local af = ainp:lift(0) 
---local a = (af-fixed.constant(6540982534034)):toRigelModule("a")
---local aa = af*fixed.constant(0.1)
---local a = (af-aa):toRigelModule("a")
---local a = (aa):toRigelModule("a")
-
 local a = G.SchedulableFunction{"a",types.int(32),
   function(i)
     local lhs = G.FloatRec{32}(i)
@@ -27,7 +20,6 @@ local a = G.SchedulableFunction{"a",types.int(32),
     local res = G.SubF(lhs,rhs)
     return G.Float(res)
   end}
-
 ------------
 ITYPE = types.array2d( types.int(32), T )
 inp = R.input( types.rv(types.Par(ITYPE)) )

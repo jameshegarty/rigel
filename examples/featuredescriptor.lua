@@ -110,7 +110,7 @@ desc = R.connect{ input = R.fanIn{branch3_descnorm,branch0_pos}, toModule =
   descriptor.addPos() }
 
 desc = G.Bitcast{types.array2d(types.uint(8),130*4)}(desc)
-print("DESC",desc.type)
+
 -----------------------
 descriptorPipeline = R.defineModule{ input=inp, output=desc }
 

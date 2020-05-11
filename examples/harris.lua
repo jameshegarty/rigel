@@ -13,8 +13,6 @@ H = 16
 T = 8
 ITYPE = types.array2d(types.uint(8),T)
 
---OT=2
---OTYPE = types.Float32
 ------------
 local function makeDisplay(ty)
   local ainp = fixed.parameter("ainp",ty)
@@ -30,17 +28,12 @@ local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1
 
 local dxdyfn, dxdyType = harris.makeDXDY(W,H)
 local dxdy = R.apply("dxdy",dxdyfn,inp)
---local dxdy = R.apply("dxidx",RM.makeHandshake(C.index(types.array2d(types.tuple{dxdyType,dxdyType},1),0,0)),dxdy)
 dxdy = G.Index{{0,0}}(dxdy)
 
---local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
---local out = R.apply("harris", RM.makeHandshake(harrisFn), dxdy)
 local out = harris.HarrisKernel(dxdy)
 out = G.Float(out)
 out = G.Fmap{C.bitcast( types.Float32, types.Array2d(types.uint(8),4))}(out)
---out = R.apply("AO",RM.makeHandshake(C.arrayop(types.Float32,1,1)),out)
---out = G.Broadcast{{1,1}}(out)
---local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(OTYPE,1,1,OT)), out )
+
 fn = RM.lambda( "harris", inpraw, out )
 
 harness{outFile="harris", fn=fn, inFile="box_32_16.raw", inSize={W,H}, outSize={W*4,H}, outP=4 }

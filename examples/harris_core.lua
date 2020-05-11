@@ -47,8 +47,6 @@ function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(shift)=="number")
   assert(X==nil)
 
-  print("CONVFLOAT",A)
-  
   local inp = R.input( types.rv(types.Par(types.array2d( A, ConvWidth, ConvHeight ))) )
   local r
   if A:isFloatRec() then
@@ -132,9 +130,6 @@ function harris.makeDXDY(W,H,X)
   local blurYFn = convolveFloat( blurX.type:deInterface():arrayOver(), 1,5,GAUSS,8)
   local blurXY = R.apply("blurXY",C.stencilKernelPadcrop( types.FloatRec32, W, H, T, 0,0,2,2,0, blurYFn ),blurX)
 
-  print("BLURXY",blurXY.type)
-  --blurXY = G.Map{G.Float}(blurXY)
-  --local dxdyFn, dxdyType = harris.makeDXDYKernel( types.Float32 )
   local dxdySt = C.stencilKernelPadcrop( types.FloatRec32,W,H,T,1,1,1,1,0, harris.DXDYKernel )
   local dxdy = R.apply("dxdy", dxdySt, blurXY )
 
@@ -199,9 +194,7 @@ function harris.harrisWithStencil(t)
 
   right = C.fifo(DXDY_PAIR,128)(right)
 
-  --local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
   local harrisType = types.Float32
-  --local right = R.apply("harris", RM.makeHandshake(harrisFn), right)
 
   right = G.TupleToArray(right)
   right = G.Map{G.FloatRec{32}}(right)
@@ -215,11 +208,8 @@ function harris.harrisWithStencil(t)
 
   -- now stencilify the harris
   local right = R.apply( "harris_st", RM.makeHandshake(C.stencilLinebuffer(harrisType, internalW, internalH, 1,-2,0,-2,0)), right)
-  --local nmsFn = harris.makeNMS( harrisType, true )
-  --local right = R.apply("nms", RM.makeHandshake(nmsFn), right)
 
   right = G.Map{G.FloatRec{32}}(right)
-
   right = G.Fmap{harris.NMS}(right)
 
   -------------------------------
@@ -227,15 +217,11 @@ function harris.harrisWithStencil(t)
   local left = R.selectStream("d0",dxdyBroad,0)
 
   if GRAD_INT then
-    --print("GRAD_INT=true")
     left = R.apply("lower", RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)), left)
     dxdyType = GRAD_TYPE
     DXDY_PAIR = types.tuple{GRAD_TYPE,GRAD_TYPE}
-  else
-    --print("GRAD_INT=false")
   end
   
-  --left = C.fifoLoop( fifos, statements, DXDY_PAIR, left, 2048/DXDY_PAIR:verilogBits(), "leftFIFO")
   left = C.fifo(DXDY_PAIR,2048/DXDY_PAIR:verilogBits())(left)
 
   local left = R.apply("stlbinp", RM.makeHandshake(C.arrayop(DXDY_PAIR,1,1)), left)

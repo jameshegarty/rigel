@@ -11,9 +11,6 @@ H = 32
 T = 2
 
 ------------
---local ainp = fixed.parameter("ainp",types.int(32))
---local af = ainp:lift(0) 
---local a = (af*af):toRigelModule("a")
 local a = G.SchedulableFunction{"a",types.int(32),
   function(i)
     local iflt = G.FloatRec{32}(i)

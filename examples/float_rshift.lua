@@ -10,12 +10,7 @@ W = 64
 H = 32
 T = 2
 
-------------
---local ainp = fixed.parameter("ainp",types.int(32))
---local af = ainp:lift(0) 
---local a = (af:rshift(6)):toRigelModule("a")
 
-------------
 ITYPE = types.array2d( types.int(32), T )
 inp = R.input( types.rv(types.Par(ITYPE)) )
 out = R.apply( "a", G.Map{G.FloatRec{32}}, inp )

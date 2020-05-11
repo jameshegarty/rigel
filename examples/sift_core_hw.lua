@@ -181,6 +181,7 @@ local function siftMag(dxdyType)
   local out = mag*gauss_weight
   return out:toRigelModule("siftmag"), out.type
 end
+
 ----------------
 -- input: {dx,dy}
 -- output: descType[BUCKETS], descType
@@ -267,6 +268,7 @@ function sift.tile(W,H,T,A)
 
   return RM.lambda("tile", inp, fin )
 end
+
 ----------------
 -- input: {descType[128],uint16,uint16}
 -- output: descType[130]
@@ -281,12 +283,11 @@ function sift.addDescriptorPos(descType)
   local out = f.array2d(a,TILES_X*TILES_Y*8+2)
   return out:toRigelModule("addDescriptorPos")
 end
+
 ----------------
 -- input: {{dx,dy}[16,16],{posX,posY}}
 -- output: descType[128+2], descType
 function sift.siftKernel(dxdyType)
-  --print("sift")
-
   local dxdyPair = types.tuple{dxdyType,dxdyType}
   local posType = types.uint(16)
   local PTYPE = types.tuple{posType,posType}
@@ -298,30 +299,21 @@ function sift.siftKernel(dxdyType)
   local inp = R.input(R.Handshake(ITYPE))
   local inp_broad = R.apply("inp_broad", RM.broadcastStream(types.Par(ITYPE),2), inp)
 
-  --local inp_pos = C.fifoLoop( fifos, statements, ITYPE, R.selectStream("i0",inp_broad,0), 1, "p0", true) -- fifo size can also be 1 (tested in SW)
   local inp_pos = C.fifo(ITYPE,1,nil,true)(R.selectStream("i0",inp_broad,0))
   local pos = R.apply("p",RM.makeHandshake(C.index(ITYPE,1)), inp_pos)
-  --local pos = C.fifoLoop( fifos, statements, PTYPE, pos, 1024, "posfifo")
+
   local pos = C.fifo(PTYPE,1024)(pos)
   local pos0, pos1 = RS.fanOut{input=pos,branches=2}
 
---  local pos = C.fifo( fifos, statements, PTYPE, pos, 1024, "p0")
   local posX = R.apply("px",RM.makeHandshake(C.index(PTYPE,0)),pos0)
-  --local posX = C.fifoLoop( fifos, statements, posType, posX, 1024, "pxfifo" )
+
   local posX = C.fifo(posType,1024)(posX)
   local posY = R.apply("py",RM.makeHandshake(C.index(PTYPE,1)),pos1)
-  --local posY = C.fifoLoop( fifos, statements, posType, posY, 1024, "pyfifo" )
+
   local posY = C.fifo(posType,1024)(posY)
 
-  --local inp_dxdy = C.fifoLoop( fifos, statements, ITYPE, R.selectStream("i1",inp_broad,1), 1, "p1", true) -- fifo size can also be 1 (tested in SW)
   local inp_dxdy = C.fifo(ITYPE,1,nil,true)(R.selectStream("i1",inp_broad,1))
   local dxdy = R.apply("dxdy",RM.makeHandshake(C.index(ITYPE,0,0)), inp_dxdy)
-
---  if GRAD_INT then
---    dxdy = d.apply("dxdylower",d.makeHandshake(d.map(lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE),TILES_X*4,TILES_Y*4)), dxdy)
---    dxdyType = GRAD_TYPE
---    dxdyPair = types.tuple{GRAD_TYPE,GRAD_TYPE}
---  end
 
   local dxdyTile = R.apply("TLE",RM.makeHandshake( sift.tile(TILES_X*4,TILES_Y*4,4,dxdyPair)),dxdy)
   local dxdy = R.apply( "down1", RM.liftHandshake(RM.changeRate(types.array2d(dxdyPair,16),1,TILES_X*TILES_Y,1)), dxdyTile )
@@ -351,7 +343,7 @@ function sift.siftKernel(dxdyType)
   local desc0 = C.fifo(descTypeRed,256)(desc0)
 
   local desc1 = R.selectStream("d1",desc_broad,1)
-  --local desc1 = C.fifoLoop( fifos, statements, descTypeRed, desc1, 256, "d1")
+
   local desc1 = C.fifo(descTypeRed,256)(desc1)
 
   local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( RS.modules.sumPow2{inType=RED_TYPE,outType=RED_TYPE},(TILES_X*TILES_Y*8)))),desc1)
@@ -376,7 +368,6 @@ function sift.siftKernel(dxdyType)
 
   local siftfn = RM.lambda("siftd",inp,R.statements(statements),fifos)
   
-  --print("SIFTSDF",SDFRate.fracToNumber(siftfn.sdfInput[1]),SDFRate.fracToNumber(siftfn.sdfOutput[1]))
   return siftfn, descType
 end
 
@@ -399,43 +390,6 @@ function posSub(x,y)
 
   return ps
 end
-----------------
--- This fn takes in dxdy (tuple pair), turns it into a stencil of size windowXwindow, performs harris on it,
--- then returns type {dxdyStencil,bool}, where bool is set by harris NMS.
---[=[
-local function makeHarrisWithDXDY(dxdyType, W,H)
-  local function res(internalW, internalH)
-    local ITYPE = types.array2d(types.tuple{dxdyType,dxdyType},TILES_X*4,TILES_Y*4)
-    
-    local inp = R.input(types.rv(types.Par(ITYPE)))
-    
-    local PS = RM.posSeq(internalW,internalH,1)
-    local pos = R.apply("posseq", PS)
-    local pos = R.apply("pidx",C.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
-    local pos = R.apply("PS", posSub(TILES_X*4-1,TILES_Y*4-1), pos)
-    
-    local filterseqValue = R.concat("fsv",{inp,pos})
-    
-    local filterseqCond = R.apply("idx",C.index(ITYPE,TILES_X*2,TILES_Y*2),inp)
-    local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
-    local filterseqCond = R.apply("harris", harrisFn, filterseqCond)
-    local filterseqCond = R.apply("AO",C.arrayop(harrisType,1,1),filterseqCond)
-    -- now stencilify the harris
-    local filterseqCond = R.apply( "harris_st", C.stencilLinebuffer(harrisType,internalW,internalH,1,-2,0,-2,0), filterseqCond)
-    local nmsFn = harris.makeNMS( harrisType, true )
-    local filterseqCond = R.apply("nms", nmsFn, filterseqCond)
-    
-    local fsinp = R.concat("PTT",{filterseqValue,filterseqCond})
-    
-    local filterfn = RM.lambda( "filterfn", inp, fsinp )
-    
-    return filterfn
-  end
-
-  return res
-end
-]=]
-----------------
 
 function sift.addPos(dxdyType,W,H,subX,subY)
   assert(types.isType(dxdyType))
@@ -540,15 +494,13 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   -------------------------------
   -- right branch: make the harris bool
   local right = R.selectStream("d1",dxdyBroad,1)
-  --right = C.fifoLoop( fifos, statements, DXDY_PAIR, right, 128, "rightFIFO")
+
   right = C.fifo(DXDY_PAIR,128)(right)
 
   right = G.TupleToArray(right)
   right = G.Map{G.FloatRec{32}}(right)
   right = G.ArrayToTuple(right)
 
-  --local harrisFn, harrisType = harris.makeHarrisKernel(dxdyType,dxdyType)
-  --local right = R.apply("harris", RM.makeHandshake(harrisFn), right)
   right = harris.HarrisKernel(right)
   right = G.Float(right)
   local harrisType = types.Float32
@@ -556,8 +508,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
 
   -- now stencilify the harris
   local right = R.apply( "harris_st", RM.makeHandshake(C.stencilLinebuffer(harrisType, internalW, internalH, 1,-2,0,-2,0)), right)
-  --local nmsFn = harris.makeNMS( harrisType, true )
-  --local right = R.apply("nms", RM.makeHandshake(nmsFn), right)
+
   right = G.Map{G.FloatRec{32}}(right)
   right = G.Fmap{harris.NMS}(right)
 
@@ -566,15 +517,11 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local left = R.selectStream("d0",dxdyBroad,0)
 
   if GRAD_INT then
-    --print("GRAD_INT=true")
     left = R.apply("lower", RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)), left)
     dxdyType = GRAD_TYPE
     DXDY_PAIR = types.tuple{GRAD_TYPE,GRAD_TYPE}
-  else
-    --print("GRAD_INT=false")
   end
   
-  --left = C.fifoLoop( fifos, statements, DXDY_PAIR, left, 2048/DXDY_PAIR:verilogBits(), "leftFIFO")
   left = C.fifo(DXDY_PAIR,2048/DXDY_PAIR:verilogBits())(left)
 
   local left = R.apply("stlbinp", RM.makeHandshake(C.arrayop(DXDY_PAIR,1,1)), left)
@@ -596,7 +543,6 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local filterFn = RM.filterSeq( FILTER_TYPE, W, H, FILTER_RATE, FILTER_FIFO, false )
 
   local out = R.apply("FS",RM.liftHandshake(RM.liftDecimate(filterFn)),out)
-  --local out = C.fifoLoop( fifos, statements, FILTER_TYPE, out, FILTER_FIFO, "fsfifo", false)
   local out = C.fifo(FILTER_TYPE,FILTER_FIFO)(out)
 
   local siftFn, descType = sift.siftKernel(dxdyType)
