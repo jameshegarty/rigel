@@ -13,8 +13,8 @@ local G = require "generators.core"
 local siftTerra
 if terralib~=nil then siftTerra = require("sift_core_hw_terra") end
 
-TILES_X = 4
-TILES_Y = 4
+--TILES_X = 4
+--TILES_Y = 4
 GAUSS_SIGMA = 5 --5
 
 
@@ -185,7 +185,11 @@ end
 ----------------
 -- input: {dx,dy}
 -- output: descType[BUCKETS], descType
-function sift.siftDescriptor(dxdyType)
+function sift.siftDescriptor( dxdyType, TILES_X, TILES_Y, X )
+  assert( type(TILES_X)=="number" )
+  assert( type(TILES_Y)=="number" )
+  assert( X==nil )
+  
   if GRAD_INT then
     assert(dxdyType==GRAD_TYPE)
   else
@@ -272,7 +276,11 @@ end
 ----------------
 -- input: {descType[128],uint16,uint16}
 -- output: descType[130]
-function sift.addDescriptorPos(descType)
+function sift.addDescriptorPos( descType, TILES_X, TILES_Y, X)
+  assert( type(TILES_X)=="number" )
+  assert( type(TILES_Y)=="number" )
+  assert( X==nil )
+  
   local inp = f.parameter("descpos",types.tuple{types.array2d(descType,TILES_X*TILES_Y*8),types.uint(16),types.uint(16)})
   local desc = inp:index(0)
   local px = inp:index(1):lift(0)
@@ -287,7 +295,11 @@ end
 ----------------
 -- input: {{dx,dy}[16,16],{posX,posY}}
 -- output: descType[128+2], descType
-function sift.siftKernel(dxdyType)
+function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
+  assert( type(TILES_X)=="number" )
+  assert( type(TILES_Y)=="number" )
+  assert(X==nil)
+  
   local dxdyPair = types.tuple{dxdyType,dxdyType}
   local posType = types.uint(16)
   local PTYPE = types.tuple{posType,posType}
@@ -320,7 +332,7 @@ function sift.siftKernel(dxdyType)
   local dxdy = R.apply("down1idx",RM.makeHandshake(C.index(types.array2d(types.array2d(dxdyPair,16),1),0,0)), dxdy)
   local dxdy = R.apply("down2", RM.liftHandshake(RM.changeRate(dxdyPair,1,16,1)), dxdy )
   local dxdy = R.apply("down2idx",RM.makeHandshake(C.index(types.array2d(dxdyPair,1),0,0)), dxdy)
-  local descFn, descTypeRed = sift.siftDescriptor(dxdyType)
+  local descFn, descTypeRed = sift.siftDescriptor( dxdyType, TILES_X, TILES_Y )
   local descType = types.Float32
   local desc = R.apply("desc",RM.makeHandshake(descFn),dxdy)
 
@@ -362,7 +374,7 @@ function sift.siftKernel(dxdyType)
   local desc = R.apply("repack",RM.liftHandshake(RM.changeRate(descType,1,1,TILES_X*TILES_Y*8)),desc)
   -- we now have an array of type descType[128]. Add the pos.
   local desc_pack = R.apply("dp", RM.packTuple{types.RV(types.Par(types.array2d(descType,TILES_X*TILES_Y*8))),types.RV(types.Par(posType)),types.RV(types.Par(posType))},R.concat("DPT",{desc,posX,posY}))
-  local desc = R.apply("addpos",RM.makeHandshake( sift.addDescriptorPos(descType)), desc_pack)
+  local desc = R.apply("addpos",RM.makeHandshake( sift.addDescriptorPos( descType, TILES_X, TILES_Y )), desc_pack)
 
   table.insert(statements,1,desc)
 
@@ -391,11 +403,13 @@ function posSub(x,y)
   return ps
 end
 
-function sift.addPos(dxdyType,W,H,subX,subY)
+function sift.addPos( dxdyType, W, H, subX, subY, TILES_X, TILES_Y, X )
   assert(types.isType(dxdyType))
   assert(type(W)=="number")
   assert(type(H)=="number")
-
+  assert(type(TILES_X)=="number")
+  assert(type(TILES_Y)=="number")
+  assert( X==nil )
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
   local inp = R.input(types.rv(types.Par(types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4))))
 
@@ -413,10 +427,12 @@ function sift.addPos(dxdyType,W,H,subX,subY)
   return RM.lambda("addPosAtInput",inp,out)
 end
 
-function sift.siftDesc(W,H,inputT,X)
+function sift.siftDesc( W, H, inputT, TILES_X, TILES_Y, X )
   assert(type(W)=="number")
   assert(type(H)=="number")
   assert(type(inputT)=="number")
+  assert(type(TILES_X)=="number")
+  assert(type(TILES_Y)=="number")
   assert(X==nil)
 
   local ITYPE = types.array2d(types.uint(8),inputT)
@@ -446,13 +462,13 @@ function sift.siftDesc(W,H,inputT,X)
   --- now stencilify dxdy
   local out = R.apply("ST",RM.makeHandshake(C.stencilLinebuffer(DXDY_PAIR,W,H,1,(-TILES_X*4)+1,0,(-TILES_Y*4)+1,0)), out)
 
-  local DI = sift.addPos(dxdyType,W,H)
+  local DI = sift.addPos( dxdyType, W, H, nil, nil, TILES_X, TILES_Y )
   local out = R.apply("desc_inner",RM.makeHandshake(DI),out)
   local out = R.apply("AO", RM.makeHandshake(C.arrayop(DI.outputType:extractData(),1,1)), out)
-  local out = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( DI.outputType:extractData(), W, H, 1, TILES_X*4-1, 0, TILES_Y*4-1, 0))), out)
+  local out = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( DI.outputType:extractData(), W, H, 1, 15, 0, 15, 0))), out)
   local out = R.apply("I0", RM.makeHandshake(C.index(types.array2d(DI.outputType:extractData(),1),0,0)), out)
 
-  local siftFn, descType = sift.siftKernel(dxdyType)
+  local siftFn, descType = sift.siftKernel( dxdyType, TILES_X, TILES_Y )
   local out = R.apply("sft", siftFn, out)
 
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2)), out )

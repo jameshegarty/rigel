@@ -54,14 +54,20 @@ C.fassert = memoize(function(filename,A)
   return rigel.newFunction(fassert)
 end)
 
-C.print = memoize(function(A,str)
+-- showIfInvalid: display data, even if it's invalid
+C.print = memoize(function( A, str, showIfInvalid, X )
   err(types.isBasic(A),"C.print: type should be basic, but is: "..tostring(A) )
+  assert(X==nil)
+
+  if showIfInvalid==nil then showIfInvalid=false end
   
   local function constructPrint(A,symb)
+
     if A:isUint() or A:isInt() or A:isBits() then
-      return {A}, "%d", {symb}
+      return {A}, "%0d", {symb}
     elseif A:isFloat() then
-      return {A}, "%d", {symb}
+      -- $bitstoreal could maybe be used?
+      return {A}, "%0d", {symb}
     elseif A:isArray() then
       local resTypes={}
       local resStr="["
@@ -80,7 +86,7 @@ C.print = memoize(function(A,str)
       local resStr="{"
       local resValues={}
       for i=1,#A.list do
-        local tT,tS,tV = constructPrint(A.list[1],S.index(symb,i-1))
+        local tT,tS,tV = constructPrint(A.list[i],S.index(symb,i-1))
         resStr = resStr..tS..","
         table.insert(resTypes,tT)
         table.insert(resValues,tV)
@@ -101,7 +107,7 @@ C.print = memoize(function(A,str)
 
     local typelist, printStr, valuelist = constructPrint(A,inp)
     if str~=nil then printStr = str.." "..printStr end
-    local printInst = sm:add( S.module.print( types.tuple(typelist), printStr, true):instantiate("printInst") )
+    local printInst = sm:add( S.module.print( types.tuple(typelist), printStr, true, showIfInvalid ):instantiate("printInst") )
     local pipelines = {printInst:process( S.tuple(valuelist) )}
     sm:addFunction( S.lambda("process", inp, inp, "process_output", pipelines,nil,S.CE("process_CE")) )
     sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out",{printInst:reset()}) )

@@ -31,7 +31,7 @@ modules.sumwrap = memoize(function( ty, limit_orig, X)
 end)
 
 -- {uint16,bool}->uint16. Increment by inc if the bool is true s.t. output <= limit
-modules.incIf=memoize(function( inc, ty, X )
+modules.incIf = memoize(function( inc, ty, X )
   if inc==nil then inc=1 end
   if ty==nil then ty=types.uint(16) end
   assert(X==nil)
@@ -63,12 +63,12 @@ end)
 -- The reason for this is if we module the valid bit based on the condition, the valid bit may go into a undefined state.
 -- (ie at init time the condition will be unstable garbage or X's). This allows us to not mess with the valid bit,
 -- but still conditionally increment.
-modules.incIfWrap=memoize(function( ty, limit_orig, inc, X )
+modules.incIfWrap = memoize(function( ty, limit_orig, inc, X )
   err(types.isType(ty), "incIfWrap: type must be rigel type")
   local limit = Uniform(limit_orig)
   err( X==nil, "incIfWrap: too many arguments" )
 
-  local mod = Ssugar.moduleConstructor(J.sanitize("incif_wrap"..tostring(ty).."_"..tostring(limit_orig).."_inc"..tostring(inc)))
+  local mod = Ssugar.moduleConstructor(J.sanitize("incif_wrap_"..tostring(ty).."_"..tostring(limit_orig).."_inc"..tostring(inc)))
   local incv = inc or 1
   local swinp = S.parameter("process_input", types.tuple{ty, types.bool()})
   
@@ -961,10 +961,17 @@ function modules.div(ty)
   return divMod
 end
 
-modules.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSet, X)
+modules.regBy = memoize(function( ty, setby_orig, CE, init, resetValue, hasSet, X)
   err( types.isType(ty), "systolic.module.regBy, type must be type" )
 
-  if Ssugar.isModuleConstructor(setby) then setby = setby:complete() end
+  local setby, setbyName
+  if Ssugar.isModuleConstructor(setby_orig) then
+    setby = setby_orig:complete()
+    setbyName = "MODULECONSTRUCT_"..setby.name
+  else
+    setby = setby_orig
+    setbyName = setby.name
+  end
   
   assert( systolic.isModule(setby) )
   assert( setby:getDelay( "process" ) == 0 )
@@ -1018,9 +1025,11 @@ modules.regBy = memoize(function( ty, setby, CE, init, resetValue, hasSet, X)
     fns.reset = systolic.lambda("reset", systolic.parameter("reset_input",types.null()), R:reset(nil,resetvalid), "RESET_OUTPUT",{}, resetvalid )
   end
 
-  local name = J.sanitize("RegBy_"..setby.name.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue))
+  local name = J.sanitize("RegBy_"..tostring(ty).."_"..setbyName.."_CE"..tostring(CE).."_init"..tostring(init).."_reset"..tostring(resetValue).."_hasSet"..tostring(hasSet))
+    
   local M = systolic.module.new( name, fns, {R,inner}, true, nil,nil,{get=0,reset=0,setBy=0,set=0} )
   assert(systolic.isModule(M))
+
   return M
 end)
 

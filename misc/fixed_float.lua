@@ -429,6 +429,8 @@ function fixedASTFunctions:toRigelModule(name,X)
     end,
     function() return fixedFloatTerra.tfn(self) end)
 
+  res.systolicModule.verilog = "MODULE "..name..": VERILOG NOT SUPPORTED!W$%)(*#$)(%"
+  
   return res
 end
 

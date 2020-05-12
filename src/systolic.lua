@@ -2642,7 +2642,7 @@ function systolic.module.print( ty, str, CE, showIfInvalid, cycleCounter, X )
   if CE==nil then CE=false end
   if showIfInvalid==nil then showIfInvalid=true end
   if cycleCounter==nil then cycleCounter=true end
-  
+
   local res = {name="_PRINT", kind="print",str=str, type=ty, CE=CE, showIfInvalid=showIfInvalid, externalInstances={}, cycleCounter=cycleCounter}
   res.functions={}
   res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"},CE=J.sel(CE,systolic.CE("CE"),nil)}

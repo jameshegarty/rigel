@@ -78,7 +78,7 @@ DUPS = $(patsubst %.raw,$(BUILDDIR)/%.raw.dup,$(RAWS))
 SRCS_VERILOG := $(filter-out pad.lua crop.lua stencil.lua downsample_2.lua downsample_4.lua upsample_2.lua upsample_4.lua, $(SRCS))
 
 # dead code (float verilog)
-SRCS_VERILOG := $(filter-out sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua sift_desc.lua,  $(SRCS_VERILOG))
+SRCS_VERILOG := $(filter-out sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua sift_desc.lua sift_desc_2_1.lua,  $(SRCS_VERILOG))
 
 # remove long poles
 SRCS_VERILOG := $(filter-out lk_tr_handshake_12_1_axi.lua, $(SRCS_VERILOG))

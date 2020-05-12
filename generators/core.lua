@@ -116,9 +116,9 @@ function(args)
   return RM.lut(args.T,args.type1,vals)
 end, P.UintType("T") )
 
-generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},
+generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string","bool"},
 function(args)
-  return C.print( args.T, args.string )
+  return C.print( args.T, args.string, args.bool )
 end,
 P.DataType("T") )
 
