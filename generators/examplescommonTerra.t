@@ -329,8 +329,24 @@ function CT.unpackStencil(res, A, stencilW, stencilH, T, arrHeight)
   return MT.new( UnpackStencil, res )
 end
 
-function CT.sliceTup(inputType,OT,idxLow)
-  return terra( inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) @out = inp.["_"..idxLow] end
+function CT.sliceTup( inputType, OT, idxLow, idxHigh, index, X)
+  assert( type(index)=="boolean" )
+  assert( X==nil )
+  if index then
+    assert(idxLow==idxHigh)
+    return terra( inp:&rigel.lower(inputType):toTerraType(), out:&rigel.lower(OT):toTerraType()) @out = inp.["_"..idxLow] end
+  else
+    local INP = symbol(&inputType:lower():toTerraType())
+
+    local OUT = {}
+    for i=idxLow,idxHigh do
+      table.insert( OUT, `[INP].["_"..i] )
+    end
+    
+    return terra( [INP], out:&OT:lower():toTerraType() )
+    @out = {[OUT]}
+    end
+  end
 end
 
 function CT.sliceArr(inputType,OT,idxLow,idyLow,idxHigh,idyHigh,W)

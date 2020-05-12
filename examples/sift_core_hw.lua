@@ -95,7 +95,7 @@ sift.lowerPair = J.memoize(function(FROM,TO,scale, X )
   
   return G.Function{"LowerPair",types.rv(types.tuple{FROM,FROM}),
     function(i)
-      return R.concat{G.FtoI{8}(G.MulF{scale}(G.FloatRec{32}(i[0]))),G.FtoI{8}(G.MulF{scale}(G.FloatRec{32}(i[1])))}
+      return R.concat{G.FRtoI{8}(G.MulF{scale}(G.FloatRec{32}(i[0]))),G.FRtoI{8}(G.MulF{scale}(G.FloatRec{32}(i[1])))}
     end}
 end)
   
@@ -193,16 +193,16 @@ local function siftBucket(dxdyType,magtype)
 
 local function siftBucket( dxdyType, magtype, REDUCE_TYPE, REDUCE_SCALE, X )
   assert(type(REDUCE_SCALE)=="number")
-
+  assert( types.isType(magtype) )
   print("DXDYTYPE",dxdyType,magtype)
   
   return G.Function{"SiftBucket",types.rv(types.tuple{dxdyType,dxdyType,magtype}),
     function(i)
       local dx = G.FtoFR(i[0])
       local dy = G.FtoFR(i[1])
-      local mag = G.MulF{REDUCE_SCALE}(G.FloatRec{32}(i[2])) --*f.constant(RED_SCALE)):lower(RED_TYPE)
+      local mag = G.MulF{REDUCE_SCALE}(i[2]) --*f.constant(RED_SCALE)):lower(RED_TYPE)
       assert( REDUCE_TYPE==types.int(32) )
-      mag = G.FtoI{32}(mag)
+      mag = G.FRtoI{32}(mag)
 
       local zero = R.c( REDUCE_TYPE, 0 ) --f.plainconstant(0,RED_TYPE)
 
@@ -229,7 +229,7 @@ local function siftBucket( dxdyType, magtype, REDUCE_TYPE, REDUCE_SCALE, X )
 end
 ----------------
 -- input {dx,dy,gaussweight}
-local function siftMag(dxdyType)
+--[=[local function siftMag(dxdyType)
   local inp = f.parameter("siftMagInp",types.tuple{dxdyType,dxdyType,dxdyType})
   local dx = inp:index(0)
   local dy = inp:index(1)
@@ -239,7 +239,30 @@ local function siftMag(dxdyType)
 
   local out = mag*gauss_weight
   return out:toRigelModule("siftmag"), out.type
-end
+  end]=]
+
+local siftMag = J.memoize(function(dxdyType)
+  local Pre = G.Function{"siftMagPre",types.rv(types.tuple{dxdyType,dxdyType}),
+    function(i)
+      local dx = G.FloatRec(i[0])
+      local dy = G.FloatRec(i[1])
+      local magsq = G.AddF( G.MulF(dx,dx), G.MulF(dy,dy) )
+      return magsq
+    end}
+  
+  return G.Function{"siftMagInp",types.RV(types.tuple{dxdyType,dxdyType,dxdyType}),
+    function(inp)
+      local i = G.FanOut{2}(inp)
+      local gauss_weight = G.FIFO{128}(G.FloatRec(i[1][2]))
+
+      local magsq = G.Fmap{Pre}(G.Slice{{0,1}}(i[0]))
+      local mag = G.SqrtF( magsq )
+      mag = G.FIFO{1}(mag)
+
+      local out = G.MulF(G.FanIn(mag,gauss_weight))
+      return out
+    end}
+end)
 
 ----------------
 -- input: {dx,dy}
@@ -261,22 +284,30 @@ function sift.siftDescriptor( dxdyType, TILES_X, TILES_Y, X )
   local calcType = types.Float32
 
   local ITYPE = types.tuple{dxdyType,dxdyType}
-  local inp = R.input(types.rv(types.Par(ITYPE)))
-  local gweight = R.apply("gweight",RM.constSeq(GAUSS,calcType,TILES_X*TILES_Y*16,1,(TILES_X*TILES_Y*16)),G.ValueToTrigger(inp))
-  local gweight = R.apply("gwidx",C.index(types.array2d(calcType,1),0,0),gweight)
-  local dx = R.apply("i0", C.index(ITYPE,0), inp)
-  local dy = R.apply("i1", C.index(ITYPE,1), inp)
+  local inp = R.input(types.RV(types.Par(ITYPE)))
+  local inpb = G.FanOut{3}(inp)
+  
+  local gweight = R.apply("gweight",RM.makeHandshake(RM.constSeq(GAUSS,calcType,TILES_X*TILES_Y*16,1,(TILES_X*TILES_Y*16))),G.FIFO{128}(G.ValueToTrigger(inpb[0])))
+  --local gweight = R.apply("gwidx",C.index(types.array2d(calcType,1),0,0),gweight)
+  gweight = G.Index{0}(gweight)
+  --local dx = R.apply("i0", C.index(ITYPE,0), inp)
+  local dx = G.FIFO{128}(inpb[1][0])
+  --local dy = R.apply("i1", C.index(ITYPE,1), inp)
+  local dy = G.FIFO{128}(inpb[2][1])
 
   if GRAD_INT then
-    dx = R.apply("ixl", sift.fixedLift(dxdyType),dx)
-    dy = R.apply("iyl", sift.fixedLift(dxdyType),dy)
+    dx = R.apply("ixl", RM.makeHandshake(sift.fixedLift(dxdyType)),dx)
+    dy = R.apply("iyl", RM.makeHandshake(sift.fixedLift(dxdyType)),dy)
   end
 
-  local maginp = R.concat("maginp",{dx,dy,gweight})
-  local magFn, magType = siftMag(calcType)
-  local mag = R.apply("mag",magFn,maginp)
-  local bucketInp = R.concat("bktinp",{dx,dy,mag})
-  local out = R.apply( "out", siftBucket( calcType, magType, types.int(32), 1024/GRAD_SCALE ), bucketInp)
+  dx, dy = G.FanOut{2}(dx), G.FanOut{2}(dy)
+  
+  local maginp = R.concat("maginp",{G.FIFO{128}(dx[0]),G.FIFO{128}(dy[0]),gweight})
+  local magFn = siftMag(calcType)
+  local magType = magFn.outputType:deInterface()
+  local mag = R.apply("mag",magFn,G.FanIn(maginp))
+  local bucketInp = R.concat("bktinp",{G.FIFO{128}(dx[1]),G.FIFO{128}(dy[1]),mag})
+  local out = R.apply( "out", G.Fmap{siftBucket( calcType, magType, types.int(32), 1024/GRAD_SCALE )}, G.FanIn(bucketInp) )
   return RM.lambda("siftDescriptor",inp,out), types.int(32)
 end
 ----------------
@@ -393,7 +424,7 @@ function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
   local dxdy = R.apply("down2idx",RM.makeHandshake(C.index(types.array2d(dxdyPair,1),0,0)), dxdy)
   local descFn, descTypeRed = sift.siftDescriptor( dxdyType, TILES_X, TILES_Y )
   local descType = types.Float32
-  local desc = R.apply("desc",RM.makeHandshake(descFn),dxdy)
+  local desc = R.apply("desc",descFn,dxdy)
 
   local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( sift.bucketReduce(descTypeRed,8),16))),desc)
 

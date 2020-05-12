@@ -832,16 +832,23 @@ end,
 types.tuple{types.bool(),P.DataType("T"),P.DataType("T")} )
 
 
-generators.Slice = R.FunctionGenerator("core.Slice",{},{"bounds","size"},
+generators.Slice = R.FunctionGenerator("core.Slice",{"type","rate"},{"bounds","size"},
 function(args)
-  if args.bounds~=nil then
-    return C.slice( types.array2d(args.T,args.arsize), args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4] )
+  if args.type:deInterface():isArray() then
+    local TY = args.type:deInterface():arrayOver()
+    local arsize = args.type:deInterface().size
+    if args.bounds~=nil then
+      return C.slice( types.array2d(TY,arsize), args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4] )
+    else
+      J.err( arsize[2]==1, "generators.Slice: NYI - only 1d arrays supported" )
+      return C.slice( types.array2d(TY,arsize), args.size[1], args.size[2], 0, 0)
+    end
+  elseif args.type:deInterface():isTuple() then
+    return C.slice( args.type:deInterface(), args.size[1], args.size[2], 0, 0, false )
   else
-    J.err( args.arsize[2]==1, "generators.Slice: NYI - only 1d arrays supported" )
-    return C.slice( types.array2d(args.T,args.arsize), args.size[1], args.size[2], 0, 0)
+    assert(false)
   end
-end,
-types.array2d(P.DataType("T"),P.SizeValue("arsize")) )
+end)
 
 
 generators.TupleToArray = R.FunctionGenerator("core.TupleToArray",{},{},
@@ -1012,7 +1019,7 @@ function(args)
   else
     J.err( args.type:deInterface():isTuple(), "MulF: expected tuple input, but was: ",args.type )
     J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "MulF: lhs and rhs must have same types! but input type is: ",args.type )
-    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    J.err( args.type:deInterface().list[1]:isFloatRec(),"MulF: input should be FloatRec, but is: ",args.type )
     return C.mulF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig )
   end
 end)

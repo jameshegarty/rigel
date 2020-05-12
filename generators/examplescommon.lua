@@ -2114,15 +2114,33 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
   err( X==nil, "C.slice: too many arguments")
 
   if inputType:isTuple() then
-    assert( idxLow < #inputType.list )
+    err( idxLow < #inputType.list, "slice: idxLow=",idxLow," is out of bounds for type: ",inputType )
     assert( idxHigh < #inputType.list )
-    assert( idxLow == idxHigh ) -- NYI
-    assert( index )
-    local OT = inputType.list[idxLow+1]
+    --assert( idxLow == idxHigh ) -- NYI
+    --assert( index )
+    assert( index==false or idxLow==idxHigh )
+    local OT = {}
+    for i=idxLow,idxHigh do
+      table.insert( OT, inputType.list[i+1] )
+    end
 
-    local res = modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow), inputType:extractData(), OT:extractData(), 0,
-      function(systolicInput) return S.index( systolicInput, idxLow ) end,
-      function() return CT.sliceTup(inputType,OT,idxLow) end,
+    OT = types.tuple(OT)
+    if index then OT = OT.list[1] end
+    
+    local res = modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow.."_"..idxHigh.."_"..tostring(index)), inputType:extractData(), OT:extractData(), 0,
+      function(systolicInput)
+        local lst = {}
+        for i=idxLow,idxHigh do
+          table.insert(lst, S.index( systolicInput, i ) )
+        end
+
+        if index then
+          return lst[1]
+        else
+          return S.tuple(lst)
+        end
+      end,
+      function() return CT.sliceTup( inputType, OT, idxLow, idxHigh, index ) end,
       "C.slice")
 
     -- hack: type may be a schedule type
