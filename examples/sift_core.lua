@@ -463,8 +463,10 @@ function sift.siftDesc( W, H, inputT, TILES_X, TILES_Y, X )
   return fn, descType
 end
 
-function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
+function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X )
   assert(type(FILTER_FIFO)=="number")
+  assert(type(TILES_X)=="number")
+  assert(type(TILES_Y)=="number")
   assert(X==nil)
 
   local fifos = {}
@@ -502,7 +504,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
 
   out = C.fifo(FILTER_TYPE,FILTER_FIFO,nil,true)(out)
 
-  local siftFn, descType = siftKernel(dxdyType)
+  local siftFn, descType = siftKernel( dxdyType, TILES_X, TILES_Y, 4, 4 )
   local out = R.apply("sft", siftFn, out)
 
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,130,2)), out )

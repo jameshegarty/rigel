@@ -27,7 +27,7 @@ function doit(full)
   local FILTER_RATE = {OUTPUT_COUNT,W*H}
 
   local ITYPE = types.array2d(types.uint(8),T)
-  local siftFn, siftType = sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO )
+  local siftFn, siftType = sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, 4, 4 )
   local OTYPE = types.array2d(siftType,2)
 
   harness{ outFile="sift_hw"..J.sel(full,"_1080p",""), fn=siftFn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={130*4,OUTPUT_COUNT}, outP=8 }
