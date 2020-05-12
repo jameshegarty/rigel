@@ -31,7 +31,7 @@ function descriptor.addPos()
 
   local desc_pack = R.connect{ input = inp, toModule = R.HS(repack) }
 
-  local desc = rigel.apply("addpos",RM.makeHandshake(sift.addDescriptorPos(descType)), desc_pack)
+  local desc = rigel.apply("addpos",RM.makeHandshake(sift.addDescriptorPos(descType,4,4)), desc_pack)
 
   return R.defineModule{ input = inp, output = desc }
 end
@@ -39,7 +39,7 @@ end
 descriptor.tile = sift.tile
 
 descriptor.histogramReduce = sift.bucketReduce(types.int(32), 8 )
-descriptor.descriptor = sift.siftDescriptor(types.int(8))
+descriptor.descriptor = sift.siftDescriptor(types.int(8),4,4)
 
 function norm()
   local inp = R.input( R.HS( R.tuple{ R.array(R.int32,1), R.array(R.float,1) } ) )
