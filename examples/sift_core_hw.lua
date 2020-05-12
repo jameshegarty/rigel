@@ -42,7 +42,7 @@ local fixedSumPow2 = J.memoize(function(A)
   return out:toRigelModule("fixedSumPow2")
                    end)
 ]=]
---[=[
+
 sift.fixedDiv = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
@@ -51,7 +51,7 @@ sift.fixedDiv = J.memoize(function(A)
 --  out = out:cast(A)
   return out:toRigelModule("fixedDiv")
                    end)
-]=]
+
 --[=[sift.fixedSqrt = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",A)
@@ -61,7 +61,7 @@ sift.fixedDiv = J.memoize(function(A)
   return out:toRigelModule("fixedSqrt")
                    end)
 ]=]
---[=[sift.fixedLift = J.memoize(function(A)
+sift.fixedLift = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("IIlift",A)
   local out = inp:lift()
@@ -69,7 +69,6 @@ sift.fixedDiv = J.memoize(function(A)
 --  out = out:cast(A)
   return out:toRigelModule("fixedLift_"..tostring(A):gsub('%W','_'))
                    end)
-]=]
 
 --[=[
 sift.lowerPair = J.memoize(function(FROM,TO,scale)
