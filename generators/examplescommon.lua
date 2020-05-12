@@ -3556,7 +3556,7 @@ divSqrtRecFN_small #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) divsqrtunit 
 .sqrtOp(]]..J.sel(doDiv,"1'b0","1'b1")..[[),
 .inReady( unitReady ),
 .inValid( unitValid ),
-.a( process_input]]..J.sel(doDiv,"[32:0]","")..[[ ),
+.a( process_input[32:0] ),
 .b( ]]..J.sel(doDiv,"process_input[65:33]","33'd0")..[[ ),
 .roundingMode( `round_near_even ),
 .outValid( outValid ),

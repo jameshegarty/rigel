@@ -42,7 +42,7 @@ local fixedSumPow2 = J.memoize(function(A)
   return out:toRigelModule("fixedSumPow2")
                    end)
 ]=]
-
+--[=[
 sift.fixedDiv = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",types.tuple{A,A})
@@ -51,8 +51,8 @@ sift.fixedDiv = J.memoize(function(A)
 --  out = out:cast(A)
   return out:toRigelModule("fixedDiv")
                    end)
-
-sift.fixedSqrt = J.memoize(function(A)
+]=]
+--[=[sift.fixedSqrt = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("II",A)
   local out = inp:sqrt()
@@ -60,8 +60,8 @@ sift.fixedSqrt = J.memoize(function(A)
 --  out = out:cast(A)
   return out:toRigelModule("fixedSqrt")
                    end)
-
-sift.fixedLift = J.memoize(function(A)
+]=]
+--[=[sift.fixedLift = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("IIlift",A)
   local out = inp:lift()
@@ -69,7 +69,7 @@ sift.fixedLift = J.memoize(function(A)
 --  out = out:cast(A)
   return out:toRigelModule("fixedLift_"..tostring(A):gsub('%W','_'))
                    end)
-
+]=]
 
 --[=[
 sift.lowerPair = J.memoize(function(FROM,TO,scale)
@@ -296,8 +296,9 @@ function sift.siftDescriptor( dxdyType, TILES_X, TILES_Y, X )
   local dy = G.FIFO{128}(inpb[2][1])
 
   if GRAD_INT then
-    dx = R.apply("ixl", RM.makeHandshake(sift.fixedLift(dxdyType)),dx)
-    dy = R.apply("iyl", RM.makeHandshake(sift.fixedLift(dxdyType)),dy)
+    print("DXDY",dxdyType)
+    dx = G.Float(G.ItoFR(dx))
+    dy = G.Float(G.ItoFR(dy))
   end
 
   dx, dy = G.FanOut{2}(dx), G.FanOut{2}(dy)
@@ -366,7 +367,7 @@ end
 ----------------
 -- input: {descType[128],uint16,uint16}
 -- output: descType[130]
-function sift.addDescriptorPos( descType, TILES_X, TILES_Y, X)
+--[=[function sift.addDescriptorPos( descType, TILES_X, TILES_Y, X)
   assert( type(TILES_X)=="number" )
   assert( type(TILES_Y)=="number" )
   assert( X==nil )
@@ -380,7 +381,26 @@ function sift.addDescriptorPos( descType, TILES_X, TILES_Y, X)
   for i=0,(TILES_X*TILES_Y*8-1) do table.insert(a,desc:index(i)) end
   local out = f.array2d(a,TILES_X*TILES_Y*8+2)
   return out:toRigelModule("addDescriptorPos")
-end
+  end]=]
+
+sift.addDescriptorPos = J.memoize(function( descType, TILES_X, TILES_Y, X)
+  assert( type(TILES_X)=="number" )
+  assert( type(TILES_Y)=="number" )
+  assert( X==nil )
+  
+  return G.Function{"descpos",types.rv(types.tuple{types.array2d(descType,TILES_X*TILES_Y*8),types.uint(16),types.uint(16)}),
+    function(i)
+      local desc = i[0]
+      local px = G.FRtoF(G.UtoFR(i[1])) --inp:index(1):lift(0)
+      local py = G.FRtoF(G.UtoFR(i[2])) --inp:index(2):lift(0)
+      
+      local a = {px,py}
+      for i=0,(TILES_X*TILES_Y*8-1) do table.insert(a,desc[i]) end
+      --local out = f.array2d(a,TILES_X*TILES_Y*8+2)
+      local out = G.TupleToArray(R.concat(a))
+      return out --:toRigelModule("addDescriptorPos")
+    end}
+end)
 
 ----------------
 -- input: {{dx,dy}[16,16],{posX,posY}}
@@ -449,16 +469,27 @@ function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
   local desc1 = C.fifo(descTypeRed,256)(desc1)
 
   local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( RS.modules.sumPow2{inType=types.int(32),outType=types.int(32)},(TILES_X*TILES_Y*8)))),desc1)
-  local desc_sum = R.apply("sumlift",RM.makeHandshake( sift.fixedLift(types.int(32))), desc_sum)
+  --local desc_sum = R.apply("sumlift",RM.makeHandshake( sift.fixedLift(types.int(32))), desc_sum)
+  desc_sum = G.Float(G.ItoFR(desc_sum))
 
-  local desc_sum = R.apply("sumsqrt",RM.makeHandshake( sift.fixedSqrt(descType)), desc_sum)
+  --local desc_sum = R.apply("sumsqrt",RM.makeHandshake( sift.fixedSqrt(descType)), desc_sum)
+  desc_sum = G.Float(G.SqrtF( G.FtoFR(desc_sum) ))
   local desc_sum = R.apply("DAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc_sum)
   local desc_sum = R.apply("sumup",RM.upsampleXSeq( descType, 1, TILES_X*TILES_Y*8), desc_sum)
   local desc_sum = R.apply("Didx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc_sum)
 
-  local desc0 = R.apply("d0lift",RM.makeHandshake( sift.fixedLift(types.int(32))), desc0)
+  --local desc0 = R.apply("d0lift",RM.makeHandshake( sift.fixedLift(types.int(32))), desc0)
+  desc0 = G.FRtoF(G.ItoFR(desc0))
   local desc = R.apply("pt",RM.packTuple{types.RV(types.Par(descType)),types.RV(types.Par(descType))},R.concat("PTT",{desc0,desc_sum}))
-  local desc = R.apply("ptt",RM.makeHandshake( sift.fixedDiv(descType)),desc)
+  --local desc = R.apply("ptt",RM.makeHandshake( sift.fixedDiv(descType)),desc)
+  desc = G.TupleToArray(desc)
+  desc = G.Map{G.FtoFR}(desc)
+  desc = G.ArrayToTuple(desc)
+
+  desc = G.DivF(desc)
+
+  desc = G.Float(desc)
+  
   local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
   local desc = R.apply("repack",RM.liftHandshake(RM.changeRate(descType,1,1,TILES_X*TILES_Y*8)),desc)

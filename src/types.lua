@@ -697,7 +697,7 @@ function TypeFunctions:isSupertypeOf(ty,vars,varContext,X)
   assert(X==nil)
   local params = require "params"
 
-  err( types.isType(ty) or params.isParam(ty), tostring(self)..":isSubtypeOf("..tostring(ty).."): input should be type or param, but is: "..tostring(ty) )
+  err( types.isType(ty) or params.isParam(ty), tostring(self),":isSubtypeOf(",tostring(ty),"): input should be type or param, but is: ",tostring(ty) )
 
   assert(type(varContext)=="string")
 
@@ -829,7 +829,7 @@ function TypeFunctions:replaceVar(k,v)
     assert(false)
   end
 
-  err(J.keycount(res)==J.keycount(self),"internal error: replaceVar on "..tostring(self))
+  err(J.keycount(res)==J.keycount(self),"internal error: replaceVar on ",self)
   for kk,vv in pairs(self) do err(k==kk or res[kk]==vv,"internal error: replaceVar on ",self," key ",kk," is ",res[kk]," but should be:",vv," this means the type constructor changed and you need to update the call in this function.") end
 
   return res
@@ -1175,7 +1175,7 @@ function types.isBasic(A)
     return P.DataType("tmp"):isSupertypeOf(A)
   end
   
-  err(types.isType(A),"isBasic: input should be type, but is: "..tostring(A))
+  err(types.isType(A),"isBasic: input should be type, but is: ",A)
   if A:isArray() then
     return types.isBasic(A:arrayOver()) and A.size==A.V
   elseif A:isTuple() then
@@ -1206,7 +1206,7 @@ end
 types.Par = function(D,X)
   err(X==nil, "types.Par: too many arguments")
 
-  err( (types.isType(D) or P.isParam(D)) and D:isData(), "types.Par: input to schedule type should be a data type, but is: "..tostring(D) )
+  err( (types.isType(D) or P.isParam(D)) and D:isData(), "types.Par: input to schedule type should be a data type, but is: ",D )
   err(D~=types.null(),"types.Par: input should not be null")
 
   return D
@@ -1252,7 +1252,7 @@ types.ParSeq = function( D, ... )
 end
 
 types.Interface = J.memoize(function(S,R,V,I,r,v,VRmode,X)
-  err( S==nil or ( (types.isType(S) or P.isParam(S)) and S:isInterface()==false), "types.Interface: input to interface type should be a schedule type, but is: "..tostring(S) )
+  err( S==nil or ( (types.isType(S) or P.isParam(S)) and S:isInterface()==false), "types.Interface: input to interface type should be a schedule type, but is: ",S )
   err( R==nil or types.isType(R), "types.Interface: Ready bit should be type, but is: "..tostring(R) )
   err( r==nil or types.isType(r), "types.Interface: Ready side fn (r) should be type, but is: "..tostring(r) )
   err( v==nil or types.isType(v), "types.Interface: Valid side fn (v) should be type, but is: "..tostring(v) )
@@ -1555,7 +1555,7 @@ function TypeFunctions:lower() return types.lower(self) end
 -- RV(A) => {A,bool}
 -- Handshake(A) => {A,bool}
 function types.lower( a )
-  err( types.isType(a), "lower: input is not a type. is: "..tostring(a))
+  err( types.isType(a), "lower: input is not a type. is: ",a)
   local Uniform = require "uniform"
   
   if a:isTuple() then

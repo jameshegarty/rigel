@@ -813,7 +813,7 @@ local function buildAndCheckSystolicModule( tab, isModule )
     end
 
     local expectedInput = types.lower(rigelFn.inputType,rigelFn.outputType)
-    err( expectedInput==systolicFn.inputParameter.type, "systolic module input type wrong? fnname:'",fnname,"' module:'",tab.name,"' Rigel input type:"..tostring(rigelFn.inputType).." Rigel Lowered:",expectedInput," module type:"..tostring(systolicFn.inputParameter.type) )
+    err( expectedInput==systolicFn.inputParameter.type, "systolic module input type wrong? fnname:'",fnname,"' module:'",tab.name,"' Rigel input type:",rigelFn.inputType," Rigel Lowered:",expectedInput," module type:",systolicFn.inputParameter.type )
     
   end
 
@@ -1283,8 +1283,8 @@ local function checkRigelFunction(tab)
   err( darkroom.SDF==false or tab.sdfInput:nonzero(), "rigel.newFunction: sdf input rate is not >0, but is: "..tostring(tab.sdfInput) )
   err( darkroom.SDF==false or tab.sdfOutput:nonzero(), "rigel.newFunction: sdf output rate is not >0, but is: "..tostring(tab.sdfOutput) )
 
-  err( types.isType(tab.inputType), "rigel.newFunction: input type must be type, but is: "..tostring(tab.inputType) )
-  err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
+  err( types.isType(tab.inputType), "rigel.newFunction: input type must be type, but is: ",tab.inputType )
+  err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is ",tab.outputType," (",tab.name,")" )
 
   -- legacy code hack
   if tab.inputType==types.null() then
@@ -1298,8 +1298,8 @@ local function checkRigelFunction(tab)
     tab.outputType = types.rv(types.Par(tab.outputType))
   end
   
-  err( tab.inputType:isInterface(), "rigel.newFunction: '"..tab.name.."' input type must be Interface type, but is: "..tostring(tab.inputType) )
-  err( tab.outputType:isInterface(), "rigel.newFunction: output type must be Interface type, but is "..tostring(tab.outputType).." ("..tab.name..")" )
+  err( tab.inputType:isInterface(), "rigel.newFunction: '",tab.name,"' input type must be Interface type, but is: ",tab.inputType )
+  err( tab.outputType:isInterface(), "rigel.newFunction: output type must be Interface type, but is ", tab.outputType," (",tab.name,")" )
 
   -- even if we have multiple streams in/out, we just have one delay right now: all channels must arrive/leave at same time.
   -- expand this to a per-stream delay at some point, if needed
@@ -1957,9 +1957,9 @@ function darkroomIRFunctions:calcSDF( )
         if IR==nil then
           IR=self.inputs[key].rate[1]
         else
-          local rateList = ""
-          for _,v in ipairs(self.inputs) do rateList = rateList..","..tostring(v.rate) end
-          err(self.inputs[key].rate[1][1]==IR[1] and self.inputs[key].rate[1][2]==IR[2], "SDF ",self.kind," rate mismatch \n",rateList,"\n",self," ",self.loc)
+          local rateList = {}
+          for _,v in ipairs(self.inputs) do table.insert(rateList,v.rate) end
+          err(self.inputs[key].rate[1][1]==IR[1] and self.inputs[key].rate[1][2]==IR[2], "SDF ",self.kind," rate mismatch \n",unpack(rateList),"\n",self," ",self.loc)
         end
       end
       res = {IR}

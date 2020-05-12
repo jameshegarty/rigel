@@ -736,7 +736,7 @@ function(args)
 
   local input = R.input( args.type, args.rate )
   local out = args.luaFunction(input)
-  J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
+  J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? ",out)
   
   return RM.lambda( args.string, input, out, args.instanceList )
 end,nil,false)
@@ -941,7 +941,14 @@ end, types.Float32)
 
 generators.UtoFR = R.FunctionGenerator("core.UtoFR",{"type","rate"},{"number"},
 function(args)
-  J.err( args.T:isUint() or args.T:isInt() )
+  J.err( args.T:isUint() )
+  J.err( args.T.exp==0 )
+  return C.FloatRec( args.T, 8, 24 )
+end, P.NumberType("T"))
+
+generators.ItoFR = R.FunctionGenerator("core.ItoFR",{"type","rate"},{"number"},
+function(args)
+  J.err( args.T:isInt() )
   J.err( args.T.exp==0 )
   return C.FloatRec( args.T, 8, 24 )
 end, P.NumberType("T"))
@@ -953,6 +960,8 @@ function(args)
   J.err( args.type:deInterface()==types.FloatRec32,"Float: input type should be FloatRec32, but is:",args.type:deInterface() )
   return C.Float( 8, 24 )
 end)
+
+generators.FRtoF = generators.Float
 
 generators.FRtoI = R.FunctionGenerator("core.FloatToInt",{"type","rate","number"},{},
 function(args)
@@ -970,7 +979,7 @@ end)
 
 generators.SqrtF = R.FunctionGenerator("core.SqrtF",{"type","rate"},{},
 function(args)
-  J.err( args.type:deInterface():isFloatRec() )
+  J.err( args.type:deInterface():isFloatRec(), "SqrtF: expected FloatRec input, but is: ",args.type )
   J.err( args.type:deInterface()==types.FloatRec32,"SqrtF: input type should be FloatRec32, but is:",args.type:deInterface() )
   return C.SqrtF( 8, 24 )
 end)
@@ -1035,7 +1044,7 @@ function(args)
   else
     J.err( args.type:deInterface():isTuple(), "DivF: expected tuple input, but was: ",args.type )
     J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "DivF: lhs and rhs must have same types! but input type is: ",args.type )
-    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    J.err( args.type:deInterface().list[1]:isFloatRec(),"DivF: input must be FloatRec, but is: ",args.type )
     return C.SqrtF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, true )
   end
 end)

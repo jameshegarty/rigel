@@ -1476,8 +1476,8 @@ end
 function systolic.parameter( name, ty )
   err( type(name)=="string", "parameter name must be string" )
   checkReserved(name)
-  err( types.isType(ty), "systolic.parameter: type must be type but is "..tostring(ty) )
-  err( types.isBasic(ty),"systolic.paramter: type must be basic, but is: "..tostring(ty) )
+  err( types.isType(ty), "systolic.parameter: type must be type but is ",ty )
+  err( types.isBasic(ty),"systolic.paramter: type must be basic, but is: ",ty )
   return systolicAST.new({kind="parameter",name=name,type=ty,inputs={},key={},loc=getloc()})
 end
 
@@ -1795,9 +1795,9 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
 
-  J.map(fns, function(n,i) err( systolic.isFunction(n), "systolic.module.new: functions table must be systolic functions, but fn '"..i.."' is: "..tostring(n) ) end )
+  J.map(fns, function(n,i) err( systolic.isFunction(n), "systolic.module.new: functions table must be systolic functions, but fn '",i,"' is: ",n ) end )
   
-  err( type(instances)=="table", "instances must be a table, but is: "..tostring(instances).." module: "..name)
+  err( type(instances)=="table", "instances must be a table, but is: ",instances," module: ",name)
   J.map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
 
   local instanceMap = J.invertTable(instances)

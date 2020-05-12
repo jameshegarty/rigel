@@ -2241,7 +2241,7 @@ return {`mself.[n.name].ready}
       end
 
       if res[1]~=nil and terralib.isquote(res[1]) then
-        err( n.type==types.Interface() or (res[1]:gettype() == &n.type:lower():toTerraType()), "Error, node terra type was '"..tostring(res[1]:gettype()).."', but should be '"..tostring(n.type:lower():toTerraType()).."' because type was '"..tostring(n.type).."'" )
+        err( n.type==types.Interface() or (res[1]:gettype() == &n.type:lower():toTerraType()), "Error, node terra type was '",res[1]:gettype(),"', but should be '",n.type:lower():toTerraType(),"' because type was '",n.type,"'" )
       end           
 
       return res
