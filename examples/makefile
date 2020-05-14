@@ -275,9 +275,13 @@ SIG16 += stereo_wide_handshake_full.lua stereo_tr_full_4.lua stereo_tr_full_8.lu
 SIG16 += lk_wide_handshake_12_1_axi.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua sift_hw_1080p.lua
 SIG16 += sift_hw.lua sift_hw_1080p.lua sift_desc_hw.lua
 
+# add some extra slow tests
+SIG16_EXT := SIG16
+SIG16_EXT += convpadcrop_wide_handshake_8_8_1080p_nostall.lua pyramid_large_4.lua lk_tr_handshake_6_2.lua pyramid_4.lua pyramid_large_nofifo_taps_3.lua sift_desc_hw_2_1.lua stereo_tr_medi_4.lua lk_tr_handshake_6_1.lua
+
 # compute the intersection of the verilator list and sig16 list
-SRCS_VERILATOR_SIG16_INV := $(filter-out $(SRCS_VERILATOR), $(SIG16))
-SRCS_VERILATOR_SIG16 := $(filter-out $(SRCS_VERILATOR_SIG16_INV), $(SIG16))
+SRCS_VERILATOR_SIG16_INV := $(filter-out $(SRCS_VERILATOR), $(SIG16_EXT))
+SRCS_VERILATOR_SIG16 := $(filter-out $(SRCS_VERILATOR_SIG16_INV), $(SIG16_EXT))
 
 VERILATOR_SIG16 := $(patsubst %.lua,$(BUILDDIR)/%.verilator,$(SRCS_VERILATOR_SIG16))
 VERILATOR_SIG16 += $(patsubst %.lua,$(BUILDDIR)/%.verilator.raw,$(SRCS_VERILATOR_SIG16))
