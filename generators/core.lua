@@ -369,6 +369,16 @@ function(args)
   end
 end)
 
+generators.EQ = R.FunctionGenerator("core.EQ",{"type","rate"},{"number"},
+function(args)
+  if args.number~=nil then
+    return R.FunctionGenerator("core.EQConst",{},{"async"},
+      function(a) return C.EQConst( a.T, args.number, a.async ) end, P.NumberType("T") ):complete(args)
+  else
+    return R.FunctionGenerator("core.EQ",{},{"async"},function(args) return C.eq( args.T, args.async ) end, T.tuple{P.NumberType("T"),P.NumberType("T")} ):complete(args)
+  end
+end)
+
 generators.Abs = R.FunctionGenerator("core.Abs",{},{"async"},
 function(a) return C.Abs( a.T, a.async ) end,
 P.NumberType("T") )
@@ -689,9 +699,9 @@ types.Array2d( P.DataType("T"), P.SizeValue("size"), P.SizeValue("V") ) )
 generators.Fwrite = R.FunctionGenerator("core.Fwrite",{"string"},{"filenameVerilog"},
 function(args)
   --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
-  return RM.fwriteSeq(args.string,args.T,args.filenameVerilog,true)
+  return RM.fwriteSeq( args.string, args.S, args.filenameVerilog, true )
 end,
-T.rv(T.Par(P.DataType("T"))) )
+P.ScheduleType("S") )
 
 
 generators.Fread = R.FunctionGenerator( "core.Fread",{"string","type","type1"},{"filenameVerilog"},

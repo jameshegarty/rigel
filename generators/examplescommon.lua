@@ -557,7 +557,8 @@ C.removeLSBs = memoize(function( A, bits, keepMagnitude, X )
 end)
 
 -----------------------------
-C.select = memoize(function(ty)
+C.select = memoize(function(ty, X)
+  assert( X==nil )
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{types.bool(),ty,ty}
 
@@ -568,7 +569,8 @@ C.select = memoize(function(ty)
   return selm
 end)
 -----------------------------
-C.eq = memoize(function(ty)
+C.eq = memoize(function( ty, X )
+  assert( X==nil )
   err(types.isType(ty), "C.eq error: input must be type")
   local ITYPE = types.tuple{ty,ty}
 
@@ -580,7 +582,8 @@ C.eq = memoize(function(ty)
 end)
 
 -----------------------------------------
-C.NE = memoize(function(ty)
+C.NE = memoize(function(ty, X)
+  assert( X==nil )
   err(types.isType(ty) and ty:isData(), "C.ne error: input must be data type")
   local ITYPE = types.tuple{ty,ty}
 

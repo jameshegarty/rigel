@@ -2351,6 +2351,12 @@ function fileModuleFunctions:instanceToVerilog( instance, fnname, datavar, valid
     decl = "assign "..instance.name.."_WRITE_INPUT = "..datavar..";\n"
     decl = decl.."assign "..instance.name.."_WRITE_VALID = "..validvar..";\n"
     decl = decl.."assign "..instance.name.."_WRITE_CE = "..cevar..";\n"
+  elseif fnname=="reset" then
+    assert(type(validvar)=="string")
+    decl = "assign "..instance.name.."_RESET = "..validvar..";\n"
+  else
+    print("fileModule unknown function ",fnname)
+    assert(false)
   end
   return instance.name.."_"..fn.outputName, decl, true
 end
@@ -2436,11 +2442,15 @@ table.insert(res,[[  end
   reg ]]..instance.name..[[_dowrite=1'b0;
 
   always @ (posedge CLK) begin 
-    ]]..bufferassn..oassign..[[
-    if (]]..instance.name..[[_dowrite]]..J.sel(self.hasCE," && "..instance.name.."_WRITE_CE","")..[[) begin 
-      ]]..assn..[[ 
+    if(]]..instance.name..[[_RESET) begin
+      ]]..instance.name..[[_dowrite <= 1'b0;
+    end else begin
+      ]]..bufferassn..oassign..[[
+      if (]]..instance.name..[[_dowrite]]..J.sel(self.hasCE," && "..instance.name.."_WRITE_CE","")..[[) begin 
+        ]]..assn..[[ 
+      end
+      if (]]..J.sel(self.hasCE,instance.name.."_WRITE_CE","true")..[[) begin ]]..instance.name..[[_dowrite<=]]..instance.name.."_WRITE_VALID"..[[; end 
     end
-    if (]]..J.sel(self.hasCE,instance.name.."_WRITE_CE","true")..[[) begin ]]..instance.name..[[_dowrite<=]]..instance.name.."_WRITE_VALID"..[[; end 
   end
 ]])
 
