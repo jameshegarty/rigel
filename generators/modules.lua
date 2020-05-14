@@ -5299,7 +5299,7 @@ local function calculateDelaysGreedy( output )
         if fn.inputType==types.Interface() or (fn.inputType:isrv() and fn.inputType:extractData():verilogBits()==0) then
           res = fn.delay+extra
         else
-          err(fn.delay~=nil,"Error: fn "..fn.name.." is missing delay? "..tostring(fn.inputType).." "..tostring(fn.outputType))
+          err(fn.delay~=nil,"Error: fn ",fn.name," is missing delay? ",fn.inputType," ",fn.outputType)
           res = inputs[1] + fn.delay + extra
         end
       elseif n.kind=="applyMethod" then
@@ -5634,7 +5634,7 @@ end
 function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTerra, generatorStr, sdfOutput, instanceMap, X )
   err( type(name)=="string", "modules.lift: name must be string" )
   err( types.isType( inputType ), "modules.lift: inputType must be rigel type" )
-  err( inputType:isData(),"modules.lift: inputType should be Data Type, but is: "..tostring(inputType))
+  err( inputType:isData(),"modules.lift: inputType should be Data Type, but is: ",inputType)
   err( outputType==nil or types.isType( outputType ), "modules.lift: outputType must be rigel type, but is "..tostring(outputType) )
   err( outputType==nil or outputType:isData(),"modules.lift: outputType should be Data Type, but is: "..tostring(outputType))
   err( delay==nil or type(delay)=="number",  "modules.lift: delay must be number" )

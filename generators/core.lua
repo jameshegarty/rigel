@@ -116,9 +116,9 @@ function(args)
   return RM.lut(args.T,args.type1,vals)
 end, P.UintType("T") )
 
-generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string"},
+generators.Print = R.FunctionGenerator("core.Print",{"type","rate"},{"string","bool"},
 function(args)
-  return C.print( args.T, args.string )
+  return C.print( args.T, args.string, args.bool )
 end,
 P.DataType("T") )
 
@@ -369,6 +369,16 @@ function(args)
   end
 end)
 
+generators.EQ = R.FunctionGenerator("core.EQ",{"type","rate"},{"number"},
+function(args)
+  if args.number~=nil then
+    return R.FunctionGenerator("core.EQConst",{},{"async"},
+      function(a) return C.EQConst( a.T, args.number, a.async ) end, P.NumberType("T") ):complete(args)
+  else
+    return R.FunctionGenerator("core.EQ",{},{"async"},function(args) return C.eq( args.T, args.async ) end, T.tuple{P.NumberType("T"),P.NumberType("T")} ):complete(args)
+  end
+end)
+
 generators.Abs = R.FunctionGenerator("core.Abs",{},{"async"},
 function(a) return C.Abs( a.T, a.async ) end,
 P.NumberType("T") )
@@ -393,9 +403,9 @@ end)
 
 generators.Not = R.FunctionGenerator("core.Not",{"type","rate"},{"bool"},
 function(args)
-  J.err( args.type==types.bool(), "generators.Not: input type should be bool, but is: "..tostring(args.type) )
+  --J.err( args.type==types.bool(), "generators.Not: input type should be bool, but is: "..tostring(args.type) )
   return C.Not
-end)
+end,T.Bool)
 
 local function zipfn(asArray)
   return function(args)
@@ -689,9 +699,9 @@ types.Array2d( P.DataType("T"), P.SizeValue("size"), P.SizeValue("V") ) )
 generators.Fwrite = R.FunctionGenerator("core.Fwrite",{"string"},{"filenameVerilog"},
 function(args)
   --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
-  return RM.fwriteSeq(args.string,args.T,args.filenameVerilog,true)
+  return RM.fwriteSeq( args.string, args.S, args.filenameVerilog, true )
 end,
-T.rv(T.Par(P.DataType("T"))) )
+P.ScheduleType("S") )
 
 
 generators.Fread = R.FunctionGenerator( "core.Fread",{"string","type","type1"},{"filenameVerilog"},
@@ -736,7 +746,7 @@ function(args)
 
   local input = R.input( args.type, args.rate )
   local out = args.luaFunction(input)
-  J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? "..tostring(out))
+  J.err( R.isIR(out), "Module: user function returned something other than a Rigel value? ",out)
   
   return RM.lambda( args.string, input, out, args.instanceList )
 end,nil,false)
@@ -832,16 +842,23 @@ end,
 types.tuple{types.bool(),P.DataType("T"),P.DataType("T")} )
 
 
-generators.Slice = R.FunctionGenerator("core.Slice",{},{"bounds","size"},
+generators.Slice = R.FunctionGenerator("core.Slice",{"type","rate"},{"bounds","size"},
 function(args)
-  if args.bounds~=nil then
-    return C.slice( types.array2d(args.T,args.arsize), args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4] )
+  if args.type:deInterface():isArray() then
+    local TY = args.type:deInterface():arrayOver()
+    local arsize = args.type:deInterface().size
+    if args.bounds~=nil then
+      return C.slice( types.array2d(TY,arsize), args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4] )
+    else
+      J.err( arsize[2]==1, "generators.Slice: NYI - only 1d arrays supported" )
+      return C.slice( types.array2d(TY,arsize), args.size[1], args.size[2], 0, 0)
+    end
+  elseif args.type:deInterface():isTuple() then
+    return C.slice( args.type:deInterface(), args.size[1], args.size[2], 0, 0, false )
   else
-    J.err( args.arsize[2]==1, "generators.Slice: NYI - only 1d arrays supported" )
-    return C.slice( types.array2d(args.T,args.arsize), args.size[1], args.size[2], 0, 0)
+    assert(false)
   end
-end,
-types.array2d(P.DataType("T"),P.SizeValue("arsize")) )
+end)
 
 
 generators.TupleToArray = R.FunctionGenerator("core.TupleToArray",{},{},
@@ -885,6 +902,27 @@ function(args)
 end,
 T.Trigger )
 
+-- this will concat a constant to the RHS
+generators.ConcatConst = R.FunctionGenerator("core.ConcatConst",{"type1"},{"number","value"},
+function(args)
+  local value = args.value
+  if args.number~=nil then value = args.number end
+  return C.ConcatConst( args.T, args.type1, value )
+end,
+P.DataType("T") )
+
+-- apply a function to one of the items in a tuple
+generators.ApplyTo = R.FunctionGenerator("core.ApplyTo",{"rigelFunction","number","type","rate"},{},
+function(args)
+
+  local IT = args.T.list[args.number+1]
+  local fn = args.rigelFunction:specializeToType( types.rv(IT), args.rate )
+  J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:", IT )
+
+  return C.ApplyTo( args.T, fn, args.number )
+end,
+P.TupleType("T") )
+
 -- type1: type to do reduce at
 generators.SAD = R.FunctionGenerator("core.SAD",{"type","rate","type1"},{},
 function(args)
@@ -894,7 +932,7 @@ end,
 T.Array2d(T.Array2d(P.DataType("A"),2),P.SizeValue("size")), false )
 
 -- convert to recoded hardfloat
-generators.FloatRec = R.FunctionGenerator("core.FloatRec",{"type","rate","number"},{},
+generators.FloatRec = R.FunctionGenerator("core.FloatRec",{"type","rate"},{"number"},
 function(args)
   if args.type:deInterface():isFloat() then
     return C.FloatToFloatRec( args.type:deInterface().exp, args.type:deInterface().sig )
@@ -906,6 +944,25 @@ function(args)
   end
 end)
 
+generators.FtoFR = R.FunctionGenerator("core.FtoFR",{"type","rate"},{"number"},
+function(args)
+  return C.FloatToFloatRec( args.type:deInterface().exp, args.type:deInterface().sig )
+end, types.Float32)
+
+generators.UtoFR = R.FunctionGenerator("core.UtoFR",{"type","rate"},{"number"},
+function(args)
+  J.err( args.T:isUint() )
+  J.err( args.T.exp==0 )
+  return C.FloatRec( args.T, 8, 24 )
+end, P.NumberType("T"))
+
+generators.ItoFR = R.FunctionGenerator("core.ItoFR",{"type","rate"},{"number"},
+function(args)
+  J.err( args.T:isInt() )
+  J.err( args.T.exp==0 )
+  return C.FloatRec( args.T, 8, 24 )
+end, P.NumberType("T"))
+
 -- convert to ieee float
 generators.Float = R.FunctionGenerator("core.Float",{"type","rate"},{},
 function(args)
@@ -914,9 +971,25 @@ function(args)
   return C.Float( 8, 24 )
 end)
 
+generators.FRtoF = generators.Float
+
+generators.FRtoI = R.FunctionGenerator("core.FloatToInt",{"type","rate","number"},{},
+function(args)
+  J.err( args.type:deInterface():isFloatRec(), "core.Float: input should be FloatRec, but is:",args.type )
+  J.err( args.type:deInterface()==types.FloatRec32,"Float: input type should be FloatRec32, but is:",args.type:deInterface() )
+  return C.FloatToInt( 8, 24, true, args.number )
+end)
+
+generators.FRtoU = R.FunctionGenerator("core.FloatToUint",{"type","rate","number"},{},
+function(args)
+  J.err( args.type:deInterface():isFloatRec(), "core.Float: input should be FloatRec, but is:",args.type )
+  J.err( args.type:deInterface()==types.FloatRec32,"Float: input type should be FloatRec32, but is:",args.type:deInterface() )
+  return C.FloatToInt( 8, 24, false, args.number )
+end)
+
 generators.SqrtF = R.FunctionGenerator("core.SqrtF",{"type","rate"},{},
 function(args)
-  J.err( args.type:deInterface():isFloatRec() )
+  J.err( args.type:deInterface():isFloatRec(), "SqrtF: expected FloatRec input, but is: ",args.type )
   J.err( args.type:deInterface()==types.FloatRec32,"SqrtF: input type should be FloatRec32, but is:",args.type:deInterface() )
   return C.SqrtF( 8, 24 )
 end)
@@ -965,8 +1038,24 @@ function(args)
   else
     J.err( args.type:deInterface():isTuple(), "MulF: expected tuple input, but was: ",args.type )
     J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "MulF: lhs and rhs must have same types! but input type is: ",args.type )
-    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    J.err( args.type:deInterface().list[1]:isFloatRec(),"MulF: input should be FloatRec, but is: ",args.type )
     return C.mulF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig )
+  end
+end)
+
+generators.DivF = R.FunctionGenerator("core.DivF",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    -- mul by a const (unary op)
+    --J.err( args.type:deInterface():isFloatRec(), "MulF: when passed a constant, expects a FloatRec input, but is:",args.type )
+    --return C.mulFConst( args.type:deInterface().exp, args.type:deInterface().sig, args.number )
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple(), "DivF: expected tuple input, but was: ",args.type )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "DivF: lhs and rhs must have same types! but input type is: ",args.type )
+    J.err( args.type:deInterface().list[1]:isFloatRec(),"DivF: input must be FloatRec, but is: ",args.type )
+    return C.SqrtF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, true )
   end
 end)
 
@@ -982,6 +1071,36 @@ function(args)
     return C.CMPF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, ">" )
   end
 end)
+
+generators.LTF = R.FunctionGenerator("core.LTF",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple(), "LTF: expected tuple input, but was: ",args.type )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "LTF: lhs and rhs must have same types! but input type is: ",args.type )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.CMPF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, "<" )
+  end
+end)
+
+generators.GEF = R.FunctionGenerator("core.GTF",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple(), "GTF: expected tuple input, but was: ",args.type )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "GTF: lhs and rhs must have same types! but input type is: ",args.type )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.CMPF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, ">=" )
+  end
+end)
+
+generators.NegF = R.FunctionGenerator("core.NegF",{"type","rate"},{},
+function(args) return C.NegF() end,
+T.FloatRec32 )
 
 function generators.export(t)
   if t==nil then t=_G end

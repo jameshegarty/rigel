@@ -78,7 +78,7 @@ DUPS = $(patsubst %.raw,$(BUILDDIR)/%.raw.dup,$(RAWS))
 SRCS_VERILOG := $(filter-out pad.lua crop.lua stencil.lua downsample_2.lua downsample_4.lua upsample_2.lua upsample_4.lua, $(SRCS))
 
 # dead code (float verilog)
-SRCS_VERILOG := $(filter-out sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua sift_desc.lua,  $(SRCS_VERILOG))
+SRCS_VERILOG := $(filter-out sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua sift_desc.lua sift_desc_2_1.lua,  $(SRCS_VERILOG))
 
 # remove long poles
 SRCS_VERILOG := $(filter-out lk_tr_handshake_12_1_axi.lua, $(SRCS_VERILOG))
@@ -98,7 +98,12 @@ TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.correct.txt,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.cyclescorrect.txt,$(SRCS_TERRA))
 
 # no support for xilinx prims needed for float
-SRCS_VERILATOR = $(filter-out fixed_float_inv.lua fixed_float_sub.lua fixed_float_sqrt.lua fixed_float_gt.lua fixed_float_rshift.lua fixed_float_mult.lua featuredescriptor.lua sift_hw.lua sift_desc_hw.lua sift_hw_1080p.lua sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua sift_desc.lua, $(SRCS))
+SRCS_VERILATOR = $(filter-out featuredescriptor.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua, $(SRCS))
+
+SRCS_VERILATOR := $(filter-out sift_float.lua sift_desc.lua sift_desc_2_1.lua, $(SRCS_VERILATOR))
+
+# too slow
+SRCS_VERILATOR := $(filter-out sift_hw_1080p.lua, $(SRCS_VERILATOR))
 
 # uses Xilinx huge mult blocks - no support for prims
 SRCS_VERILATOR := $(filter-out lk_tr_handshake_6_3_axi.lua lk_tr_handshake_6_6_axi.lua  lk_tr_handshake_6_2_axi.lua  lk_tr_handshake_6_1_axi.lua lk_tr_handshake_4_4_axi.lua lk_tr_handshake_4_1_axi.lua lk_tr_handshake_12_12_axi.lua  lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua  lk_wide_handshake_6_4_axi.lua lk_wide_handshake_6_1_axi.lua lk_wide_handshake_4_4_axi.lua lk_wide_handshake_4_1_axi.lua, $(SRCS_VERILATOR))
@@ -124,7 +129,7 @@ SRCS_VERILATOR := $(filter-out readmemory.lua readmemory_flip.lua, $(SRCS_VERILA
 SRCS_VERILATOR := $(filter-out stereo_ov7660.lua stereo_tr_full_4.lua stereo_tr_full_8.lua stereo_tr_full_16.lua, $(SRCS_VERILATOR))
 
 VERILATOR = $(patsubst %.lua,$(BUILDDIR)/%.verilator,$(SRCS_VERILATOR))
-VERILATOR = $(patsubst %.lua,$(BUILDDIR)/%.verilator.raw,$(SRCS_VERILATOR))
+VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.raw,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.bmp,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.correct.txt,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.cyclescorrect.txt,$(SRCS_VERILATOR))
@@ -264,7 +269,31 @@ ASIC = $(patsubst %.lua, $(BUILDDIR)/%.32nm.txt, $(SRCS_ASIC))
 COVERAGE_SRCS = pointwise_wide_handshake.lua convpadcrop_wide_handshake_4_1.lua conv_tr_handshake_4_4.lua campipe_128.lua downsamplex_wide_handshake_2.lua filterseq.lua downsampley_wide_handshake.lua padcrop_wide_handshake.lua shifty_wide_handshake.lua reduceseq_handshake.lua tmux_wide_handshake.lua upsample_wide_handshake_2.lua 4bpp.lua 12bpp.lua fifo_wide_handshake_2.lua  fifo_wide_handshake_2_noloop.lua pad_wide_handshake.lua fifo_wide_handshake_bram.lua pyramid_tr_1.lua stereo_wide_handshake_tiny.lua
 COVERAGE = $(patsubst %.lua,$(BUILDDIR)/%.coverage.txt,$(COVERAGE_SRCS))
 
-SIGGRAPH2016 = out/convpadcrop_wide_handshake_8_8_1080p.zu9vivado.bit out/convpadcrop_wide_handshake_8_4_1080p.zu9vivado.bit out/convpadcrop_wide_handshake_8_2_1080p.zu9vivado.bit out/conv_tr_handshake_8_1_1080p.zu9vivado.bit out/conv_tr_handshake_8_2_1080p.zu9vivado.bit out/conv_tr_handshake_8_4_1080p.zu9vivado.bit out/conv_tr_handshake_8_8_1080p.zu9vivado.bit out/stereo_wide_handshake_full.zu9vivado.bit out/stereo_tr_full_4.zu9vivado.bit out/stereo_tr_full_8.zu9vivado.bit out/stereo_tr_full_16.zu9vivado.bit out/lk_wide_handshake_12_1_axi.zu9vivado.bit out/lk_tr_handshake_12_1_axi.zu9vivado.bit out/lk_tr_handshake_12_2_axi.zu9vivado.bit out/lk_tr_handshake_12_3_axi.zu9vivado.bit out/lk_tr_handshake_12_4_axi.zu9vivado.bit out/lk_tr_handshake_12_6_axi.zu9vivado.bit out/lk_tr_handshake_12_12_axi.zu9vivado.bit out/sift_hw_1080p.zu9vivado.bit
+# split out siggraph 2016 stuff to run tests faster
+SIG16 := convpadcrop_wide_handshake_8_8_1080p.lua convpadcrop_wide_handshake_8_4_1080p.lua convpadcrop_wide_handshake_8_2_1080p.lua conv_tr_handshake_8_1_1080p.lua conv_tr_handshake_8_2_1080p.lua conv_tr_handshake_8_4_1080p.lua conv_tr_handshake_8_8_1080p.lua
+SIG16 += stereo_wide_handshake_full.lua stereo_tr_full_4.lua stereo_tr_full_8.lua stereo_tr_full_16.lua
+SIG16 += lk_wide_handshake_12_1_axi.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua sift_hw_1080p.lua
+SIG16 += sift_hw.lua sift_hw_1080p.lua sift_desc_hw.lua
+
+# add some extra slow tests
+SIG16_EXT := SIG16
+SIG16_EXT += convpadcrop_wide_handshake_8_8_1080p_nostall.lua pyramid_large_4.lua lk_tr_handshake_6_2.lua pyramid_4.lua pyramid_large_nofifo_taps_3.lua sift_desc_hw_2_1.lua stereo_tr_medi_4.lua lk_tr_handshake_6_1.lua
+
+# compute the intersection of the verilator list and sig16 list
+SRCS_VERILATOR_SIG16_INV := $(filter-out $(SRCS_VERILATOR), $(SIG16_EXT))
+SRCS_VERILATOR_SIG16 := $(filter-out $(SRCS_VERILATOR_SIG16_INV), $(SIG16_EXT))
+
+VERILATOR_SIG16 := $(patsubst %.lua,$(BUILDDIR)/%.verilator,$(SRCS_VERILATOR_SIG16))
+VERILATOR_SIG16 += $(patsubst %.lua,$(BUILDDIR)/%.verilator.raw,$(SRCS_VERILATOR_SIG16))
+VERILATOR_SIG16 += $(patsubst %.lua,$(BUILDDIR)/%.verilator.bmp,$(SRCS_VERILATOR_SIG16))
+VERILATOR_SIG16 += $(patsubst %.lua,$(BUILDDIR)/%.verilator.correct.txt,$(SRCS_VERILATOR_SIG16))
+VERILATOR_SIG16 += $(patsubst %.lua,$(BUILDDIR)/%.verilator.cyclescorrect.txt,$(SRCS_VERILATOR_SIG16))
+
+# remove SIG16 tests from verilator test
+# spaghetti code!!
+SRCS_VERILATOR := $(filter-out $(SIG16), $(SRCS_VERILATOR))
+
+ZU9VIVADOBITS_SIG16 := $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bit,$(SIG16))
 
 RES = $(TERRAOUT)
 RES += $(VERILATOR)
@@ -297,6 +326,10 @@ terra: $(TERRAOUT)
 
 verilator: $(VERILATOR)
 	touch $(BUILDDIR)/verilator_done.txt
+	date
+
+verilatorSIG16: $(VERILATOR_SIG16)
+	touch $(BUILDDIR)/verilatorSIG16_done.txt
 	date
 
 verilatorSOC: $(VERILATOR_SOC)
@@ -355,7 +388,7 @@ asic: $(ASIC)
 coverage: $(COVERAGE)
 	touch $(BUILDDIR)/coverage_done.txt
 
-siggraph2016: $(SIGGRAPH2016)
+zu9vivadobitsSIG16: $(ZU9VIVADOBITS_SIG16)
 
 clean:
 	rm -Rf $(BUILDDIR)/*

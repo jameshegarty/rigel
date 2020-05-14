@@ -13,71 +13,41 @@ local G = require "generators.core"
 local siftTerra
 if terralib~=nil then siftTerra = require("sift_core_hw_terra") end
 
-TILES_X = 4
-TILES_Y = 4
 GAUSS_SIGMA = 5 --5
-
-
-RED_TYPE = types.int(32)
-RED_SCALE = 1024/GRAD_SCALE -- 1024
 
 sift = {}
 
-local fixedSum = J.memoize(function(A)
-  assert(types.isType(A))
-  local inp = f.parameter("II",types.tuple{A,A})
-  local out = inp:index(0)+inp:index(1)
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("fixedSum")
-                   end)
-
-local fixedSumPow2 = J.memoize(function(A)
-  assert(types.isType(A))
-  local inp = f.parameter("II",types.tuple{A,A})
-  local out = inp:index(0)+(inp:index(1)*inp:index(1))
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("fixedSumPow2")
-                   end)
-
-sift.fixedDiv = J.memoize(function(A)
-  assert(types.isType(A))
-  local inp = f.parameter("II",types.tuple{A,A})
-  local out = (inp:index(0))*(inp:index(1):invert())
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("fixedDiv")
-                   end)
-
-sift.fixedSqrt = J.memoize(function(A)
-  assert(types.isType(A))
-  local inp = f.parameter("II",A)
-  local out = inp:sqrt()
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("fixedSqrt")
-                   end)
-
-sift.fixedLift = J.memoize(function(A)
-  assert(types.isType(A))
-  local inp = f.parameter("IIlift",A)
-  local out = inp:lift()
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("fixedLift_"..tostring(A):gsub('%W','_'))
-                   end)
-
-sift.lowerPair = J.memoize(function(FROM,TO,scale)
+local Clamp = G.Function{"Clampint8",types.rv(types.FloatRec32),
+  function(i)
+    local v127 = G.FtoFR(R.c(types.Float32,127))
+    local vm128 = G.FtoFR(R.c(types.Float32,-128))
+    local tmp = G.Sel(G.GTF(i,v127),v127,i)
+    local tmp = G.Sel(G.LTF(i,vm128),vm128,tmp)
+    return tmp
+  end}
+                                             
+sift.lowerPair = J.memoize(function( FROM, TO, scale, X )
   assert(types.isType(FROM))
   assert(types.isType(TO))
-  local inp = f.parameter("IIlift",types.tuple{FROM,FROM})
-  local out = f.tuple{(inp:index(0)*f.constant(scale)):lower(TO),(inp:index(1)*f.constant(scale)):lower(TO)}
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("lowerpair")
-                   end)
+  assert( scale==math.floor(scale) )
+  assert( X==nil )
 
+  assert( FROM:isFloat() )
+  assert( TO:isInt() )
+  assert(TO==types.int(8))
+  assert( scale==4 )
+
+  return G.Function{"LowerPair",types.rv(types.tuple{FROM,FROM}),
+    function(i)
+      local tmp = R.concat{G.MulF{scale}(G.FloatRec{32}(i[0])), G.MulF{scale}(G.FloatRec{32}(i[1]))}
+
+      tmp = G.TupleToArray(tmp)
+      tmp = G.Map{Clamp}(tmp)
+      tmp = G.Map{G.FRtoI{8}}(tmp)
+      return G.ArrayToTuple(tmp)
+    end}
+end)
+  
 ----------------
 local function calcGaussian(sig,GAUSS_WIDTH_inp,GAUSS_HEIGHT_inp)
   assert(type(GAUSS_WIDTH_inp)=="number")
@@ -142,6 +112,7 @@ local function tileGaussian(G,W,H,T)
   return GG
 end
 ----------------
+--[=[
 local function siftBucket(dxdyType,magtype)
   local inp = f.parameter("bucketinp",types.tuple{dxdyType,dxdyType,magtype})
   local dx = inp:index(0)
@@ -167,10 +138,47 @@ local function siftBucket(dxdyType,magtype)
 
   local out = f.array2d({v0,v1,v2,v3,v4,v5,v6,v7},8)
   return out:toRigelModule("siftBucket")
+  end]=]
+
+local function siftBucket( dxdyType, magtype, REDUCE_TYPE, REDUCE_SCALE, X )
+  assert(type(REDUCE_SCALE)=="number")
+  assert( types.isType(magtype) )
+  print("DXDYTYPE",dxdyType,magtype)
+  
+  return G.Function{"SiftBucket",types.rv(types.tuple{dxdyType,dxdyType,magtype}),
+    function(i)
+      local dx = G.FtoFR(i[0])
+      local dy = G.FtoFR(i[1])
+      local mag = G.MulF{REDUCE_SCALE}(i[2]) --*f.constant(RED_SCALE)):lower(RED_TYPE)
+      assert( REDUCE_TYPE==types.int(32) )
+      mag = G.FRtoI{32}(mag)
+
+      local zero = R.c( REDUCE_TYPE, 0 ) --f.plainconstant(0,RED_TYPE)
+
+      local zf = R.c( types.FloatRec32, 0 )
+      
+      local dx_ge_0 = G.GEF( dx, zf )
+      local dy_ge_0 = G.GEF( dy, zf )
+      local dx_gt_dy = G.GTF( dx, dy )
+      local dx_gt_negdy = G.GTF( dx, G.NegF(dy) )
+      local dy_gt_negdx = G.GTF( dy, G.NegF(dx) )
+      local negdx_gt_negdy = G.GTF( G.NegF(dx), G.NegF(dy) )
+        
+      local v0 = G.Sel(G.And(dx_ge_0,G.And(dy_ge_0,dx_gt_dy)),mag,zero)
+      local v1 = G.Sel(G.And(dx_ge_0,G.And(dy_ge_0,G.Not(dx_gt_dy))),mag,zero)
+      local v7 = G.Sel(G.And(dx_ge_0,G.And(G.Not(dy_ge_0),dx_gt_negdy)),mag,zero)
+      local v6 = G.Sel(G.And(dx_ge_0,G.And(G.Not(dy_ge_0),G.Not(dx_gt_negdy))),mag,zero)
+      local v2 = G.Sel(G.And(G.Not(dx_ge_0),G.And(dy_ge_0,dy_gt_negdx)),mag,zero)
+      local v3 = G.Sel(G.And(G.Not(dx_ge_0),G.And(dy_ge_0,G.Not(dy_gt_negdx))),mag,zero)
+      local v4 = G.Sel(G.And(G.Not(dx_ge_0),G.And(G.Not(dy_ge_0),negdx_gt_negdy)),mag,zero)
+      local v5 = G.Sel(G.And(G.Not(dx_ge_0),G.And(G.Not(dy_ge_0),G.Not(negdx_gt_negdy))),mag,zero)
+
+      return G.TupleToArray(R.concat{v0,v1,v2,v3,v4,v5,v6,v7})
+    end}
 end
 ----------------
 -- input {dx,dy,gaussweight}
-local function siftMag(dxdyType)
+--[=[local function siftMag(dxdyType)
   local inp = f.parameter("siftMagInp",types.tuple{dxdyType,dxdyType,dxdyType})
   local dx = inp:index(0)
   local dy = inp:index(1)
@@ -180,12 +188,39 @@ local function siftMag(dxdyType)
 
   local out = mag*gauss_weight
   return out:toRigelModule("siftmag"), out.type
-end
+  end]=]
+
+local siftMag = J.memoize(function(dxdyType)
+  local Pre = G.Function{"siftMagPre",types.rv(types.tuple{dxdyType,dxdyType}),
+    function(i)
+      local dx = G.FloatRec(i[0])
+      local dy = G.FloatRec(i[1])
+      local magsq = G.AddF( G.MulF(dx,dx), G.MulF(dy,dy) )
+      return magsq
+    end}
+  
+  return G.Function{"siftMagInp",types.RV(types.tuple{dxdyType,dxdyType,dxdyType}),
+    function(inp)
+      local i = G.FanOut{2}(inp)
+      local gauss_weight = G.FIFO{128}(G.FloatRec(i[1][2]))
+
+      local magsq = G.Fmap{Pre}(G.Slice{{0,1}}(i[0]))
+      local mag = G.SqrtF( magsq )
+      mag = G.FIFO{1}(mag)
+
+      local out = G.MulF(G.FanIn(mag,gauss_weight))
+      return out
+    end}
+end)
 
 ----------------
 -- input: {dx,dy}
 -- output: descType[BUCKETS], descType
-function sift.siftDescriptor(dxdyType)
+function sift.siftDescriptor( dxdyType, TILES_X, TILES_Y, X )
+  assert( type(TILES_X)=="number" )
+  assert( type(TILES_Y)=="number" )
+  assert( X==nil )
+  
   if GRAD_INT then
     assert(dxdyType==GRAD_TYPE)
   else
@@ -198,28 +233,37 @@ function sift.siftDescriptor(dxdyType)
   local calcType = types.Float32
 
   local ITYPE = types.tuple{dxdyType,dxdyType}
-  local inp = R.input(types.rv(types.Par(ITYPE)))
-  local gweight = R.apply("gweight",RM.constSeq(GAUSS,calcType,TILES_X*TILES_Y*16,1,(TILES_X*TILES_Y*16)),G.ValueToTrigger(inp))
-  local gweight = R.apply("gwidx",C.index(types.array2d(calcType,1),0,0),gweight)
-  local dx = R.apply("i0", C.index(ITYPE,0), inp)
-  local dy = R.apply("i1", C.index(ITYPE,1), inp)
+  local inp = R.input(types.RV(types.Par(ITYPE)))
+  local inpb = G.FanOut{3}(inp)
+  
+  local gweight = R.apply("gweight",RM.makeHandshake(RM.constSeq(GAUSS,calcType,TILES_X*TILES_Y*16,1,(TILES_X*TILES_Y*16))),G.FIFO{128}(G.ValueToTrigger(inpb[0])))
+  --local gweight = R.apply("gwidx",C.index(types.array2d(calcType,1),0,0),gweight)
+  gweight = G.Index{0}(gweight)
+  --local dx = R.apply("i0", C.index(ITYPE,0), inp)
+  local dx = G.FIFO{128}(inpb[1][0])
+  --local dy = R.apply("i1", C.index(ITYPE,1), inp)
+  local dy = G.FIFO{128}(inpb[2][1])
 
   if GRAD_INT then
-    dx = R.apply("ixl", sift.fixedLift(dxdyType),dx)
-    dy = R.apply("iyl", sift.fixedLift(dxdyType),dy)
+    print("DXDY",dxdyType)
+    dx = G.Float(G.ItoFR(dx))
+    dy = G.Float(G.ItoFR(dy))
   end
 
-  local maginp = R.concat("maginp",{dx,dy,gweight})
-  local magFn, magType = siftMag(calcType)
-  local mag = R.apply("mag",magFn,maginp)
-  local bucketInp = R.concat("bktinp",{dx,dy,mag})
-  local out = R.apply( "out", siftBucket(calcType,magType), bucketInp)
-  return RM.lambda("siftDescriptor",inp,out), RED_TYPE
+  dx, dy = G.FanOut{2}(dx), G.FanOut{2}(dy)
+  
+  local maginp = R.concat("maginp",{G.FIFO{128}(dx[0]),G.FIFO{128}(dy[0]),gweight})
+  local magFn = siftMag(calcType)
+  local magType = magFn.outputType:deInterface()
+  local mag = R.apply("mag",magFn,G.FanIn(maginp))
+  local bucketInp = R.concat("bktinp",{G.FIFO{128}(dx[1]),G.FIFO{128}(dy[1]),mag})
+  local out = R.apply( "out", G.Fmap{siftBucket( calcType, magType, types.int(32), 1024/GRAD_SCALE )}, G.FanIn(bucketInp) )
+  return RM.lambda("siftDescriptor",inp,out), types.int(32)
 end
 ----------------
 -- input: {descType[N],descType[N]}
 -- output: descType[N]
-function sift.bucketReduce(descType,N,X)
+function sift.bucketReduce( descType, N,X)
   assert(types.isType(descType))
   assert(type(N)=="number")
   assert(X==nil)
@@ -227,7 +271,7 @@ function sift.bucketReduce(descType,N,X)
   local descArray = types.array2d(descType,N)
   local inp = R.input(types.rv(types.Par(types.tuple{descArray,descArray})))
   local out = R.apply("SOA",C.SoAtoAoS(N,1,{descType,descType}),inp)
-  local out = R.apply("MP",RM.map(C.sum(RED_TYPE,RED_TYPE,RED_TYPE,true),N),out)
+  local out = R.apply("MP",RM.map(C.sum(types.int(32),types.int(32),types.int(32),true),N),out)
   return RM.lambda("bucketReduce",inp,out)
 end
 ----------------
@@ -272,7 +316,11 @@ end
 ----------------
 -- input: {descType[128],uint16,uint16}
 -- output: descType[130]
-function sift.addDescriptorPos(descType)
+--[=[function sift.addDescriptorPos( descType, TILES_X, TILES_Y, X)
+  assert( type(TILES_X)=="number" )
+  assert( type(TILES_Y)=="number" )
+  assert( X==nil )
+  
   local inp = f.parameter("descpos",types.tuple{types.array2d(descType,TILES_X*TILES_Y*8),types.uint(16),types.uint(16)})
   local desc = inp:index(0)
   local px = inp:index(1):lift(0)
@@ -282,12 +330,35 @@ function sift.addDescriptorPos(descType)
   for i=0,(TILES_X*TILES_Y*8-1) do table.insert(a,desc:index(i)) end
   local out = f.array2d(a,TILES_X*TILES_Y*8+2)
   return out:toRigelModule("addDescriptorPos")
-end
+  end]=]
+
+sift.addDescriptorPos = J.memoize(function( descType, TILES_X, TILES_Y, X)
+  assert( type(TILES_X)=="number" )
+  assert( type(TILES_Y)=="number" )
+  assert( X==nil )
+  
+  return G.Function{"descpos",types.rv(types.tuple{types.array2d(descType,TILES_X*TILES_Y*8),types.uint(16),types.uint(16)}),
+    function(i)
+      local desc = i[0]
+      local px = G.FRtoF(G.UtoFR(i[1])) --inp:index(1):lift(0)
+      local py = G.FRtoF(G.UtoFR(i[2])) --inp:index(2):lift(0)
+      
+      local a = {px,py}
+      for i=0,(TILES_X*TILES_Y*8-1) do table.insert(a,desc[i]) end
+      --local out = f.array2d(a,TILES_X*TILES_Y*8+2)
+      local out = G.TupleToArray(R.concat(a))
+      return out --:toRigelModule("addDescriptorPos")
+    end}
+end)
 
 ----------------
 -- input: {{dx,dy}[16,16],{posX,posY}}
 -- output: descType[128+2], descType
-function sift.siftKernel(dxdyType)
+function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
+  assert( type(TILES_X)=="number" )
+  assert( type(TILES_Y)=="number" )
+  assert(X==nil)
+  
   local dxdyPair = types.tuple{dxdyType,dxdyType}
   local posType = types.uint(16)
   local PTYPE = types.tuple{posType,posType}
@@ -320,9 +391,9 @@ function sift.siftKernel(dxdyType)
   local dxdy = R.apply("down1idx",RM.makeHandshake(C.index(types.array2d(types.array2d(dxdyPair,16),1),0,0)), dxdy)
   local dxdy = R.apply("down2", RM.liftHandshake(RM.changeRate(dxdyPair,1,16,1)), dxdy )
   local dxdy = R.apply("down2idx",RM.makeHandshake(C.index(types.array2d(dxdyPair,1),0,0)), dxdy)
-  local descFn, descTypeRed = sift.siftDescriptor(dxdyType)
+  local descFn, descTypeRed = sift.siftDescriptor( dxdyType, TILES_X, TILES_Y )
   local descType = types.Float32
-  local desc = R.apply("desc",RM.makeHandshake(descFn),dxdy)
+  local desc = R.apply("desc",descFn,dxdy)
 
   local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( sift.bucketReduce(descTypeRed,8),16))),desc)
 
@@ -346,23 +417,34 @@ function sift.siftKernel(dxdyType)
 
   local desc1 = C.fifo(descTypeRed,256)(desc1)
 
-  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( RS.modules.sumPow2{inType=RED_TYPE,outType=RED_TYPE},(TILES_X*TILES_Y*8)))),desc1)
-  local desc_sum = R.apply("sumlift",RM.makeHandshake( sift.fixedLift(RED_TYPE)), desc_sum)
+  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( RS.modules.sumPow2{inType=types.int(32),outType=types.int(32)},(TILES_X*TILES_Y*8)))),desc1)
+  --local desc_sum = R.apply("sumlift",RM.makeHandshake( sift.fixedLift(types.int(32))), desc_sum)
+  desc_sum = G.Float(G.ItoFR(desc_sum))
 
-  local desc_sum = R.apply("sumsqrt",RM.makeHandshake( sift.fixedSqrt(descType)), desc_sum)
+  --local desc_sum = R.apply("sumsqrt",RM.makeHandshake( sift.fixedSqrt(descType)), desc_sum)
+  desc_sum = G.Float(G.SqrtF( G.FtoFR(desc_sum) ))
   local desc_sum = R.apply("DAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc_sum)
   local desc_sum = R.apply("sumup",RM.upsampleXSeq( descType, 1, TILES_X*TILES_Y*8), desc_sum)
   local desc_sum = R.apply("Didx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc_sum)
 
-  local desc0 = R.apply("d0lift",RM.makeHandshake( sift.fixedLift(RED_TYPE)), desc0)
+  --local desc0 = R.apply("d0lift",RM.makeHandshake( sift.fixedLift(types.int(32))), desc0)
+  desc0 = G.FRtoF(G.ItoFR(desc0))
   local desc = R.apply("pt",RM.packTuple{types.RV(types.Par(descType)),types.RV(types.Par(descType))},R.concat("PTT",{desc0,desc_sum}))
-  local desc = R.apply("ptt",RM.makeHandshake( sift.fixedDiv(descType)),desc)
+  --local desc = R.apply("ptt",RM.makeHandshake( sift.fixedDiv(descType)),desc)
+  desc = G.TupleToArray(desc)
+  desc = G.Map{G.FtoFR}(desc)
+  desc = G.ArrayToTuple(desc)
+
+  desc = G.DivF(desc)
+
+  desc = G.Float(desc)
+  
   local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
   local desc = R.apply("repack",RM.liftHandshake(RM.changeRate(descType,1,1,TILES_X*TILES_Y*8)),desc)
   -- we now have an array of type descType[128]. Add the pos.
   local desc_pack = R.apply("dp", RM.packTuple{types.RV(types.Par(types.array2d(descType,TILES_X*TILES_Y*8))),types.RV(types.Par(posType)),types.RV(types.Par(posType))},R.concat("DPT",{desc,posX,posY}))
-  local desc = R.apply("addpos",RM.makeHandshake( sift.addDescriptorPos(descType)), desc_pack)
+  local desc = R.apply("addpos",RM.makeHandshake( sift.addDescriptorPos( descType, TILES_X, TILES_Y )), desc_pack)
 
   table.insert(statements,1,desc)
 
@@ -391,11 +473,13 @@ function posSub(x,y)
   return ps
 end
 
-function sift.addPos(dxdyType,W,H,subX,subY)
+function sift.addPos( dxdyType, W, H, subX, subY, TILES_X, TILES_Y, X )
   assert(types.isType(dxdyType))
   assert(type(W)=="number")
   assert(type(H)=="number")
-
+  assert(type(TILES_X)=="number")
+  assert(type(TILES_Y)=="number")
+  assert( X==nil )
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
   local inp = R.input(types.rv(types.Par(types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4))))
 
@@ -413,10 +497,12 @@ function sift.addPos(dxdyType,W,H,subX,subY)
   return RM.lambda("addPosAtInput",inp,out)
 end
 
-function sift.siftDesc(W,H,inputT,X)
+function sift.siftDesc( W, H, inputT, TILES_X, TILES_Y, X )
   assert(type(W)=="number")
   assert(type(H)=="number")
   assert(type(inputT)=="number")
+  assert(type(TILES_X)=="number")
+  assert(type(TILES_Y)=="number")
   assert(X==nil)
 
   local ITYPE = types.array2d(types.uint(8),inputT)
@@ -446,13 +532,13 @@ function sift.siftDesc(W,H,inputT,X)
   --- now stencilify dxdy
   local out = R.apply("ST",RM.makeHandshake(C.stencilLinebuffer(DXDY_PAIR,W,H,1,(-TILES_X*4)+1,0,(-TILES_Y*4)+1,0)), out)
 
-  local DI = sift.addPos(dxdyType,W,H)
+  local DI = sift.addPos( dxdyType, W, H, nil, nil, TILES_X, TILES_Y )
   local out = R.apply("desc_inner",RM.makeHandshake(DI),out)
   local out = R.apply("AO", RM.makeHandshake(C.arrayop(DI.outputType:extractData(),1,1)), out)
-  local out = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( DI.outputType:extractData(), W, H, 1, TILES_X*4-1, 0, TILES_Y*4-1, 0))), out)
+  local out = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( DI.outputType:extractData(), W, H, 1, 15, 0, 15, 0))), out)
   local out = R.apply("I0", RM.makeHandshake(C.index(types.array2d(DI.outputType:extractData(),1),0,0)), out)
 
-  local siftFn, descType = sift.siftKernel(dxdyType)
+  local siftFn, descType = sift.siftKernel( dxdyType, TILES_X, TILES_Y )
   local out = R.apply("sft", siftFn, out)
 
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2)), out )
@@ -461,8 +547,10 @@ function sift.siftDesc(W,H,inputT,X)
   return fn, descType
 end
 
-function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
+function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
   assert(type(FILTER_FIFO)=="number")
+  assert(type(TILES_X)=="number")
+  assert(type(TILES_Y)=="number")
   assert(X==nil)
 
   local fifos = {}
@@ -481,9 +569,9 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   out = G.Map{G.TupleToArray}(out)
   out = G.Map{G.Map{G.Float}}(out)
   out = G.Map{G.ArrayToTuple}(out)
-
+  
   out = R.apply("pad", RM.liftHandshake(RM.padSeq(DXDY_PAIR, W, H, 1, 7, 8, 7, 8, {0,0})), out)
-
+  
   out = R.apply("dxdyix",RM.makeHandshake(C.index(types.array2d(DXDY_PAIR,1,1),0,0)),out)
 
   local dxdyBroad = R.apply("dxdy_broad", RM.broadcastStream(types.Par(DXDY_PAIR),2), out)
@@ -517,22 +605,22 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local left = R.selectStream("d0",dxdyBroad,0)
 
   if GRAD_INT then
-    left = R.apply("lower", RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)), left)
+    left = R.apply("lower", RM.makeHandshake(sift.lowerPair( dxdyType, GRAD_TYPE, GRAD_SCALE)), left)
     dxdyType = GRAD_TYPE
     DXDY_PAIR = types.tuple{GRAD_TYPE,GRAD_TYPE}
   end
-  
+
   left = C.fifo(DXDY_PAIR,2048/DXDY_PAIR:verilogBits())(left)
 
   local left = R.apply("stlbinp", RM.makeHandshake(C.arrayop(DXDY_PAIR,1,1)), left)
   local left = R.apply( "stlb", RM.makeHandshake(C.stencilLinebuffer(DXDY_PAIR, internalW, internalH, 1,-TILES_X*4+1,0,-TILES_Y*4+1,0)), left)
-  left = R.apply("stpos", RM.makeHandshake(sift.addPos(dxdyType,internalW,internalH,15,15)), left)
+  left = R.apply("stpos", RM.makeHandshake(sift.addPos( dxdyType, internalW, internalH, 15, 15, TILES_X, TILES_Y )), left)
   -------------------------------
 
 
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4),types.tuple{types.uint(16),types.uint(16)}}
   local FILTER_PAIR = types.tuple{FILTER_TYPE,types.bool()}
-
+  
   -- merge left/right
   local out = R.apply("merge",RM.packTuple{types.RV(types.Par(FILTER_TYPE)),types.RV(types.Par(types.bool()))},R.concat("MPT",{left,right}))
 
@@ -545,8 +633,10 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
   local out = R.apply("FS",RM.liftHandshake(RM.liftDecimate(filterFn)),out)
   local out = C.fifo(FILTER_TYPE,FILTER_FIFO)(out)
 
-  local siftFn, descType = sift.siftKernel(dxdyType)
+  local siftFn, descType = sift.siftKernel( dxdyType, TILES_X, TILES_Y )
+
   local out = R.apply("sft", siftFn, out)
+
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2)), out )
 
   -- bitcast to uint8[8] for display...

@@ -196,16 +196,17 @@ local function bucketReduce(descType,N,X)
   return RM.lambda("bucketReduce",inp,out)
 end
 ----------------
--- input: A[W,H]
--- output: A[(W/T)*(H/T)][T*T]
-local function tile(W,H,T,A)
-  assert(type(W)=="number")
-  assert(type(H)=="number")
-  assert(type(T)=="number")
-  assert(W%T==0)
-  assert(H%T==0)
+-- input: A[TILE_W*TILES_X,TILE_H*TILES_Y]
+-- output: A[TILE_W*TILE_H][TILES_X,TILES_Y]
+local function tile( TILE_W, TILE_H, TILES_X, TILES_Y, A, X )
+  assert(type(TILE_W)=="number")
+  assert(type(TILE_H)=="number")
+  assert(type(TILES_X)=="number")
+  assert(type(TILES_Y)=="number")
 
-  local ITYPE = types.array2d(A,W,H)
+  local W,H = TILE_W*TILES_X, TILE_H*TILES_Y
+
+  local ITYPE = types.array2d( A, W, H )
   local inp = R.input(types.rv(types.Par(ITYPE)))
 
   local tab = {}
@@ -217,34 +218,34 @@ local function tile(W,H,T,A)
   end
 
   local outarr = {}
-  for ty=0,(H/T)-1 do
-    for tx=0,(W/T)-1 do
+  for ty=0,TILES_Y-1 do
+    for tx=0,TILES_X-1 do
       local out = {}
-      for y=0,T-1 do
-        for x=0,T-1 do
-          table.insert(out, tab[ty*T+y][tx*T+x])
+      for y=0,TILE_H-1 do
+        for x=0,TILE_W-1 do
+          table.insert(out, tab[ty*TILE_H+y][tx*TILE_W+x])
         end
       end
-      table.insert(outarr, R.concatArray2d("AR_"..ty.."_"..tx,out,T*T) )
+      table.insert(outarr, R.concatArray2d( "AR_"..ty.."_"..tx, out, TILE_W*TILE_H ) )
     end
   end
 
-  local fin = R.concatArray2d("fin",outarr,(W/T)*(H/T))
+  local fin = R.concatArray2d( "fin", outarr, TILES_X*TILES_Y )
 
   return RM.lambda("tile", inp, fin )
 end
 ----------------
 -- input: {descType[128],uint16,uint16}
 -- output: descType[130]
-local function addDescriptorPos(descType)
-  local inp = f.parameter("descpos",types.tuple{types.array2d(descType,128),types.uint(16),types.uint(16)})
+local function addDescriptorPos( descType, TILES_X, TILES_Y, X )
+  local inp = f.parameter("descpos",types.tuple{types.array2d(descType,TILES_X*TILES_Y*8),types.uint(16),types.uint(16)})
   local desc = inp:index(0)
   local px = inp:index(1):lift(0)
   local py = inp:index(2):lift(0)
   
   local a = {px,py}
-  for i=0,127 do table.insert(a,desc:index(i)) end
-  local out = f.array2d(a,130)
+  for i=0,TILES_X*TILES_Y*8-1 do table.insert(a,desc:index(i)) end
+  local out = f.array2d(a,2+8*TILES_X*TILES_Y)
   if descType:isFloat() then out = out:disablePipelining() end
   return out:toRigelModule("addDescriptorPos")
 end
@@ -252,17 +253,25 @@ end
 ----------------
 -- input: {{dx,dy}[16,16],{posX,posY}}
 -- output: descType[128+2], descType
-local function siftKernel(dxdyType)
+local function siftKernel( dxdyType, TILES_X, TILES_Y, TILE_W, TILE_H, X )
+  assert( type(TILES_X)=="number" )
+  assert( type(TILES_Y)=="number" )
+  assert( type(TILE_W)=="number" )
+  assert( type(TILE_H)=="number" )
+  assert( X==nil )
+  
   local dxdyPair = types.tuple{dxdyType,dxdyType}
   local posType = types.uint(16)
   local PTYPE = types.tuple{posType,posType}
-  local ITYPE = types.tuple{types.array2d(dxdyPair,16,16),PTYPE}
+  local ITYPE = types.tuple{types.array2d( dxdyPair, TILE_W*TILES_X, TILE_H*TILES_Y ),PTYPE}
 
   local fifos = {}
   local statements = {}
 
   local inp = R.input(R.Handshake(ITYPE))
-  local inp_broad = R.apply("inp_broad", RM.broadcastStream(types.Par(ITYPE),2), inp)
+  local inpt = inp
+  
+  local inp_broad = R.apply("inp_broad", RM.broadcastStream(types.Par(ITYPE),2), inpt)
 
 
   local inp_pos = C.fifo(ITYPE,1,nil,true)(R.selectStream("i0",inp_broad,0))
@@ -280,15 +289,17 @@ local function siftKernel(dxdyType)
 
   local inp_dxdy = C.fifo(ITYPE,1,nil,true)(R.selectStream("i1",inp_broad,1))
   local dxdy = R.apply("dxdy",RM.makeHandshake(C.index(ITYPE,0,0)), inp_dxdy)
-  local dxdyTile = R.apply("TLE",RM.makeHandshake(tile(16,16,4,dxdyPair)),dxdy)
-  local dxdy = R.apply( "down1", RM.liftHandshake(RM.changeRate(types.array2d(dxdyPair,16),1,16,1)), dxdyTile )
-  local dxdy = R.apply("down1idx",RM.makeHandshake(C.index(types.array2d(types.array2d(dxdyPair,16),1),0,0)), dxdy)
-  local dxdy = R.apply("down2", RM.liftHandshake(RM.changeRate(dxdyPair,1,16,1)), dxdy )
+  local dxdyTile = R.apply("TLE",RM.makeHandshake(tile( TILE_W, TILE_H, TILES_X, TILES_Y, dxdyPair )),dxdy)
+  local dxdy = R.apply( "down1", RM.liftHandshake(RM.changeRate(types.array2d(dxdyPair,TILE_W*TILE_H),1,TILES_X*TILES_Y,1)), dxdyTile )
+  
+  local dxdy = R.apply("down1idx",RM.makeHandshake(C.index(types.array2d(types.array2d(dxdyPair,TILE_W*TILE_H),1),0,0)), dxdy)
+  local dxdy = R.apply("down2", RM.liftHandshake(RM.changeRate(dxdyPair,1,TILE_W*TILE_H,1)), dxdy )
   local dxdy = R.apply("down2idx",RM.makeHandshake(C.index(types.array2d(dxdyPair,1),0,0)), dxdy)
   local descFn, descType = siftDescriptor(dxdyType)
-  local desc = R.apply("desc",RM.makeHandshake(descFn),dxdy)
 
-  local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(bucketReduce(descType,8),16))),desc)
+  local desc = R.apply("desc",RM.makeHandshake(descFn),dxdy)
+  
+  local desc = R.apply("rseq",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(bucketReduce(descType,8),TILE_W*TILE_H))),desc)
 
   -- it seems like we shouldn't need a FIFO here, but we do: the changeRate downstream will only be ready every 1/8 cycles.
   -- We need a tiny fifo to hold the reduceseq output, to keep it from stalling. (the scheduling isn't smart enough to know
@@ -310,20 +321,22 @@ local function siftKernel(dxdyType)
   --local desc1 = C.fifoLoop( fifos, statements, descType, desc1, 256, "d1")
   local desc1 = C.fifo(descType,256)(desc1)
 
-  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(fixedSumPow2(descType,true),128))),desc1)
+  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq(fixedSumPow2(descType,true), 8*TILES_X*TILES_Y ))),desc1)
   local desc_sum = R.apply("sumsqrt",RM.makeHandshake(fixedSqrt(descType)), desc_sum)
   local desc_sum = R.apply("DAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc_sum)
-  local desc_sum = R.apply("sumup",RM.upsampleXSeq( descType, 1, 128), desc_sum)
+  
+  local desc_sum = R.apply("sumup",RM.upsampleXSeq( descType, 1, 8*TILES_X*TILES_Y), desc_sum)
   local desc_sum = R.apply("Didx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc_sum)
 
   local desc = R.apply("pt",RM.packTuple{types.RV(types.Par(descType)),types.RV(types.Par(descType))},R.concat("PTT",{desc0,desc_sum}))
   local desc = R.apply("ptt",RM.makeHandshake(fixedDiv(descType)),desc)
   local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
-  local desc = R.apply("repack",RM.liftHandshake(RM.changeRate(descType,1,1,128)),desc)
+  local desc = R.apply("repack",RM.liftHandshake(RM.changeRate( descType, 1, 1, 8*TILES_X*TILES_Y )),desc)
+
   -- we now have an array of type descType[128]. Add the pos.
-  local desc_pack = R.apply("dp", RM.packTuple{types.RV(types.Par(types.array2d(descType,128))),types.RV(types.Par(posType)),types.RV(types.Par(posType))},R.concat("DPT",{desc,posX,posY}))
-  local desc = R.apply("addpos",RM.makeHandshake(addDescriptorPos(descType)), desc_pack)
+  local desc_pack = R.apply("dp", RM.packTuple{types.RV(types.Par(types.array2d( descType, 8*TILES_X*TILES_Y ))),types.RV(types.Par(posType)),types.RV(types.Par(posType))},R.concat("DPT",{desc,posX,posY}))
+  local desc = R.apply("addpos",RM.makeHandshake(addDescriptorPos( descType, TILES_X, TILES_Y )), desc_pack)
 
   table.insert(statements,1,desc)
 
@@ -390,17 +403,19 @@ local function makeHarrisWithDXDY(dxdyType, W,H, window)
 end
 ----------------
 
-local function descInner(dxdyType,W,H)
+local function descInner( dxdyType, W, H, TILES_X, TILES_Y, TILE_W, TILE_H )
   assert(types.isType(dxdyType))
   assert(type(W)=="number")
   assert(type(H)=="number")
+  assert(type(TILE_W)=="number")
+  assert(type(TILE_H)=="number")
 
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
   local inp = R.input(types.rv(types.Par(types.array2d(DXDY_PAIR,1))))
 
-  local out = R.apply("ST",C.stencilLinebuffer(DXDY_PAIR,W,H,1,-15,0,-15,0), inp)
+  local out = R.apply("ST",C.stencilLinebuffer( DXDY_PAIR, W, H, 1, -TILE_W*TILES_X+1, 0, -TILE_H*TILES_Y+1, 0 ), inp)
 
-  local PS = RM.posSeq(W,H,1)
+  local PS = RM.posSeq( W, H, 1 )
   local pos = R.apply("posseq", PS, G.ValueToTrigger(inp) )
   local pos = R.apply("pidx",C.index(types.array2d(types.tuple{types.uint(16),types.uint(16)},1),0,0),pos)
   
@@ -408,10 +423,12 @@ local function descInner(dxdyType,W,H)
   return RM.lambda("descinner",inp,out)
 end
 
-function sift.siftDesc(W,H,inputT,X)
+function sift.siftDesc( W, H, inputT, TILES_X, TILES_Y, X )
   assert(type(W)=="number")
   assert(type(H)=="number")
   assert(type(inputT)=="number")
+  assert(type(TILES_X)=="number")
+  assert(type(TILES_Y)=="number")
   assert(X==nil)
 
   local ITYPE = types.array2d(types.uint(8),inputT)
@@ -421,33 +438,35 @@ function sift.siftDesc(W,H,inputT,X)
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
 
   local dxdyType = types.Float32
-  local out = R.apply("dxdy",dxdyFn,inp)
+  local out = R.apply( "dxdy", dxdyFn, inp )
   
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
-  local DXDY_ST = types.array2d(DXDY_PAIR,16,16)
+  local DXDY_ST = types.array2d( DXDY_PAIR, TILES_X*4, TILES_Y*4 )
   --- now stencilify dxdy
 
   out = G.Map{G.TupleToArray}(out)
   out = G.Map{G.Map{G.Float}}(out)
   out = G.Map{G.ArrayToTuple}(out)
   
-  local DI = descInner(dxdyType,W,H)
+  local DI = descInner( dxdyType, W, H, TILES_X, TILES_Y, 4, 4 )
   local out = R.apply("desc_inner",RM.makeHandshake(DI),out)
   local out = R.apply("AO", RM.makeHandshake(C.arrayop(DI.outputType:extractData(),1,1)), out)
   local out = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq( DI.outputType:extractData(), W, H, 1, 15, 0, 15, 0))), out)
   local out = R.apply("I0", RM.makeHandshake(C.index(types.array2d(DI.outputType:extractData(),1),0,0)), out)
 
-  local siftFn, descType = siftKernel(dxdyType)
+  local siftFn, descType = siftKernel( dxdyType, TILES_X, TILES_Y, 4, 4 )
   local out = R.apply("sft", siftFn, out)
 
-  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,130,2)), out )
+  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,2+8*TILES_Y*TILES_X,2)), out )
 
   local fn = RM.lambda( "harris", inpraw, out)
   return fn, descType
 end
 
-function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
+function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X )
   assert(type(FILTER_FIFO)=="number")
+  assert(type(TILES_X)=="number")
+  assert(type(TILES_Y)=="number")
   assert(X==nil)
 
   local fifos = {}
@@ -485,7 +504,7 @@ function sift.siftTop(W,H,T,FILTER_RATE,FILTER_FIFO,X)
 
   out = C.fifo(FILTER_TYPE,FILTER_FIFO,nil,true)(out)
 
-  local siftFn, descType = siftKernel(dxdyType)
+  local siftFn, descType = siftKernel( dxdyType, TILES_X, TILES_Y, 4, 4 )
   local out = R.apply("sft", siftFn, out)
 
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,130,2)), out )

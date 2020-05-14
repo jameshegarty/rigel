@@ -553,7 +553,7 @@ function common.err(asst, ...)
   if asst==true then
     local tab = {...}
     for k,v in ipairs(tab) do
-      if type(v)=="string" and #v>1000 and string.sub(v,1,5)~="stack" and string.sub(v,1,1)~="@" then
+      if type(v)=="string" and #v>1045 and string.sub(v,1,5)~="stack" and string.sub(v,1,1)~="@" then
         print("CRAZY ERR STR",#v)
         print(v)
         assert(false)

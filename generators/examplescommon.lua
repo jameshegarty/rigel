@@ -54,14 +54,20 @@ C.fassert = memoize(function(filename,A)
   return rigel.newFunction(fassert)
 end)
 
-C.print = memoize(function(A,str)
+-- showIfInvalid: display data, even if it's invalid
+C.print = memoize(function( A, str, showIfInvalid, X )
   err(types.isBasic(A),"C.print: type should be basic, but is: "..tostring(A) )
+  assert(X==nil)
+
+  if showIfInvalid==nil then showIfInvalid=false end
   
   local function constructPrint(A,symb)
+
     if A:isUint() or A:isInt() or A:isBits() then
-      return {A}, "%d", {symb}
+      return {A}, "%0d", {symb}
     elseif A:isFloat() then
-      return {A}, "%d", {symb}
+      -- $bitstoreal could maybe be used?
+      return {A}, "%0d", {symb}
     elseif A:isArray() then
       local resTypes={}
       local resStr="["
@@ -80,7 +86,7 @@ C.print = memoize(function(A,str)
       local resStr="{"
       local resValues={}
       for i=1,#A.list do
-        local tT,tS,tV = constructPrint(A.list[1],S.index(symb,i-1))
+        local tT,tS,tV = constructPrint(A.list[i],S.index(symb,i-1))
         resStr = resStr..tS..","
         table.insert(resTypes,tT)
         table.insert(resValues,tV)
@@ -101,7 +107,7 @@ C.print = memoize(function(A,str)
 
     local typelist, printStr, valuelist = constructPrint(A,inp)
     if str~=nil then printStr = str.." "..printStr end
-    local printInst = sm:add( S.module.print( types.tuple(typelist), printStr, true):instantiate("printInst") )
+    local printInst = sm:add( S.module.print( types.tuple(typelist), printStr, true, showIfInvalid ):instantiate("printInst") )
     local pipelines = {printInst:process( S.tuple(valuelist) )}
     sm:addFunction( S.lambda("process", inp, inp, "process_output", pipelines,nil,S.CE("process_CE")) )
     sm:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "reset_out",{printInst:reset()}) )
@@ -551,7 +557,8 @@ C.removeLSBs = memoize(function( A, bits, keepMagnitude, X )
 end)
 
 -----------------------------
-C.select = memoize(function(ty)
+C.select = memoize(function(ty, X)
+  assert( X==nil )
   err(types.isType(ty), "C.select error: input must be type")
   local ITYPE = types.tuple{types.bool(),ty,ty}
 
@@ -562,7 +569,8 @@ C.select = memoize(function(ty)
   return selm
 end)
 -----------------------------
-C.eq = memoize(function(ty)
+C.eq = memoize(function( ty, X )
+  assert( X==nil )
   err(types.isType(ty), "C.eq error: input must be type")
   local ITYPE = types.tuple{ty,ty}
 
@@ -574,7 +582,8 @@ C.eq = memoize(function(ty)
 end)
 
 -----------------------------------------
-C.NE = memoize(function(ty)
+C.NE = memoize(function(ty, X)
+  assert( X==nil )
   err(types.isType(ty) and ty:isData(), "C.ne error: input must be data type")
   local ITYPE = types.tuple{ty,ty}
 
@@ -2108,15 +2117,33 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
   err( X==nil, "C.slice: too many arguments")
 
   if inputType:isTuple() then
-    assert( idxLow < #inputType.list )
+    err( idxLow < #inputType.list, "slice: idxLow=",idxLow," is out of bounds for type: ",inputType )
     assert( idxHigh < #inputType.list )
-    assert( idxLow == idxHigh ) -- NYI
-    assert( index )
-    local OT = inputType.list[idxLow+1]
+    --assert( idxLow == idxHigh ) -- NYI
+    --assert( index )
+    assert( index==false or idxLow==idxHigh )
+    local OT = {}
+    for i=idxLow,idxHigh do
+      table.insert( OT, inputType.list[i+1] )
+    end
 
-    local res = modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow), inputType:extractData(), OT:extractData(), 0,
-      function(systolicInput) return S.index( systolicInput, idxLow ) end,
-      function() return CT.sliceTup(inputType,OT,idxLow) end,
+    OT = types.tuple(OT)
+    if index then OT = OT.list[1] end
+    
+    local res = modules.lift( J.sanitize("index_"..tostring(inputType).."_"..idxLow.."_"..idxHigh.."_"..tostring(index)), inputType:extractData(), OT:extractData(), 0,
+      function(systolicInput)
+        local lst = {}
+        for i=idxLow,idxHigh do
+          table.insert(lst, S.index( systolicInput, i ) )
+        end
+
+        if index then
+          return lst[1]
+        else
+          return S.tuple(lst)
+        end
+      end,
+      function() return CT.sliceTup( inputType, OT, idxLow, idxHigh, index ) end,
       "C.slice")
 
     -- hack: type may be a schedule type
@@ -3233,6 +3260,53 @@ endmodule
   return res
 end)
 
+C.FloatToInt = J.memoize(function( exp, sig, signed, intWidth, X )
+  err( type(exp)=="number","C.FloatToInt: exp should be number, but is: ",exp )
+  err( type(sig)=="number" ,"C.FloatToInt: sig should be number, but is: ",sig )
+  err( X==nil )
+
+  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
+  local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
+  local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v", HardFloat_specialize, HardFloat_consts )
+  local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v", HardFloat_consts)
+  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
+  local recFNToIN = C.VerilogFile("generators/hardfloat/source/recFNToIN.v", HardFloat_consts, HardFloat_specialize, HardFloat_localFuncs, HardFloat_rawFN, HardFloat_specializev, HardFloat_primitives )
+
+  local inst = {}
+  local ftoi = recFNToIN:instantiate("ftof")
+  inst[ftoi] = 1
+  
+  local res = R.newFunction{ name=J.sanitize("FloatToInt_".."_exp"..tostring(exp).."_"..tostring(sig).."_signed"..tostring(signed).."_"..tostring(intWidth)), inputType = types.rv(types.FloatRec(exp,sig)), outputType=types.rv( J.sel(signed, types.int(intWidth), types.uint(intWidth)) ), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+    
+    verilog = verilog..[[
+
+wire [2:0] exception;
+recFNToIN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[),.intWidth(]]..intWidth..[[)) ftoi (.control(`flControl_default),
+.in(process_input),
+.roundingMode(`round_minMag),
+.signedOut(]]..J.sel(signed,"1'b1","1'b0")..[[),
+.out(process_output),
+.intExceptionFlags(exception));
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+
+  function res.makeTerra()
+    return CT.FloatToInt( res, exp, sig, signed, intWidth )
+  end
+  
+  return res
+end)
+
 -- floating point add
 -- subtract: do a subtract instead
 C.sumF = J.memoize(function( exp, sig, subtract, X )
@@ -3400,12 +3474,15 @@ C.mulFConst = J.memoize(function( exp, sig, value, X )
       return G.MulF(i,G.FloatRec{32}(R.c(types.Float32,value)))
     end}
 end)
-  
-C.SqrtF = J.memoize(function( exp, sig, X )
+
+-- doDiv: do a division instead of a sqrt
+C.SqrtF = J.memoize(function( exp, sig, doDiv, X )
   err( type(exp)=="number" )
   err( type(sig)=="number" )
   err( X==nil )
 
+  if doDiv==nil then doDiv = false end
+  
   --local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
   local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
   --local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
@@ -3421,8 +3498,10 @@ C.SqrtF = J.memoize(function( exp, sig, X )
 
   -- depends on input, but this is what it approximatley is according to the docs
   local approxCycles = sig+3
-  
-  local res = R.newFunction{ name=J.sanitize("FloatSqrt_"..tostring(exp).."_"..tostring(sig)), inputType = types.RV(types.FloatRec(exp,sig)), outputType=types.RV(types.FloatRec(exp,sig)), sdfInput=SDF{1,approxCycles}, sdfOutput=SDF{1,approxCycles}, stateful=true, instanceMap=inst, delay=0 }
+
+  local inpty = types.RV(types.FloatRec(exp,sig))
+  if doDiv then inpty = types.RV(types.tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}) end
+  local res = R.newFunction{ name=J.sanitize("Float"..J.sel(doDiv,"Div_","Sqrt_")..tostring(exp).."_"..tostring(sig)), inputType = inpty, outputType=types.RV(types.FloatRec(exp,sig)), sdfInput=SDF{1,approxCycles}, sdfOutput=SDF{1,approxCycles}, stateful=true, instanceMap=inst, delay=0 }
 
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
@@ -3477,11 +3556,11 @@ wire [4:0] exceptionFlags;
 divSqrtRecFN_small #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) divsqrtunit (.nReset(!reset),
 .clock(CLK),
 .control(`flControl_default),
-.sqrtOp(1'b1),
+.sqrtOp(]]..J.sel(doDiv,"1'b0","1'b1")..[[),
 .inReady( unitReady ),
 .inValid( unitValid ),
-.a( ]]..res:vInputData()..[[ ),
-.b( 33'd0 ),
+.a( process_input[32:0] ),
+.b( ]]..J.sel(doDiv,"process_input[65:33]","33'd0")..[[ ),
 .roundingMode( `round_near_even ),
 .outValid( outValid ),
 .sqrtOpOut( sqrtOpOut ),
@@ -3497,10 +3576,8 @@ endmodule
     return s
   end
 
-  function res.makeTerra()
-    return CT.Sqrt( res, exp, sig )
-  end
-
+  function res.makeTerra() return CT.Sqrt( res, exp, sig, doDiv ) end
+  
   return res
 end)
 
@@ -3523,8 +3600,14 @@ C.CMPF = J.memoize(function( exp, sig, op, X )
   local inst = {}
   local cf = compareRecFN:instantiate("cmp")
   inst[cf] = 1
+
+  local ops
+  if op==">" then ops="gt"
+  elseif op==">=" then ops="ge"
+  elseif op=="<" then ops="lt"
+  else assert(false) end
   
-  local res = R.newFunction{ name=J.sanitize("FloatCMP_"..tostring(exp).."_"..tostring(sig).."_"..op), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.Bool), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
+  local res = R.newFunction{ name=J.sanitize("FloatCMP_"..tostring(exp).."_"..tostring(sig).."_"..ops), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.Bool), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
 
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
@@ -3555,6 +3638,10 @@ compareRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) cmpinst (.a(proces
 
     if op==">" then
       verilog = verilog.."assign process_output = gt;\n"
+    elseif op==">=" then
+      verilog = verilog.."assign process_output = gt || eq;\n"
+    elseif op=="<" then
+      verilog = verilog.."assign process_output = lt;\n"
     else
       assert(false)
     end
@@ -3572,6 +3659,39 @@ endmodule
   end
 
   return res
+end)
+
+C.NegF = J.memoize(function()
+    local G = require "generators.core"
+    return G.Function{"NegF",types.rv(types.FloatRec32),
+                                      function(i) return G.SubF(R.c(0,types.FloatRec32),i) end}
+
+end)
+
+C.ConcatConst = J.memoize(function( ty, constTy, constValue)
+    local G = require "generators.core"
+    return G.Function{"ConcatConst_"..tostring(ty).."_"..tostring(constTy).."_"..tostring(constValue),
+                      types.rv(ty),
+                      function(i) return R.concat{i,R.c(constTy,constValue)} end}
+
+end)
+
+C.ApplyTo = J.memoize(function( ty, fn, stream )
+    local G = require "generators.core"
+    return G.Function{"ApplyTo_"..tostring(ty).."_"..tostring(fn.name).."_"..tostring(stream),
+                      types.rv(ty),
+                      function(i)
+                        local tmp = fn(i[stream])
+                        local out = {}
+                        for j=1,#ty.list do
+                          if j-1==stream then
+                            table.insert( out, tmp )
+                          else
+                            table.insert( out, i[j-1] )
+                          end
+                        end
+                        return R.concat(out)
+    end}
 end)
 
 return C

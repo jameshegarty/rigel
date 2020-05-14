@@ -115,7 +115,7 @@ local function valueOrTypeToParam(V)
   else
     p = params[firstToUpper(V.kind).."Type"]
   end
-  J.err(p~=nil,"No corresponding param for type "..V.kind.." "..tostring(V))
+  J.err(p~=nil,"No corresponding param for type ",V.kind," ",V)
   return p("tmp")
 end
 

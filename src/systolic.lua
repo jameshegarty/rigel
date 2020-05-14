@@ -1476,8 +1476,8 @@ end
 function systolic.parameter( name, ty )
   err( type(name)=="string", "parameter name must be string" )
   checkReserved(name)
-  err( types.isType(ty), "systolic.parameter: type must be type but is "..tostring(ty) )
-  err( types.isBasic(ty),"systolic.paramter: type must be basic, but is: "..tostring(ty) )
+  err( types.isType(ty), "systolic.parameter: type must be type but is ",ty )
+  err( types.isBasic(ty),"systolic.paramter: type must be basic, but is: ",ty )
   return systolicAST.new({kind="parameter",name=name,type=ty,inputs={},key={},loc=getloc()})
 end
 
@@ -1795,9 +1795,9 @@ function systolic.module.new( name, fns, instances, onlyWire, parameters, verilo
   checkReserved(name)
   err( type(fns)=="table", "functions must be a table")
 
-  J.map(fns, function(n,i) err( systolic.isFunction(n), "systolic.module.new: functions table must be systolic functions, but fn '"..i.."' is: "..tostring(n) ) end )
+  J.map(fns, function(n,i) err( systolic.isFunction(n), "systolic.module.new: functions table must be systolic functions, but fn '",i,"' is: ",n ) end )
   
-  err( type(instances)=="table", "instances must be a table, but is: "..tostring(instances).." module: "..name)
+  err( type(instances)=="table", "instances must be a table, but is: ",instances," module: ",name)
   J.map(instances, function(n) err( systolic.isInstance(n), "instances must be systolic instances" ) end )
 
   local instanceMap = J.invertTable(instances)
@@ -2351,6 +2351,12 @@ function fileModuleFunctions:instanceToVerilog( instance, fnname, datavar, valid
     decl = "assign "..instance.name.."_WRITE_INPUT = "..datavar..";\n"
     decl = decl.."assign "..instance.name.."_WRITE_VALID = "..validvar..";\n"
     decl = decl.."assign "..instance.name.."_WRITE_CE = "..cevar..";\n"
+  elseif fnname=="reset" then
+    assert(type(validvar)=="string")
+    decl = "assign "..instance.name.."_RESET = "..validvar..";\n"
+  else
+    print("fileModule unknown function ",fnname)
+    assert(false)
   end
   return instance.name.."_"..fn.outputName, decl, true
 end
@@ -2436,11 +2442,15 @@ table.insert(res,[[  end
   reg ]]..instance.name..[[_dowrite=1'b0;
 
   always @ (posedge CLK) begin 
-    ]]..bufferassn..oassign..[[
-    if (]]..instance.name..[[_dowrite]]..J.sel(self.hasCE," && "..instance.name.."_WRITE_CE","")..[[) begin 
-      ]]..assn..[[ 
+    if(]]..instance.name..[[_RESET) begin
+      ]]..instance.name..[[_dowrite <= 1'b0;
+    end else begin
+      ]]..bufferassn..oassign..[[
+      if (]]..instance.name..[[_dowrite]]..J.sel(self.hasCE," && "..instance.name.."_WRITE_CE","")..[[) begin 
+        ]]..assn..[[ 
+      end
+      if (]]..J.sel(self.hasCE,instance.name.."_WRITE_CE","true")..[[) begin ]]..instance.name..[[_dowrite<=]]..instance.name.."_WRITE_VALID"..[[; end 
     end
-    if (]]..J.sel(self.hasCE,instance.name.."_WRITE_CE","true")..[[) begin ]]..instance.name..[[_dowrite<=]]..instance.name.."_WRITE_VALID"..[[; end 
   end
 ]])
 
@@ -2642,7 +2652,7 @@ function systolic.module.print( ty, str, CE, showIfInvalid, cycleCounter, X )
   if CE==nil then CE=false end
   if showIfInvalid==nil then showIfInvalid=true end
   if cycleCounter==nil then cycleCounter=true end
-  
+
   local res = {name="_PRINT", kind="print",str=str, type=ty, CE=CE, showIfInvalid=showIfInvalid, externalInstances={}, cycleCounter=cycleCounter}
   res.functions={}
   res.functions.process={name="process",output={type=types.null()},inputParameter={name="PRINT_INPUT",type=ty},outputName="out",valid={name="process_valid"},CE=J.sel(CE,systolic.CE("CE"),nil)}
