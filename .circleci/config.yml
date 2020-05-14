@@ -25,6 +25,19 @@ jobs:
       - run: cat examples/out/*.compiletime.txt
       - run: cat examples/out/*.runtime.txt
       - run: test -e examples/out/verilator_done.txt || exit
+  verilatorSIG16:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - run: sudo apt-get install luajit flex bison time
+      - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
+      - run: verilator --version
+      - run: cd examples; make verilatorSIG16
+      - run: cat examples/out/*.luatime.txt
+      - run: cat examples/out/*.compiletime.txt
+      - run: cat examples/out/*.runtime.txt
+      - run: test -e examples/out/verilatorSIG16_done.txt || exit
   verilatorSOC:
     docker:
       - image: circleci/python:3.7.1
@@ -115,6 +128,7 @@ workflows:
     jobs:
       - verilog
       - verilator
+      - verilatorSIG16
       - verilatorSOC
       - unit
       - terra
