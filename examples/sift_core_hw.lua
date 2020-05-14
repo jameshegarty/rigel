@@ -17,24 +17,6 @@ GAUSS_SIGMA = 5 --5
 
 sift = {}
 
-sift.fixedDiv = J.memoize(function(A)
-  assert(types.isType(A))
-  local inp = f.parameter("II",types.tuple{A,A})
-  local out = (inp:index(0))*(inp:index(1):invert())
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("fixedDiv")
-                   end)
-
-sift.fixedLift = J.memoize(function(A)
-  assert(types.isType(A))
-  local inp = f.parameter("IIlift",A)
-  local out = inp:lift()
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("fixedLift_"..tostring(A):gsub('%W','_'))
-                   end)
-
 local Clamp = G.Function{"Clampint8",types.rv(types.FloatRec32),
   function(i)
     local v127 = G.FtoFR(R.c(types.Float32,127))
