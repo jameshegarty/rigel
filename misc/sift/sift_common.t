@@ -55,6 +55,15 @@ return 0;
 
 ]], {"-Wno-nullability-completeness"})
 
+terra common.MAG(a:&float)
+  var sum : float = 0
+  for i=0,common.TILES_X*common.TILES_Y*8 do
+    if common.C.isNAN(a[i])==0 then
+      sum = sum + a[i]*a[i]
+    end
+  end
+  return common.C.sqrtf(sum)
+end
 
 terra common.DOT(a:&float,b:&float)
   var sum : float = 0

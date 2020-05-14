@@ -1072,6 +1072,19 @@ function(args)
   end
 end)
 
+generators.LTF = R.FunctionGenerator("core.LTF",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple(), "LTF: expected tuple input, but was: ",args.type )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "LTF: lhs and rhs must have same types! but input type is: ",args.type )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.CMPF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, "<" )
+  end
+end)
+
 generators.GEF = R.FunctionGenerator("core.GTF",{"type","rate"},{"async","number"},
 function(args)
   local res = {}

@@ -620,6 +620,10 @@ function CT.CMPF( res, exp, sig, op )
     terra CMPF:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
       @out = (@inp)._0 >= (@inp)._1
     end
+  elseif op=="<" then
+    terra CMPF:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+      @out = (@inp)._0 < (@inp)._1
+    end
   else
     assert(false)
   end

@@ -9,8 +9,8 @@ THRESH = tonumber(arg[8])
 
 print("USAGE: rigelTerra INFILE_features INFILE_W INFILE_H TARGET_features TARGET_W TARGET_H output THRESH")
 print("INFILE_features is the file we are searching in")
-print("TARGET_featuers is the thing we're searching for")
-print("THRESH: only display matches below this cost ",THRESH)
+print("TARGET_featuers is the thing we're searching for (aka the template. typically, the smaller image!)")
+print("THRESH: ratio test, only return matches where the second best is less than this pct of the best (should be <=1) ",THRESH)
 
 --print("ARG",arg[0])
 
@@ -44,27 +44,32 @@ terra match()
 
   SC.C.printf("SearchCount %d TargetCount %d\n",searchCnt, targetCnt)
 
-  var bestMatch : &int = [&int](SC.C.malloc(searchCnt*sizeof(int)))
-  var bestMatchDist : &float = [&float](SC.C.malloc(searchCnt*sizeof(float)))
-
+  var bestMatch : &int = [&int](SC.C.malloc(targetCnt*sizeof(int)))
+  var bestMatchDist : &float = [&float](SC.C.malloc(targetCnt*sizeof(float)))
+  var secondBestMatchDist : &float = [&float](SC.C.malloc(targetCnt*sizeof(float)))
+  
   var max : float = 0
   var min : float = 10000000.f
-  for S=0,searchCnt do
+  for T=0,targetCnt do
     var set : bool = false
-    for T=0,targetCnt do
+        
+    for S=0,searchCnt do
       var A = &f0_data[S*SC.DESC_SIZE+2]
       var B = &f1_data[T*SC.DESC_SIZE+2]
       var d = SC.DOT(A,B)
 
-      if (set==false or d>bestMatchDist[S]) then
-        bestMatch[S] = T
-        bestMatchDist[S] = d
+      -- SC.C.printf("MAG %f %f\n",SC.MAG(A), SC.MAG(B) )
+      
+      if (set==false or d>bestMatchDist[T]) then
+        bestMatch[T] = S
+        secondBestMatchDist[T] = bestMatchDist[T]
+        bestMatchDist[T] = d
         set=true
       end
     end
 
-    if bestMatchDist[S]>max then max=bestMatchDist[S] end
-    if bestMatchDist[S]<min then min=bestMatchDist[S] end
+    if bestMatchDist[T]>max then max=bestMatchDist[T] end
+    if bestMatchDist[T]<min then min=bestMatchDist[T] end
   end
 
   SC.C.printf("MAX %f MIN %f\n",max,min)
@@ -79,8 +84,8 @@ terra match()
     end
   end
 
-  for S=0,searchCnt do
-    var T = bestMatch[S]
+  for T=0,targetCnt do
+    var S = bestMatch[T]
     var x = [int](f0_data[S*SC.DESC_SIZE])
     var y = [int](f0_data[S*SC.DESC_SIZE+1])
 
@@ -90,11 +95,13 @@ terra match()
     var targetXPct = ([float](targetX)/[float](TARGET_W))*[float](255)
     var targetYPct = ([float](targetY)/[float](TARGET_H))*[float](255)
 
-    if bestMatchDist[S]<THRESH then
+    var ratio = secondBestMatchDist[T]/bestMatchDist[T]
+
+    if ratio<THRESH then
       out[y*W*3+x*3] = [uint8](targetXPct)
       out[y*W*3+x*3+1] = [uint8](targetYPct)
 
-      var d = (bestMatchDist[S]-min)/(max-min)
+      var d = (bestMatchDist[T]-min)/(max-min)
       d = d * 255
       out[y*W*3+x*3+2] = d
     end

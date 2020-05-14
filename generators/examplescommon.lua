@@ -3604,6 +3604,7 @@ C.CMPF = J.memoize(function( exp, sig, op, X )
   local ops
   if op==">" then ops="gt"
   elseif op==">=" then ops="ge"
+  elseif op=="<" then ops="lt"
   else assert(false) end
   
   local res = R.newFunction{ name=J.sanitize("FloatCMP_"..tostring(exp).."_"..tostring(sig).."_"..ops), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.Bool), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
@@ -3639,6 +3640,8 @@ compareRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) cmpinst (.a(proces
       verilog = verilog.."assign process_output = gt;\n"
     elseif op==">=" then
       verilog = verilog.."assign process_output = gt || eq;\n"
+    elseif op=="<" then
+      verilog = verilog.."assign process_output = lt;\n"
     else
       assert(false)
     end

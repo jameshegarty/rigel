@@ -13,35 +13,9 @@ local G = require "generators.core"
 local siftTerra
 if terralib~=nil then siftTerra = require("sift_core_hw_terra") end
 
---TILES_X = 4
---TILES_Y = 4
 GAUSS_SIGMA = 5 --5
 
-
---RED_TYPE = types.int(32)
---RED_SCALE = 1024/GRAD_SCALE -- 1024
-
 sift = {}
-
---[=[local fixedSum = J.memoize(function(A)
-  assert(types.isType(A))
-  local inp = f.parameter("II",types.tuple{A,A})
-  local out = inp:index(0)+inp:index(1)
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("fixedSum")
-                   end)
-]=]
---[=[
-local fixedSumPow2 = J.memoize(function(A)
-  assert(types.isType(A))
-  local inp = f.parameter("II",types.tuple{A,A})
-  local out = inp:index(0)+(inp:index(1)*inp:index(1))
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("fixedSumPow2")
-                   end)
-]=]
 
 sift.fixedDiv = J.memoize(function(A)
   assert(types.isType(A))
@@ -52,15 +26,6 @@ sift.fixedDiv = J.memoize(function(A)
   return out:toRigelModule("fixedDiv")
                    end)
 
---[=[sift.fixedSqrt = J.memoize(function(A)
-  assert(types.isType(A))
-  local inp = f.parameter("II",A)
-  local out = inp:sqrt()
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("fixedSqrt")
-                   end)
-]=]
 sift.fixedLift = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("IIlift",A)
@@ -70,31 +35,34 @@ sift.fixedLift = J.memoize(function(A)
   return out:toRigelModule("fixedLift_"..tostring(A):gsub('%W','_'))
                    end)
 
---[=[
-sift.lowerPair = J.memoize(function(FROM,TO,scale)
-  assert(types.isType(FROM))
-  assert(types.isType(TO))
-  local inp = f.parameter("IIlift",types.tuple{FROM,FROM})
-  local out = f.tuple{(inp:index(0)*f.constant(scale)):lower(TO),(inp:index(1)*f.constant(scale)):lower(TO)}
---  out = out:disablePipelining()
---  out = out:cast(A)
-  return out:toRigelModule("lowerpair")
-                   end)
-]=]
-sift.lowerPair = J.memoize(function(FROM,TO,scale, X )
+local Clamp = G.Function{"Clampint8",types.rv(types.FloatRec32),
+  function(i)
+    local v127 = G.FtoFR(R.c(types.Float32,127))
+    local vm128 = G.FtoFR(R.c(types.Float32,-128))
+    local tmp = G.Sel(G.GTF(i,v127),v127,i)
+    local tmp = G.Sel(G.LTF(i,vm128),vm128,tmp)
+    return tmp
+  end}
+                                             
+sift.lowerPair = J.memoize(function( FROM, TO, scale, X )
   assert(types.isType(FROM))
   assert(types.isType(TO))
   assert( scale==math.floor(scale) )
   assert( X==nil )
 
-  print("FROMTO",FROM,TO )
   assert( FROM:isFloat() )
   assert( TO:isInt() )
   assert(TO==types.int(8))
-  
+  assert( scale==4 )
+
   return G.Function{"LowerPair",types.rv(types.tuple{FROM,FROM}),
     function(i)
-      return R.concat{G.FRtoI{8}(G.MulF{scale}(G.FloatRec{32}(i[0]))),G.FRtoI{8}(G.MulF{scale}(G.FloatRec{32}(i[1])))}
+      local tmp = R.concat{G.MulF{scale}(G.FloatRec{32}(i[0])), G.MulF{scale}(G.FloatRec{32}(i[1]))}
+
+      tmp = G.TupleToArray(tmp)
+      tmp = G.Map{Clamp}(tmp)
+      tmp = G.Map{G.FRtoI{8}}(tmp)
+      return G.ArrayToTuple(tmp)
     end}
 end)
   
@@ -619,9 +587,9 @@ function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
   out = G.Map{G.TupleToArray}(out)
   out = G.Map{G.Map{G.Float}}(out)
   out = G.Map{G.ArrayToTuple}(out)
-
+  
   out = R.apply("pad", RM.liftHandshake(RM.padSeq(DXDY_PAIR, W, H, 1, 7, 8, 7, 8, {0,0})), out)
-
+  
   out = R.apply("dxdyix",RM.makeHandshake(C.index(types.array2d(DXDY_PAIR,1,1),0,0)),out)
 
   local dxdyBroad = R.apply("dxdy_broad", RM.broadcastStream(types.Par(DXDY_PAIR),2), out)
@@ -655,11 +623,11 @@ function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
   local left = R.selectStream("d0",dxdyBroad,0)
 
   if GRAD_INT then
-    left = R.apply("lower", RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)), left)
+    left = R.apply("lower", RM.makeHandshake(sift.lowerPair( dxdyType, GRAD_TYPE, GRAD_SCALE)), left)
     dxdyType = GRAD_TYPE
     DXDY_PAIR = types.tuple{GRAD_TYPE,GRAD_TYPE}
   end
-  
+
   left = C.fifo(DXDY_PAIR,2048/DXDY_PAIR:verilogBits())(left)
 
   local left = R.apply("stlbinp", RM.makeHandshake(C.arrayop(DXDY_PAIR,1,1)), left)
@@ -670,7 +638,7 @@ function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
 
   local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4),types.tuple{types.uint(16),types.uint(16)}}
   local FILTER_PAIR = types.tuple{FILTER_TYPE,types.bool()}
-
+  
   -- merge left/right
   local out = R.apply("merge",RM.packTuple{types.RV(types.Par(FILTER_TYPE)),types.RV(types.Par(types.bool()))},R.concat("MPT",{left,right}))
 
@@ -684,7 +652,9 @@ function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
   local out = C.fifo(FILTER_TYPE,FILTER_FIFO)(out)
 
   local siftFn, descType = sift.siftKernel( dxdyType, TILES_X, TILES_Y )
+
   local out = R.apply("sft", siftFn, out)
+
   local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2)), out )
 
   -- bitcast to uint8[8] for display...
