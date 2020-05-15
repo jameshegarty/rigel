@@ -19,7 +19,8 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_VERILATOR_SOC))	
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_VERILATOR_SOC))
 
-SRCS_YOSYS_SOC = $(filter-out soc_lk_12_12.lua, $(SRCS_SOC))
+# too slow
+SRCS_YOSYS_SOC = $(filter-out soc_convgenTaps_8_2105413.lua soc_convgenTaps_8_4204896.lua soc_convgenTaps_8_1059864.lua  soc_convgenTaps_8_526381.lua soc_lk_12_12.lua, $(SRCS_SOC))
 
 YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_YOSYS_SOC))
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.cellscorrect.txt,$(SRCS_YOSYS_SOC))
@@ -292,7 +293,7 @@ VERILATOR_SIG16 += $(patsubst %.lua,$(BUILDDIR)/%.verilator.cyclescorrect.txt,$(
 
 # remove SIG16 tests from verilator test
 # spaghetti code!!
-SRCS_VERILATOR := $(filter-out $(SIG16), $(SRCS_VERILATOR))
+SRCS_VERILATOR := $(filter-out $(SIG16_EXT), $(SRCS_VERILATOR))
 
 ZU9VIVADOBITS_SIG16 := $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bit,$(SIG16))
 

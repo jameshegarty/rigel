@@ -1,1 +1,1 @@
-return {InstCall_regs_coeffs=4}
+return {InstCall_regs_coeffs=1}
