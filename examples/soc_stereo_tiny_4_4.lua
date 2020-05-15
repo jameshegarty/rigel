@@ -6,8 +6,11 @@ local SDF = require "sdf"
 local Zynq = require "generators.zynq"
 local harness = require "generators.harnessSOC"
 
-local test = string.sub(arg[0],#arg[0]-9,#arg[0]-6)
-local invV = tonumber( string.sub(arg[0],string.find(arg[0],"%d+")) )
+local test = string.sub(arg[0],12,15)
+
+local first,flen = string.find(arg[0],"%d+")
+local SW = tonumber(string.sub(arg[0],first,flen))
+local invV = tonumber(string.sub(arg[0], string.find(arg[0],"%d+",flen+1)))
 
 local OffsetX = 20 -- we search the range [-OffsetX-SearchWindow, -OffsetX]
 local SADWidth = 8
@@ -31,7 +34,9 @@ else
   assert(false)
 end
 
-local cycles = ((W+OffsetX+SearchWindow)*(H+7))/invV
+assert(SW==SearchWindow)
+
+local cycles = ((W+OffsetX+SearchWindow)*(H+7)*SearchWindow)/invV
 print("CYCLES",cycles)
 
 local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
@@ -111,7 +116,7 @@ local StereoModule = G.SchedulableFunction{ "StereoModule", T.Trigger,
     local res = G.Map{DisplayOutput}(min)
     res = G.Crop{{ OffsetX+SearchWindow, 0, SADWidth-1, 0 }}(res)
     
-    return G.AXIWriteBurst{"out/soc_stereo_"..test.."_"..tostring(invV),noc.write}(res)
+    return G.AXIWriteBurst{"out/soc_stereo_"..test.."_"..tostring(SearchWindow).."_"..tostring(invV),noc.write}(res)
   end}
 
 harness({regs.start, StereoModule, regs.done},nil,{regs})
