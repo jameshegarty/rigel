@@ -3,6 +3,7 @@ local types = require "types"
 local RM = require "generators.modules"
 local C = require "generators.examplescommon"
 local J = require "common"
+local G = require "generators.core"
 
 local function FIFO(fifos,statements,A,inp)
   local id = #fifos
@@ -210,6 +211,11 @@ function makeA( T, dType, window, bits )
   local out3 = R.apply("out3red", RM.makeHandshake(RM.reduce(rsumfn, window/T, window)), out3 )
   local out3 = R.apply("out3redseq", RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( rsumAsyncfn, T ))), out3 )
 
+  out0 = G.FIFO{1}(out0)
+  out1 = G.FIFO{1}(out1)
+  out2 = G.FIFO{1}(out2)
+  out3 = G.FIFO{1}(out3)
+  
   local out = R.concat("out", {out0,out1,out2,out3} )
   out = R.apply("PT",RM.packTuple({types.RV(types.Par(partial_type)),types.RV(types.Par(partial_type)),types.RV(types.Par(partial_type)),types.RV(types.Par(partial_type))},true),out)
   out = R.apply("PTC",RM.makeHandshake(C.tupleToArray(partial_type,4)),out)
