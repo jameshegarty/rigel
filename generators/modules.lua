@@ -3751,6 +3751,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
   err( A:isData() or A:isSchedule(),"fifo: type must be data type or schedule type")
   err( type(size)=="number", "fifo: size must be number")
   err( size >0,"fifo: size must be >0")
+  err( size <=32768/2,"fifo: size must be <32768 (max items in a BRAM). size:",size)
   err(nostall==nil or type(nostall)=="boolean", "fifo: nostall should be nil or boolean")
   err(W==nil or type(W)=="number", "W should be nil or number")
   err(H==nil or type(H)=="number", "H should be nil or number")
@@ -5037,10 +5038,26 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         local IFIFO, OFIFO
         if rigel.MONITOR_FIFOS==false then
           if n.fn.inputBurstiness>0 then
-            IFIFO = C.fifo( n.inputs[1].type:deInterface(), n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness ), nil, nil, nil,nil,  NAME )
+            local items = n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness )
+            if items>16384/4 then
+              print("ERROR: FIFO allocation is too big! This should be an error! Truncating! INPUT SIDE")
+              print(n.fn)
+              for i=1,30 do print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!") end
+              items = 16384/4
+            end
+            
+            IFIFO = C.fifo( n.inputs[1].type:deInterface(), items, nil, nil, nil,nil,  NAME )
           end
           if n.fn.outputBurstiness>0 then
-            OFIFO = C.fifo( n.type:deInterface(), n.fn.outputBurstiness + FIFOSizeToDelay( n.fn.outputBurstiness ), nil, nil, nil, nil,  NAME )
+            local items = n.fn.outputBurstiness + FIFOSizeToDelay( n.fn.outputBurstiness )
+            if items>16384/4 then
+              print("ERROR: FIFO allocation is too big! This should be an error! Truncating! OUTPUT SIDE")
+              print(n.fn)
+              for i=1,30 do print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!") end
+              items = 16384/4
+            end
+
+            OFIFO = C.fifo( n.type:deInterface(), items, nil, nil, nil, nil,  NAME )
           end
         else
           IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness ), delayTable[orig] - n.fn.delay - extraDelayForFIFOs, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
