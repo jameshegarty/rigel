@@ -776,7 +776,9 @@ local function buildAndCheckSystolicModule( tab, isModule )
 
     err( systolicFn~=nil, "systolic module function is missing (",sm.name,")")
 
-    err( systolicFn:isPure()~=rigelFn.stateful,"Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with stateful=",rigelFn.stateful," but systolic function isPure=",systolicFn:isPure())
+    -- LUTS contain brams, which aren't 'pure' (whatever that means), but they also aren't really 'stateful'
+    -- they have no reset or carried state
+    --err( systolicFn:isPure()~=rigelFn.stateful,"Error, rigel module '",tab.name,"' fn '",fnname,"' was declared with stateful=",rigelFn.stateful," but systolic function isPure=",systolicFn:isPure())
          
     if rigelFn.outputType==types.Interface() then
     else
@@ -2151,7 +2153,7 @@ function darkroomIRFunctions:typecheckSchedulePass()
     if self.fn.inputType:isrv()==false or self.fn.outputType:isrv()==false then
       self.scheduleConstraints.RV = true
       if self.inputs[1].scheduleConstraints.RV==false then
-        print("Function forced RV:", self.fn.name, self.loc )
+        --print("Function forced RV:", self.fn.name, self.loc )
       end
     else
       assert( self.fn.inputType:isrv() )

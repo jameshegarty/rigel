@@ -3751,6 +3751,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
   err( A:isData() or A:isSchedule(),"fifo: type must be data type or schedule type")
   err( type(size)=="number", "fifo: size must be number")
   err( size >0,"fifo: size must be >0")
+  err( size <=32768/2,"fifo: size must be <32768 (max items in a BRAM). size:",size)
   err(nostall==nil or type(nostall)=="boolean", "fifo: nostall should be nil or boolean")
   err(W==nil or type(W)=="number", "W should be nil or number")
   err(H==nil or type(H)=="number", "H should be nil or number")
@@ -4080,7 +4081,7 @@ modules.lut = memoize(function( inputType, outputType, values )
     outputType:checkLuaValue(v)
   end
   
-  local res = {kind="lut", inputType=inputType, outputType=outputType, values=values, stateful=true }
+  local res = {kind="lut", inputType=inputType, outputType=outputType, values=values, stateful=false }
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay = 1
   res.name = "LUT_"..verilogSanitize(tostring(inputType)).."_"..verilogSanitize(tostring(outputType)).."_"..verilogSanitize(tostring(values))
@@ -4093,7 +4094,7 @@ modules.lut = memoize(function( inputType, outputType, values )
     
     local lut = systolicModule:add( fpgamodules.bramSDP( true, inputCount*(outputType:verilogBits()/8), inputBytes, outputType:verilogBits()/8, values, true ):instantiate("LUT") )
 
-    systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {},S.parameter("reset",types.bool())) )
+    --systolicModule:addFunction( S.lambda("reset", S.parameter("r",types.null()), nil, "ro", {},S.parameter("reset",types.bool())) )
     
     local sinp = S.parameter("process_input", inputType )
 
@@ -4169,7 +4170,7 @@ modules.reduce = memoize(function( f, W, H, X )
     function res.makeSystolic()
       local systolicModule = Ssugar.moduleConstructor(res.name)
       
-      local resetPipelines = {}
+      --local resetPipelines = {}
       local sinp = S.parameter("process_input", res.inputType:deInterface() )
       local t = J.map( J.range2d(0,W-1,0,H-1), function(i) return S.index(sinp,i[1],i[2]) end )
       
@@ -5037,10 +5038,26 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         local IFIFO, OFIFO
         if rigel.MONITOR_FIFOS==false then
           if n.fn.inputBurstiness>0 then
-            IFIFO = C.fifo( n.inputs[1].type:deInterface(), n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness ), nil, nil, nil,nil,  NAME )
+            local items = n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness )
+            if items>16384/4 then
+              print("ERROR: FIFO allocation is too big! This should be an error! Truncating! INPUT SIDE")
+              print(n.fn)
+              for i=1,30 do print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!") end
+              items = 16384/4
+            end
+            
+            IFIFO = C.fifo( n.inputs[1].type:deInterface(), items, nil, nil, nil,nil,  NAME )
           end
           if n.fn.outputBurstiness>0 then
-            OFIFO = C.fifo( n.type:deInterface(), n.fn.outputBurstiness + FIFOSizeToDelay( n.fn.outputBurstiness ), nil, nil, nil, nil,  NAME )
+            local items = n.fn.outputBurstiness + FIFOSizeToDelay( n.fn.outputBurstiness )
+            if items>16384/4 then
+              print("ERROR: FIFO allocation is too big! This should be an error! Truncating! OUTPUT SIDE")
+              print(n.fn)
+              for i=1,30 do print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!") end
+              items = 16384/4
+            end
+
+            OFIFO = C.fifo( n.type:deInterface(), items, nil, nil, nil, nil,  NAME )
           end
         else
           IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness ), delayTable[orig] - n.fn.delay - extraDelayForFIFOs, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
@@ -5381,7 +5398,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
       output:visitEach(
         function(n)
           if n.kind=="apply" then
-            err( n.fn.inputBurstiness==0 and n.fn.outputBurstiness==0, "NYI: inputBurstiness must be 0 for non-handshaked modules! module:",name,":",input.type,"->",output.type," contains function:",n.fn.name,":",n.fn.inputType,"->",n.fn.outputType," inputBurstiness:", tostring(n.fn.inputBurstiness), " outputBurstiness:", tostring(n.fn.outputBurstiness) )
+            err( n.fn.inputBurstiness==0 and n.fn.outputBurstiness==0, "NYI: burstiness must be 0 for non-handshaked modules! \nmodule:",name,":",input.type,"->",output.type," \ncontains function:",n.fn.name,":",n.fn.inputType,"->",n.fn.outputType," \ninputBurstiness:", tostring(n.fn.inputBurstiness), " outputBurstiness:", tostring(n.fn.outputBurstiness)," loc:", n.loc )
           end
       end)
     else
@@ -5611,7 +5628,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
     assert(Ssugar.isFunctionConstructor(process))
     process:setOutput( out[1], "process_output" )
 
-    err( module:lookupFunction("process"):isPure() ~= res.stateful, "Module '"..res.name.."' is declared stateful=",res.stateful," but systolic AST is pure=",module:lookupFunction("process"):isPure()," which doesn't match!",out[1] )
+    --err( module:lookupFunction("process"):isPure() ~= res.stateful, "Module '"..res.name.."' is declared stateful=",res.stateful," but systolic AST is pure=",module:lookupFunction("process"):isPure()," which doesn't match!",out[1] )
 
     return module
   end

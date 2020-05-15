@@ -12,21 +12,19 @@ local Zynq = require "generators.zynq"
 local P = require "params"
 local G = require "generators.core"
 local Uniform = require "uniform"
+local J = require "common"
 
 R.Z3_FIFOS = true
 
-local ConvWidth = 4
-local ConvRadius = ConvWidth/2
-
-local cycles = tonumber(string.match(arg[0],"%d+"))
+local first = string.find(arg[0],"%d+")
+local ConvWidth = tonumber(string.sub(arg[0],first,first))
+local cycles = tonumber(string.sub(arg[0], string.find(arg[0],"%d+",first+1)))
 print("CYCLES",cycles)
 
+local ConvRadius = ConvWidth/2
+
 local regs = SOC.axiRegs({
-  {"coeffs",RM.reg(ar(u(32),ConvWidth,ConvWidth),
-          {4, 14, 14,  4,
-           14, 32, 32, 14,
-           14, 32, 32, 14,
-           4, 14, 14,  4})}},SDF{1,cycles}):instantiate("regs")
+    {"coeffs",RM.reg(ar(u(32),ConvWidth,ConvWidth),J.range(ConvWidth*ConvWidth))}},SDF{1,cycles}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
@@ -38,7 +36,7 @@ local ConvInner = G.SchedulableFunction{ "ConvInner", T.Array2d(T.Tuple{P.DataTy
 function(inp)
   local out = G.Map{Mul}(inp)
   local res = Reduce{Add{R.Async}}(out)
-  local sft = Rshift{8}(res)
+  local sft = Rshift{J.sel(ConvWidth==4,7,11)}(res)
   return RemoveMSBs{24}(sft)
 end}
 
@@ -48,21 +46,25 @@ local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
     local ii = G.FanOut{2}(i)
     local ii0 = ii[0]
     local ii1 = ii[1]
-
+    
     local res = G.AXIReadBurst{"1080p.raw",{1920,1080},u(8),noc.read}(ii0)
-    local pad = Pad{{8,8,2,1}}(res)
-    local st = Stencil{{-3,0,-3,0}}(pad)
+
+    local T = Uniform(res.type:deInterface().V[1]*res.type:deInterface().V[2]):toNumber()
+    local PadRadius = J.upToNearest(T, ConvRadius)
+
+    local pad = Pad{{PadRadius, PadRadius, ConvRadius, ConvRadius}}(res)
+    local st = Stencil{{-ConvWidth+1,0,-ConvWidth+1,0}}(pad)
     st = G.Map{G.Map{AddMSBs{24}}}(st)
     -----
-    local trig = G.Broadcast{R.Size(Uniform(1920+8+8),1080+3)}(ii1)
+    local trig = G.Broadcast{R.Size(Uniform(1920+PadRadius*2),1080+ConvRadius*2)}(ii1)
     local coeffs = G.Map{RM.Storv(regs.coeffs)}(trig)
     -----
     local padFanIn = G.FanIn(st,coeffs)
     local padZip = G.Zip(padFanIn)
     padZip = G.Map{G.Zip}(padZip)
     res = G.Map{ConvInner}(padZip)
-    res = Crop{{9,7,3,0}}(res)
-    return AXIWriteBurst{"out/soc_convgenTaps_"..tostring(cycles),noc.write}(res)
+    res = Crop{{PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0}}(res)
+    return AXIWriteBurst{"out/soc_convgenTaps_"..tostring(ConvWidth).."_"..tostring(cycles),noc.write}(res)
   end}
 
 harness({regs.start,Conv,regs.done},nil,{regs})

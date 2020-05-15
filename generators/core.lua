@@ -480,9 +480,9 @@ types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("imsize
 generators.Pad = R.FunctionGenerator("core.Pad",{"bounds"},{},
 function(a)
   J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Pad: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
-  return RM.padSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],a.T:fakeValue(),true)
+  return RM.padSeq( a.T:deSchedule(), a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], a.T:fakeValue(), true )
 end,
-T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
+T.array2d( P.ScheduleType("T"), P.SizeValue("size"), P.SizeValue("V") ) )
 
 -- we disable optimization for this! Since it's really just a wrapper around the raw generator
 generators.CropSeq = R.FunctionGenerator("core.CropSeq",{"type","size","number","bounds","rate"},{},
@@ -754,7 +754,7 @@ end,nil,false)
 -- string is name
 generators.SchedulableFunction = R.FunctionGenerator("core.Function",{"luaFunction","type","type1"},{"string","rate"},
 function(args)
-  print("Schecule SchedulableFunction ",args.string,args.type,args.type1)
+  --print("Schecule SchedulableFunction ",args.string,args.type,args.type1)
   
   if args.string==nil then
     args.string = "unnamedSchedulableFunction"..__unnamedID
@@ -771,7 +771,7 @@ function(args)
   J.err( type(scheduleOut.scheduleConstraints)=="table","Internal Error, schedule pass didn't return constraints?")
   J.err( type(scheduleOut.scheduleConstraints.RV)=="boolean","Internal Error, schedule pass didn't return RV constraint?")
   
-  print("Schedule Pass result, ",args.string," RV:", scheduleOut.scheduleConstraints.RV )
+  --print("Schedule Pass result, ",args.string," RV:", scheduleOut.scheduleConstraints.RV )
   
   local input
   if scheduleOut.scheduleConstraints.RV then
@@ -781,7 +781,7 @@ function(args)
     input = R.input( types.rv(args.type:deInterface()), args.rate )
   end
 
-  print("Schedulable function ",args.string," input type:",input.type)
+  --print("Schedulable function ",args.string," input type:",input.type)
   
   local out = args.luaFunction(input)
   J.err( R.isIR(out), "SchedulableFunction: user function returned something other than a Rigel value? "..tostring(out))
@@ -789,8 +789,9 @@ function(args)
   local resFn = RM.lambda( args.string, input, out )
 
   -- this will enable auto-lifting...
-  return R.FunctionGenerator("core.ScheduleableFunction_"..args.string,{},{"luaFunction","string","type1"},function(a) return resFn end,
-                             resFn.inputType:deInterface() ):complete(args)
+  return R.FunctionGenerator("core.ScheduleableFunction_"..args.string,{},{"luaFunction","string","type1"},
+            function(a) return resFn end,
+            resFn.inputType:deInterface() ):complete(args)
 
 end,nil,true)
 
@@ -812,9 +813,9 @@ types.uint(32) )
 
 generators.AXIWriteBurst = R.FunctionGenerator("core.AXIWriteBurst",{"string","rigelFunction"},{"address"},
 function(a)
-  return SOC.writeBurst( a.string, a.size[1], a.size[2], a.T, a.V[1], a.V[2], true, a.rigelFunction, a.address )
+  return SOC.writeBurst( a.string, a.size[1], a.size[2], a.T:deSchedule(), a.V[1], a.V[2], true, a.rigelFunction, a.address )
 end,
-types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
+types.array2d( P.ScheduleType("T"), P.SizeValue("size"), P.SizeValue("V") ) )
 
 -- change dims of array
 generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size"},{},

@@ -41,7 +41,10 @@ elseif CONVWIDTH==12 then
   W,H = 1920,1080
 end
 
-local regs = SOC.axiRegs({},SDF{1,W*H*V}):instantiate("regs")
+local cycles = (W*H)/V
+print("CYCLES",cycles)
+
+local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")
 noc.extern=true
@@ -77,7 +80,8 @@ local Invert2x2 = G.SchedulableFunction{"Inv", T.Array2d(P.NumberType("A"),4),
   function(i)
     local denom = Fdenom(i)
     local det = C.lutinvert(denom.type:deInterface())(denom)
-    return Fout(i,det)
+    local res = Fout(i,det)
+    return res
   end}
 
 local Dx = G.SchedulableFunction{"Dx",T.Array2d(T.Uint(8),3),
@@ -188,7 +192,7 @@ local Display = G.SchedulableFunction{"Display", T.Array2d(P.NumberType("ity"),2
     for i=0,1 do
       local I = inp[i]
       local B = G.MulE{32}(I)
-      print("B",B.type)
+
       local FF = G.AddE{128}(B)
 
       FF = G.Abs(FF)
@@ -255,7 +259,11 @@ local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
     local readStream = G.AXIReadBurst{ inputFilename, {W,H}, T.Array2d(T.Uint(8),2), 4, noc.read }(i)
 
     local PadRadius = CONVWIDTH/2
-    local PadRadiusAligned = J.upToNearest(V,CONVWIDTH/2)
+    local PadRadiusAligned = PadRadius
+    if V>1 then
+      PadRadiusAligned = J.upToNearest(V,CONVWIDTH/2)
+    end
+    
     local PadExtra = PadRadiusAligned - PadRadius
 
     local padded = G.Pad{{PadRadiusAligned, PadRadiusAligned, PadRadius+1, PadRadius}}(readStream)

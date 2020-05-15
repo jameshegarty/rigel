@@ -4,12 +4,13 @@ SHELL = /bin/bash
 BUILDDIR ?= out
 
 SRCS_SOC = soc_simple.lua soc_simple_uniform.lua soc_2in.lua soc_convgen.lua soc_convgen_0.lua soc_convgenTaps.lua soc_flip.lua soc_15x15.lua soc_15x15x15.lua soc_flipWrite.lua soc_regin.lua soc_regout.lua soc_convtest.lua soc_read.lua soc_redu1024.lua soc_redu2048.lua soc_redu4096.lua soc_redu8192.lua soc_redu16384.lua soc_redu32768.lua soc_sort.lua soc_filterseq.lua soc_filterseq8.lua soc_unaligned.lua soc_underflow.lua soc_parread.lua soc_tokencounter.lua soc_arbiter.lua soc_readlen.lua soc_readarrays_1.lua soc_readarrays_8.lua
-SRCS_SOC += soc_convgenTaps_2096688.lua soc_convgenTaps_524172.lua soc_convgenTaps_1048344.lua soc_convgenTaps_4193376.lua
-SRCS_SOC += soc_stereo_tiny_1.lua
-SRCS_SOC += soc_lk_4_4.lua soc_lk_6_6.lua soc_lk_12_12.lua
+SRCS_SOC += soc_convgenTaps_4_4193376.lua  soc_convgenTaps_8_2105413.lua soc_convgenTaps_4_1048344.lua  soc_convgenTaps_4_524172.lua soc_convgenTaps_8_4204896.lua soc_convgenTaps_4_2096688.lua  soc_convgenTaps_8_1059864.lua  soc_convgenTaps_8_526381.lua
+
+SRCS_SOC += soc_stereo_tiny_4_4.lua
+SRCS_SOC += soc_lk_4_4.lua soc_lk_6_6.lua soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_6.lua
 
 # too slow
-SRCS_VERILATOR_SOC = $(filter-out soc_lk_12_12.lua, $(SRCS_SOC))
+SRCS_VERILATOR_SOC = $(filter-out soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_6.lua, $(SRCS_SOC))
 
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_VERILATOR_SOC))
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_VERILATOR_SOC))
@@ -18,7 +19,10 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SRCS_
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SRCS_VERILATOR_SOC))	
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_VERILATOR_SOC))
 
-SRCS_YOSYS_SOC = $(filter-out soc_lk_12_12.lua, $(SRCS_SOC))
+# too slow
+SRCS_YOSYS_SOC := $(filter-out soc_convgenTaps_8_2105413.lua soc_convgenTaps_8_4204896.lua soc_convgenTaps_8_1059864.lua  soc_convgenTaps_8_526381.lua, $(SRCS_SOC))
+
+SRCS_YOSYS_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_24.lua, $(SRCS_YOSYS_SOC))
 
 YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_YOSYS_SOC))
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.cellscorrect.txt,$(SRCS_YOSYS_SOC))
@@ -98,12 +102,12 @@ TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.correct.txt,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.cyclescorrect.txt,$(SRCS_TERRA))
 
 # no support for xilinx prims needed for float
-SRCS_VERILATOR = $(filter-out featuredescriptor.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua, $(SRCS))
+SRCS_VERILATOR := $(filter-out featuredescriptor.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua, $(SRCS))
 
 SRCS_VERILATOR := $(filter-out sift_float.lua sift_desc.lua sift_desc_2_1.lua, $(SRCS_VERILATOR))
 
 # too slow
-SRCS_VERILATOR := $(filter-out sift_hw_1080p.lua, $(SRCS_VERILATOR))
+SRCS_VERILATOR := $(filter-out sift_hw_1080p.lua sift_desc_hw.lua, $(SRCS_VERILATOR))
 
 # uses Xilinx huge mult blocks - no support for prims
 SRCS_VERILATOR := $(filter-out lk_tr_handshake_6_3_axi.lua lk_tr_handshake_6_6_axi.lua  lk_tr_handshake_6_2_axi.lua  lk_tr_handshake_6_1_axi.lua lk_tr_handshake_4_4_axi.lua lk_tr_handshake_4_1_axi.lua lk_tr_handshake_12_12_axi.lua  lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua  lk_wide_handshake_6_4_axi.lua lk_wide_handshake_6_1_axi.lua lk_wide_handshake_4_4_axi.lua lk_wide_handshake_4_1_axi.lua, $(SRCS_VERILATOR))
@@ -127,12 +131,6 @@ SRCS_VERILATOR := $(filter-out readmemory.lua readmemory_flip.lua, $(SRCS_VERILA
 
 # remove long poles
 SRCS_VERILATOR := $(filter-out stereo_ov7660.lua stereo_tr_full_4.lua stereo_tr_full_8.lua stereo_tr_full_16.lua, $(SRCS_VERILATOR))
-
-VERILATOR = $(patsubst %.lua,$(BUILDDIR)/%.verilator,$(SRCS_VERILATOR))
-VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.raw,$(SRCS_VERILATOR))
-VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.bmp,$(SRCS_VERILATOR))
-VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.correct.txt,$(SRCS_VERILATOR))
-VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.cyclescorrect.txt,$(SRCS_VERILATOR))
 
 # too slow
 SRCS_TERRA_ISIM = $(SRCS_TERRA)
@@ -276,8 +274,8 @@ SIG16 += lk_wide_handshake_12_1_axi.lua lk_tr_handshake_12_1_axi.lua lk_tr_hands
 SIG16 += sift_hw.lua sift_hw_1080p.lua sift_desc_hw.lua
 
 # add some extra slow tests
-SIG16_EXT := SIG16
-SIG16_EXT += convpadcrop_wide_handshake_8_8_1080p_nostall.lua pyramid_large_4.lua lk_tr_handshake_6_2.lua pyramid_4.lua pyramid_large_nofifo_taps_3.lua sift_desc_hw_2_1.lua stereo_tr_medi_4.lua lk_tr_handshake_6_1.lua
+SIG16_EXT := $(SIG16)
+SIG16_EXT += convpadcrop_wide_handshake_8_8_1080p_nostall.lua pyramid_large_4.lua lk_tr_handshake_6_2.lua pyramid_4.lua pyramid_large_nofifo_taps_3.lua sift_desc_hw_2_1.lua stereo_tr_medi_4.lua lk_tr_handshake_6_1.lua pyramid_taps_2.lua pyramid_large_nofifo_taps_2.lua convpadcrop_wide_handshake_8_8_1080p_nostall.lua convpadcrop_wide_handshake_8_8.lua pyramid_4.lua pyramid_large_4.lua pyramid_large_taps_2.lua sift_desc_hw_2_1.lua lk_tr_handshake_6_2.lua pyramid_large_nofifo_taps_3.lua stereo_tr_medi_4.lua lk_tr_handshake_6_1.lua
 
 # compute the intersection of the verilator list and sig16 list
 SRCS_VERILATOR_SIG16_INV := $(filter-out $(SRCS_VERILATOR), $(SIG16_EXT))
@@ -291,9 +289,15 @@ VERILATOR_SIG16 += $(patsubst %.lua,$(BUILDDIR)/%.verilator.cyclescorrect.txt,$(
 
 # remove SIG16 tests from verilator test
 # spaghetti code!!
-SRCS_VERILATOR := $(filter-out $(SIG16), $(SRCS_VERILATOR))
+SRCS_VERILATOR := $(filter-out $(SIG16_EXT), $(SRCS_VERILATOR))
 
 ZU9VIVADOBITS_SIG16 := $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bit,$(SIG16))
+
+VERILATOR := $(patsubst %.lua,$(BUILDDIR)/%.verilator,$(SRCS_VERILATOR))
+VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.raw,$(SRCS_VERILATOR))
+VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.bmp,$(SRCS_VERILATOR))
+VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.correct.txt,$(SRCS_VERILATOR))
+VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.cyclescorrect.txt,$(SRCS_VERILATOR))
 
 RES = $(TERRAOUT)
 RES += $(VERILATOR)
