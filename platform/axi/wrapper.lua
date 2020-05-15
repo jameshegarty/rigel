@@ -5,6 +5,7 @@ local J = require "common"
 local types = require "types"
 local C = require "generators.examplescommon"
 local Uniform = require "uniform"
+local soc = require "generators.soc"
 
 local VERILOGFILE = arg[1]
 local METADATAFILE = arg[2]
@@ -230,6 +231,14 @@ local HSFN_VERILOG = ""
 --if VERILOGFILE~="none" then HSFN_VERILOG = readAll(VERILOGFILE) end
 
 local hsfnorig = RM.liftVerilogTab{ name=metadata.topModule, inputType=R.Handshake(types.bits(metadata.inputBitsPerPixel*metadata.inputV)), outputType=R.Handshake(types.bits(metadata.outputBitsPerPixel*metadata.outputV)), vstr=HSFN_VERILOG, sdfInput=hsfnSdfInput, sdfOutput=hsfnSdfOutput, delay=1, stateful=metadata.stateful}
+
+if metadata.tapBits>0 then
+  local taps = soc.regStub{taps={types.bits(metadata.tapBits),0}}:instantiate("taps")
+  taps.extern = true
+  hsfnorig.requires[taps]={} --"taps"}
+  hsfnorig.requires[taps].taps=1
+end
+
 local hsfn = axiRateWrapper(hsfnorig,metadata)
 
 local inputBytes, outputBytes
@@ -280,7 +289,7 @@ else
   verilogStr = verilogStr..readAll(PLATFORMDIR.."/axi/conf_nports.v")
 
   if metadata.tapBits>0 then
-    axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT",",.taps(CONFIG_DATA["..(128+metadata.tapBits-1)..":128])")
+    axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT",",.taps_taps_output(CONFIG_DATA["..(128+metadata.tapBits-1)..":128])")
   else
     axiv = string.gsub(axiv,"___PIPELINE_TAPINPUT","")
   end

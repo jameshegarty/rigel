@@ -31,7 +31,7 @@ SOC.regStub = J.memoize(function(tab)
     J.err( type(k)=="string", "axiRegs: key must be string" )
     J.err( types.isType(v[1]), "axiRegs: first key must be type" )
     J.err( R.isBasic(v[1]), "axiRegs: type must be basic type")
-    J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
+    --J.err( v[1]:toCPUType()==v[1], "axiRegs: NYI - input type must be a CPU type" )
     v[1]:checkLuaValue(v[2])
     fns[k] = R.newFunction{name=k, inputType=types.Interface(), outputType=types.S(types.Par(v[1])), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, delay=0}
   end
