@@ -2151,7 +2151,7 @@ function darkroomIRFunctions:typecheckSchedulePass()
     if self.fn.inputType:isrv()==false or self.fn.outputType:isrv()==false then
       self.scheduleConstraints.RV = true
       if self.inputs[1].scheduleConstraints.RV==false then
-        print("Function forced RV:", self.fn.name, self.loc )
+        --print("Function forced RV:", self.fn.name, self.loc )
       end
     else
       assert( self.fn.inputType:isrv() )
