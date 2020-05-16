@@ -1458,8 +1458,7 @@ function types.isHandshakeAny( a )
   elseif a:isArray() then
     return types.isHandshakeAny(a.over)
   else
-    print("isHandshakeAny NYI:",a)
-    assert(false)
+    err(false, "isHandshakeAny NYI:",a)
   end
 end
 
@@ -1468,11 +1467,13 @@ function types.expectV( A, er ) if types.isV(A)==false then error(er or "type sh
 function types.expectRV( A, er ) if types.isRV(A)==false then error(er or "type should be RV") end end
 function types.expectHandshake( A, er ) if types.isHandshake(A)==false then error(er or "type should be handshake") end end
 
+-- targetRate: (optional) instead of trying to optimize for the highest rate
+-- optimize for this target instead
 function TypeFunctions:optimize( rates )
   local SDF = require "sdf"
 
   err( SDF.isSDF(rates), "type: optimize, rates should be SDF but is: ",rates )
-
+  
   if self:isInil() then
     return self, rates -- nothing to do
   elseif self:is("Interface") then
@@ -1526,20 +1527,51 @@ function TypeFunctions:optimize( rates )
 --    else
     local newlist = {}
     local rout = {}
+
+    if self:isInterface() then
+      err( #self.list==#rates,"optimize: if type is a tuple of interfaces, rate should be a list of rates! type:",self," rates:",rates)
+    end
     
     for k,v in ipairs(self.list) do
       local rte = rates
       if self:isInterface() then
         rte = rates[k]
       end
-      
+
       local recTy, recRate = v:optimize( SDF(rte) )
       table.insert( rout, recRate[1] )
       table.insert( newlist, recTy )
     end
     
     if self:isInterface()==false then
-      rout = rout[1]
+      -- if this isn't an interface (ie, it's an rv(tuple()),
+      -- the rates of each tuple must match, since there is no flow control!
+      -- so, find the lowest (worst) rate, and rescale everything to that
+
+      local doOver = false
+      local worstRate
+      for _,r in ipairs(rout) do
+        if worstRate==nil then
+          worstRate = r
+        else
+          if SDF{r}:lt(SDF{worstRate}) then
+            doOver = true
+            worstRate = r
+          end
+        end
+      end
+
+      if doOver then
+        local oldlist = {}
+        for k,v in ipairs(newlist) do oldlist[k] = v end
+        
+        for k,v in ipairs(self.list) do
+          newlist[k] = v:optimize( SDF(rates)*SDF{worstRate[2],worstRate[1]} )
+        end
+        rout = worstRate
+      else
+        rout = worstRate
+      end
     end
       
     return types.tuple(newlist), SDF(rout)

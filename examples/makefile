@@ -67,7 +67,8 @@ ZU9VIVADOSOC += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.regcorrect.txt,$(SRC
 
 SRCS = $(wildcard *.lua)
 SRCS := $(filter-out pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua  lk_core.lua lk_tr_core.lua $(SRCS_BJUMP) $(SRCS_PULPINO) $(SRCS_SOC),$(SRCS))
-#METADATA = $(patsubst %.lua,$(BUILDDIR)/%.metadata.lua,$(SRCS))
+
+SRCS := $(filter-out soc_lk_12_4.lua soc_lk_12_3.lua soc_lk_12_2.lua soc_lk_12_1.lua soc_lk_4_1.lua, $(SRCS) )
 
 RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)
 RIGEL_VERILATOR_CFLAGS ?= $(shell pkg-config --cflags verilator)

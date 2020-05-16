@@ -804,10 +804,13 @@ function common.canonicalV( rate, size, X )
       V = V + 1
     end
 
-    if V<sizeW then
+    if V<=sizeW then
       return R.Size(V,1)
     else
-      assert( V%sizeW==0 )
+      -- V>sizeW => V must have sizeW as a factor
+      V = common.upToNearest(sizeW,V)
+      common.err( V%sizeW==0, "canonicalV: rate:",rate," size:",size," returned V:",V )
+      common.err( V<=sizeW*sizeH, "canonicalV: rate:",rate," size:",size," returned V:",V )
       return R.Size( sizeW, V/sizeW )
     end
   end

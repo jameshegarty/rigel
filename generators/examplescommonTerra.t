@@ -286,6 +286,16 @@ function CT.broadcast(A,W,H,OT)
 	end
 end
 
+function CT.broadcastTuple( A, OT, N )
+  return terra(inp : &A:lower():toTerraType(), out:&OT:lower():toTerraType() )
+    escape
+      for i=0,N-1 do
+        emit quote (@out).["_"..i] = @inp end
+      end
+    end
+  end
+end
+
 function CT.stencil( res, A, w, h, xmin, xmax, ymin, ymax )
   local struct Stencil {}
 
