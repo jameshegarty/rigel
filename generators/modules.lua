@@ -5704,7 +5704,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     err( ( (outputType==types.null() or outputType==types.Trigger) and systolicOutput==nil) or systolicAST.isSystolicAST(systolicOutput), "modules.lift: makeSystolic returned something other than a systolic value (module "..name.."), returned: ",systolicOutput )
 
     if outputType~=nil and systolicOutput~=nil then -- user may not have passed us a type, and is instead using the systolic system to calculate it
-      err( systolicOutput.type==rigel.lower(types.S(types.Par(outputType))), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType)..", which lowers to "..tostring(rigel.lower(types.S(types.Par(outputType)))).." (module "..name..")" )
+      err( systolicOutput.type==rigel.lower(types.S(types.Par(outputType))), "lifted systolic output type does not match. Is ",systolicOutput.type," but should be ",outputType,", which lowers to ",rigel.lower(types.S(types.Par(outputType)))," (module ",name,")" )
     end
     
     if systolicInstances~=nil then
