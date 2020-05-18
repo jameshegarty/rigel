@@ -587,9 +587,11 @@ generators.Fmap = R.FunctionGenerator("core.Fmap",{"rigelFunction","type","rate"
 function(args)
   J.err(R.isPlainFunction(args.rigelFunction),"core.FMap should only work on plain functions")
 
-  return R.FunctionGenerator("core.FMap_internal",{"rigelFunction"},{},function(a) return args.rigelFunction end,
-                             args.rigelFunction.inputType:deInterface() ):complete(args)
-end)
+  -- this is subtle, but we want to not optimize the type: just take whatever type was passed in, and do necessary conversions
+  -- this prevents a double conversion
+  return R.FunctionGenerator("core.FMap_internal",{"rigelFunction","type","rate"},{},function(a) return args.rigelFunction end,nil,false ):complete(args)
+--                             args.rigelFunction.inputType:deInterface(),false ):complete(args)
+end,nil,false)
 
 -- bool: allow stateful
 generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool"},
@@ -774,7 +776,8 @@ function(args)
 end,nil,false)
 
 -- string is name
-generators.SchedulableFunction = R.FunctionGenerator("core.SchedulableFunction",{"luaFunction","type","type1"},{"string","rate"},
+-- bool: force rv no matter what
+generators.SchedulableFunction = R.FunctionGenerator("core.SchedulableFunction",{"luaFunction","type","type1"},{"string","rate","bool"},
 function(args)
   --print("Schecule SchedulableFunction ",args.string,args.type,args.type1)
   
@@ -791,13 +794,20 @@ function(args)
   local optType, optRate = args.type:optimize( args.rate )
   
   local RVMode
-  if #optRate>1 then
+
+  -- user explicitly forced rv!
+  if args.bool==true then
+    RVMode = false
+    input = R.input( types.rv(optType:deInterface()), optRate )
+  end
+  
+  if RVMode==nil and #optRate>1 then
     -- if we have multiple rates going into the function, and the rates are different, we basically have to do RV mode
     for k,r in ipairs(optRate) do
       if optRate[1]~=r then
         print("!!!!!!!! rate mismatch into SchedulableFunction ",args.string," forcing RV! ",optType,SDF{optRate[1]},SDF{r})
         RVMode = true
-        assert(optType:isTuple() or optType:isArray())
+        assert( optType:isTuple() or optType:isArray() )
         input = R.input( optType, optRate)
         break
       end

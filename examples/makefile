@@ -7,7 +7,7 @@ SRCS_SOC = soc_simple.lua soc_simple_uniform.lua soc_2in.lua soc_convgen.lua soc
 SRCS_SOC += soc_convgenTaps_4_4193376.lua  soc_convgenTaps_8_2105413.lua soc_convgenTaps_4_1048344.lua  soc_convgenTaps_4_524172.lua soc_convgenTaps_8_4204896.lua soc_convgenTaps_4_2096688.lua  soc_convgenTaps_8_1059864.lua  soc_convgenTaps_8_526381.lua
 
 SRCS_SOC += soc_stereo_tiny_4_4.lua
-SRCS_SOC += soc_lk_4_4.lua soc_lk_6_6.lua soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_6.lua
+SRCS_SOC += soc_lk_4_4.lua soc_lk_6_6.lua soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua
 
 # too slow
 SRCS_VERILATOR_SOC = $(filter-out soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_6.lua, $(SRCS_SOC))

@@ -594,13 +594,6 @@ return fn
   local targetInputType = targetInputTypeOrig
   local targetInputRate = targetInputRateOrig
   
-  -- convert tuples of interfaces to interfaces of tuples, PRIOR TO RATE MATCHING
-  if targetInputType:isTuple() and fn.inputType:isrv() and fn.inputType.over:isTuple() then
-    -- this means we are converting <RV(a),RV(b)> to rv({a,b}), by doing a packtuple
-    table.insert( functionStack, RM.packTuple( targetInputType.list ) )
-    targetInputType = functionStack[#functionStack].outputType
-  end
-  
   -- rate optimization
   if targetInputType:deInterface()~=fn.inputType:deInterface() then
     if targetInputType:isArray() then
@@ -614,17 +607,20 @@ return fn
       table.insert( functionStack, res )
     elseif targetInputType:isTuple() then
       -- {RV(),RV()} optimization
-      err( fn.inputType:isTuple(), "ConvertInterface NYI = if input is tuple of interfaces, so must output be. target: ",targetInputType," to ",fn.inputType )
-      err( #targetInputType.list==#fn.inputType.list, "ConvertInterface NYI = if input is tuple of interfaces, size must match. target: ",targetInputType," to ",fn.inputType )
+
+      -- NOTE: at this point, the fn may expect a rv, not a RV, but we don't do that conversion yet! First: make the rates match
+      --err( fn.inputType:isTuple(), "ConvertInterface NYI = if input is tuple of interfaces, so must output be. target: ",targetInputType," to ",fn.inputType )
+
+      err( #targetInputType:deInterface().list==#fn.inputType:deInterface().list, "ConvertInterface NYI = if input is tuple of interfaces, size of tuple must match. target: ",targetInputType," to ",fn.inputType )
       assert( targetInputType.list[1]:is("Interface") )
 
       local res = G.Function{"TupleConvertInterface", targetInputType, targetInputRate,
         function(inp)
           local out = {}
-          for k,v in ipairs(targetInputType.list) do
+          for k,v in ipairs(targetInputType:deInterface().list) do
             local i = darkroom.selectStream( "str"..k, inp, k-1 )
 
-            local rec = reshape( fn.inputType.list[k].over, v.over )
+            local rec = reshape( fn.inputType:deInterface().list[k], v )
 
             if rec==nil then
               -- this is OK: means no change
@@ -632,7 +628,7 @@ return fn
             else
               local recres = rec(i)
               table.insert( out, recres )
-              assert( out[#out].type==fn.inputType.list[k] )
+              assert( out[#out].type:deInterface()==fn.inputType:deInterface().list[k] )
             end
           end
 
@@ -646,6 +642,7 @@ return fn
       
       table.insert( functionStack, res )
     else
+      -- simple case of RV(T1) to RV(T2)
       err( targetInputType:is("Interface") and fn.inputType:is("Interface"),"ConvertInterface NYI - must both be single interfaces, but is conversion from ",targetInputType," to ",fn.inputType )
 
       local res = reshape( fn.inputType.over, targetInputType.over )
@@ -662,6 +659,16 @@ return fn
     targetInputType = functionStack[#functionStack].outputType
     targetInputRate = functionStack[#functionStack].sdfOutput
   end
+
+  -- convert tuples of interfaces to interfaces of tuples, AFTER RATE MATCHING
+  -- this has to happen after rate matching, because after this conversion, the whole bundle will have 1 rate!
+  -- but some of the S-T conversions may require you to mess with individual (multiple) rates
+  if targetInputType:isTuple() and fn.inputType:isrv() and fn.inputType.over:isTuple() then
+    -- this means we are converting <RV(a),RV(b)> to rv({a,b}), by doing a packtuple
+    table.insert( functionStack, RM.packTuple( targetInputType.list ) )
+    targetInputType = functionStack[#functionStack].outputType
+  end
+  
 
   J.err( targetInputType:deInterface()==fn.inputType:deInterface(),"Reshape failed: function has input type: ",fn.inputType," but reshape returned type: ", targetInputType )
 
@@ -2191,7 +2198,7 @@ function darkroomIRFunctions:typecheckSchedulePass()
 
     --assert( self.inputs[1].type:isrv() ) -- we should have done this earlier in other nodes
 
-    J.err( self.inputs[1].type:deInterface()==self.fn.inputType:deInterface(),"Error, deinterfaced inputs to function '",self.fn.name,"' must match, but is: input:",self.inputs[1].type," fnInput:",self.fn.inputType )
+    J.err( self.inputs[1].type:deSchedule()==self.fn.inputType:deSchedule(),"Error, deScheduled inputs to function '",self.fn.name,"' must match, but is: input:",self.inputs[1].type," fnInput:",self.fn.inputType," input:deScheduled()=",self.inputs[1].type:deSchedule()," fnInput:deScheduled()=",self.fn.inputType:deSchedule() )
 
     if self.fn.inputType:isrv()==false or self.fn.outputType:isrv()==false then
       self.scheduleConstraints.RV = true

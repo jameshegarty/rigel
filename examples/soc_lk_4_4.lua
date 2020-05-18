@@ -49,22 +49,25 @@ local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")
 noc.extern=true
 
-local Fdenom = G.SchedulableFunction{"Fdenom", T.Array2d(P.NumberType("ty"),4),
+--local Fdenom = G.SchedulableFunction{"Fdenom", T.Array2d(P.NumberType("ty"),4),true,
+local Fdenom = G.Fmap{G.Function{"Fdenom", T.rv(T.Array2d(types.Int(20,-2),4)),
   function(i)
     print("FDENOM",i.type)
-    local iFO = G.FanOut{4}(i)
-    local lhs = G.MulE(iFO[0][0],iFO[3][3])
-    local rhs = G.MulE(iFO[1][1],iFO[2][2])
+--    local iFO = G.FanOut{4}(i)
+    local lhs = G.MulE(i[0],i[3])
+    local rhs = G.MulE(i[1],i[2])
     local fdenom = G.SubE(lhs,rhs)
 
     fdenom = G.RemoveMSBs{bits.inv22inp[1]}(fdenom)
     fdenom = G.RemoveLSBsE{bits.inv22inp[2]}(fdenom)
     print("FDENOMOUT",fdenom.type)
     return fdenom
-  end}
+end}}
 
-local Fout = G.SchedulableFunction{"Fout", T.tuple{T.array2d(P.NumberType("AType"),4), P.NumberType("fdet_type")},
+--local Fout = G.SchedulableFunction{"Fout", T.tuple{T.array2d(P.NumberType("AType"),4), P.NumberType("fdet_type")},
+local Fout = G.Fmap{G.Function{"Fout", T.rv(T.tuple{T.array2d(T.Int(20,-2),4), T.Int(40,-35-bits.inv22inp[2])}),
   function(i)
+    print("FOUT",i.type)
     local fmatrix = G.FanOut{4}(i[0])
     local i0 = G.RVFIFO{128}(fmatrix[0][0])
     local i1 = G.RVFIFO{128}(fmatrix[1][1])
@@ -83,7 +86,7 @@ local Fout = G.SchedulableFunction{"Fout", T.tuple{T.array2d(P.NumberType("AType
     end
     
     return G.TupleToArray(unpack(OT))
-end}
+end}}
 
 local Invert2x2 = G.SchedulableFunction{"Invert2x2", T.Array2d(P.NumberType("A"),4),
   function(i)
@@ -262,7 +265,8 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),
       local fdy_stencilFO = G.FanOut{2,R.Unoptimized}(fdy_stencil)
       
       local Ainpinp = R.concat{ G.RVFIFO{128}(fdx_stencilFO[0]), G.RVFIFO{128}(fdy_stencilFO[0]) }
-      local Ainp = G.Zip( Ainpinp  )
+      print("AINPINP",Ainpinp.type,Ainpinp.rate)
+      local Ainp = G.Zip{R.Unoptimized}( Ainpinp  )
       local A = G.Map{CalcA}(Ainp)
 
       local Ainv = G.Map{Invert2x2}(A)
