@@ -5029,7 +5029,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         if iDelayThis ~= delayTable[orig.inputs[1]] then
           local d = iDelayThis-delayTable[orig.inputs[1]]
           if verbose then print("DELAY",n.fn.name,d) end
-          res = modules.makeHandshake(modules.shiftRegister( n.inputs[1].type:deInterface(), d ))(res)
+          res = C.fifo( n.inputs[1].type:deInterface(), d )(res)
         end
 
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
@@ -5091,6 +5091,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
           res = rigel.apply( J.sanitize(n.name.."_OFIFO"), OFIFO, res )
         end
       elseif n.kind=="apply" or n.kind=="applyMethod" then
+        -- can't applys of modules
         -- this is things like VR mode, tuples of handshakes, etc
         -- hopefully we can just ignore this...
         
@@ -5114,6 +5115,8 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         end
         
       elseif n.kind~="statements" then
+        -- all other nodes (like concats)
+        
         for k,inp in pairs(orig.inputs) do
           assert( type(delayTable[inp])=="number" )
           assert( type(delayTable[orig])=="number" )
@@ -5128,7 +5131,8 @@ local function insertFIFOs( out, delayTable, moduleName, X )
 
             local G = require "generators.core"
             if verbose then print("DELAY",delayDiff,n) end
-            res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
+            --res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
+            res.inputs[k] = C.fifo( inp.type:deInterface(), delayDiff )(res.inputs[k])
           end
         end
       end
