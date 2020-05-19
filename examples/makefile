@@ -96,7 +96,7 @@ SRCS_WRAPPER = $(filter-out readmemory.lua readmemory_flip.lua 12bpp.lua 18bpp.l
 WRAPPER = $(patsubst %.lua,$(BUILDDIR)/%.v.mpsocwrapper.v,$(SRCS_WRAPPER))
 
 # too slow
-SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua, $(SRCS))
+SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua lk_tr_handshake_12_1.lua lk_tr_handshake_12_2.lua lk_tr_handshake_12_3.lua lk_tr_handshake_12_4.lua lk_tr_handshake_12_6.lua lk_tr_handshake_12_12.lua, $(SRCS))
 
 SRCS_TERRA += $(SRCS_SOC)
 
@@ -115,6 +115,8 @@ SRCS_VERILATOR := $(filter-out sift_hw_1080p.lua sift_desc_hw.lua, $(SRCS_VERILA
 
 # uses Xilinx huge mult blocks - no support for prims
 SRCS_VERILATOR := $(filter-out lk_tr_handshake_6_3_axi.lua lk_tr_handshake_6_6_axi.lua  lk_tr_handshake_6_2_axi.lua  lk_tr_handshake_6_1_axi.lua lk_tr_handshake_4_4_axi.lua lk_tr_handshake_4_1_axi.lua lk_tr_handshake_12_12_axi.lua  lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua  lk_wide_handshake_6_4_axi.lua lk_wide_handshake_6_1_axi.lua lk_wide_handshake_4_4_axi.lua lk_wide_handshake_4_1_axi.lua, $(SRCS_VERILATOR))
+
+SRCS_VERILATOR := $(filter-out lk_tr_handshake_12_12.lua  lk_tr_handshake_12_6.lua lk_tr_handshake_12_4.lua lk_tr_handshake_12_3.lua lk_tr_handshake_12_2.lua lk_tr_handshake_12_1.lua lk_wide_handshake_12_1.lua, $(SRCS_VERILATOR))
 
 # verilator target doesn't include underflow block
 SRCS_VERILATOR := $(filter-out underflow.lua, $(SRCS_VERILATOR))
