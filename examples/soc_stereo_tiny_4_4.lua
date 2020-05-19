@@ -27,6 +27,7 @@ elseif test=="medi" then
   infile = "stereo_medi.raw"
 elseif test=="full" then
   W, H = 720, 400
+  SearchWindow = 64
   infile = "stereo0000.raw"
   THRESH = 1000
 else
@@ -47,7 +48,10 @@ noc.extern=true
 local DisplayOutput = G.SchedulableFunction{ "DisplayOutput", T.Tuple{T.Uint(8),T.Uint(16)},
   function(i)
     if THRESH>0 then
-      return G.Sel( G.GT(i[1],R.constant(THRESH,T.Uint(16))), R.Constant(0,T.Uint(8)), i[0])
+      local th = G.Const{T.Uint(16),THRESH}(G.ValueToTrigger(i))
+      local zero = G.Const{T.Uint(8),0}(G.ValueToTrigger(i))
+--      return G.Sel( G.GT(i[1],R.constant(THRESH,T.Uint(16))), R.Constant(0,T.Uint(8)), i[0])
+      return G.Sel( G.GT(i[1],th), zero, i[0])
     else
       return i[0] -- don't filter
     end

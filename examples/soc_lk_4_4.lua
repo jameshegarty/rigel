@@ -197,7 +197,7 @@ local CalcB = G.SchedulableFunction{"CalcB",
 end}
 
 --local Solve = G.SchedulableFunction{"Solve", T.Tuple{T.Array2d(P.NumberType("AinvType"),4),T.Array2d(P.NumberType("btype"),2)},
-local Solve = G.Fmap{G.Function{"Solve", T.rv(T.Tuple{T.Array2d(T.Int(19,-16),4),T.Array2d(T.Int(20,-1),2)}),
+local Solve = G.Fmap{G.Function{"Solve", T.rv(T.Tuple{T.Array2d(T.Int(19,-11-bits.inv22inp[2]),4),T.Array2d(T.Int(20,-1),2)}),
   function(i)
     print("SOLVE",i.type)
     local iFO = G.FanOut{2}(i)
@@ -220,7 +220,7 @@ local Solve = G.Fmap{G.Function{"Solve", T.rv(T.Tuple{T.Array2d(T.Int(19,-16),4)
 end}}
 
 --local Display = G.SchedulableFunction{"Display", T.Array2d(P.NumberType("ity"),2),
-local Display = G.Fmap{G.Function{"Display", T.rv(T.Array2d(T.Int(40,-17),2)),
+local Display = G.Fmap{G.Function{"Display", T.rv(T.Array2d(T.Int(40,-12-bits.inv22inp[2]),2)),
   function(inp)
     print("DISPLAY",inp.type)
     local inpFO = G.FanOut{2}(inp)
