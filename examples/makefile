@@ -23,6 +23,8 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$
 # too slow
 SRCS_YOSYS_SOC := $(filter-out soc_convgenTaps_8_8.lua soc_convgenTaps_8_4.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_1.lua soc_convgenTaps_8_8.lua  soc_convgenTaps_8_16.lua  soc_convgenTaps_8_32.lua, $(SRCS_SOC))
 
+SRCS_YOSYS_SOC := $(filter-out soc_stereo_full_64_64.lua, $(SRCS_YOSYS_SOC))
+
 SRCS_YOSYS_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_24.lua soc_lk_12_48.lua, $(SRCS_YOSYS_SOC))
 
 YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_YOSYS_SOC))
