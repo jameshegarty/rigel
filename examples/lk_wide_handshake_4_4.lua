@@ -12,6 +12,8 @@ if string.find(arg[0],"float") then
 else
   f = require "fixed"
   if string.find(arg[0],"axi") then
+    -- if using Xilinx parts, the plain verilog '*' wasn't synthesizing well...
+    -- not sure why we called this 'axi'...
     -- don't use this multiplier in simulator - too slow!
     f.DEEP_MULTIPLY = true
   end

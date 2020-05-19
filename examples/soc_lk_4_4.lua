@@ -49,83 +49,109 @@ local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")
 noc.extern=true
 
-local Fdenom = G.SchedulableFunction{"Fdenom", T.Array2d(P.NumberType("ty"),4),
+--local Fdenom = G.SchedulableFunction{"Fdenom", T.Array2d(P.NumberType("ty"),4),true,
+local Fdenom = G.Fmap{G.Function{"Fdenom", T.rv(T.Array2d(types.Int(20,-2),4)),
   function(i)
+    print("FDENOM",i.type)
+--    local iFO = G.FanOut{4}(i)
     local lhs = G.MulE(i[0],i[3])
     local rhs = G.MulE(i[1],i[2])
     local fdenom = G.SubE(lhs,rhs)
+
     fdenom = G.RemoveMSBs{bits.inv22inp[1]}(fdenom)
     fdenom = G.RemoveLSBsE{bits.inv22inp[2]}(fdenom)
+    print("FDENOMOUT",fdenom.type)
     return fdenom
-  end}
+end}}
 
-local Fout = G.SchedulableFunction{"Fout", T.tuple{T.array2d(P.NumberType("AType"),4), P.NumberType("fdet_type")},
+--local Fout = G.SchedulableFunction{"Fout", T.tuple{T.array2d(P.NumberType("AType"),4), P.NumberType("fdet_type")},
+local Fout = G.Fmap{G.Function{"Fout", T.rv(T.tuple{T.array2d(T.Int(20,-2),4), T.Int(40,-35-bits.inv22inp[2])}),
   function(i)
-    local fmatrix = i[0]
-    local i0 = fmatrix[0]
-    local i1 = fmatrix[1]
-    local i2 = fmatrix[2]
-    local i3 = fmatrix[3]
-    local fdet = i[1]
+    print("FOUT",i.type)
+    local fmatrix = G.FanOut{4}(i[0])
+    local i0 = G.RVFIFO{128}(fmatrix[0][0])
+    local i1 = G.RVFIFO{128}(fmatrix[1][1])
+    local i2 = G.RVFIFO{128}(fmatrix[2][2])
+    local i3 = G.RVFIFO{128}(fmatrix[3][3])
+    local fdet = G.FanOut{4}(i[1])
 
-    local OT = {G.MulE(fdet,i3), G.MulE(G.Neg(fdet),i1), G.MulE(G.Neg(fdet),i2), G.MulE(fdet,i0)}
+    local OT = {G.MulE(G.RVFIFO{128}(fdet[0]),i3),
+                G.MulE(G.Neg(G.RVFIFO{128}(fdet[1])),i1),
+                G.MulE(G.Neg(G.RVFIFO{128}(fdet[2])),i2),
+                G.MulE(G.RVFIFO{128}(fdet[3]),i0)}
+
     for k,v in pairs(OT) do
       OT[k] = G.RemoveMSBs{bits.inv22[1]}(OT[k])
       OT[k] = G.RemoveLSBsE{bits.inv22[2]}(OT[k])
     end
+    
     return G.TupleToArray(unpack(OT))
-end}
+end}}
 
-local Invert2x2 = G.SchedulableFunction{"Inv", T.Array2d(P.NumberType("A"),4),
+--local Invert2x2 = G.SchedulableFunction{"Invert2x2", T.Array2d(P.NumberType("A"),4),
+local Invert2x2 = G.Fmap{G.Function{"Invert2x2", T.rv(T.Array2d(T.int(20,-2),4)),
   function(i)
-    local denom = Fdenom(i)
-    local det = C.lutinvert(denom.type:deInterface())(denom)
-    local res = Fout(i,det)
+    print("INV",i.type)
+    local iFO = G.FanOut{2}(i)
+    local denom = Fdenom( G.RVFIFO{128}(iFO[0]) )
+    print("DENOM.ty",denom.type)
+    local det = G.Fmap{C.lutinvert(denom.type:deInterface())}(denom)
+    local res = Fout( G.RVFIFO{128}(iFO[1]), det )
     return res
-  end}
+end}}
 
-local Dx = G.SchedulableFunction{"Dx",T.Array2d(T.Uint(8),3),
+--local Dx = G.SchedulableFunction{"Dx",T.Array2d(T.Uint(8),3),
+local Dx = G.Fmap{G.Function{"Dx", T.rv(T.Array2d(T.Uint(8),3)),
   function(i)
-    local outl = G.UtoI(G.AddMSBs{1}(i[2]))
-    local outr = G.UtoI(G.AddMSBs{1}(i[0]))
+    local iFO = G.FanOut{2}(i)
+    local outl = G.UtoI(G.AddMSBs{1}(iFO[0][2]))
+    local outr = G.UtoI(G.AddMSBs{1}(iFO[1][0]))
     local outt = G.SubE(outl,outr)
     local out = G.RshiftE{1}(outt)
     return out
-  end}
+end}}
 
-local Dy = G.SchedulableFunction{"Dy", types.array2d(types.uint(8),1,3),
+--local Dy = G.SchedulableFunction{"Dy", types.array2d(types.uint(8),1,3),
+local Dy = G.Fmap{G.Function{"Dy", T.rv(types.array2d(types.uint(8),1,3)),
   function(i)
-    local outl = G.UtoI(G.AddMSBs{1}(G.Index{{0,2}}(i)))
-    local outr = G.UtoI(G.AddMSBs{1}(G.Index{{0,0}}(i)))
+    local iFO = G.FanOut{2}(i)
+    local outl = G.UtoI(G.AddMSBs{1}(G.Index{{0,2}}(iFO[0])))
+    local outr = G.UtoI(G.AddMSBs{1}(G.Index{{0,0}}(iFO[1])))
     local outt = G.SubE(outl,outr)
     return G.RshiftE{1}(outt)
-  end}
+end}}
 
 local CalcA = G.SchedulableFunction{"CalcA",
   types.tuple{ types.array2d( P.NumberType("ty"), P.SizeValue("sz")),
                types.array2d( P.NumberType("ty"), P.SizeValue("sz")) },
   function(inp)
-    local Fdx = inp[0]
-    local Fdy = inp[1]
+    print("CALCA",inp.type)
+    local inpFO = G.FanOut{2}(inp)
+    
+    local Fdx = inpFO[0][0]
+    local FdxFO = G.FanOut{3}(Fdx)
+    local Fdy = inpFO[1][1]
+    local FdyFO = G.FanOut{3}(Fdy)
 
-    local inp0 = G.Zip(Fdx,Fdx)
+    local inp0 = G.Zip(G.RVFIFO{128}(FdxFO[0]),G.RVFIFO{128}(FdxFO[1]))
     local out0 = G.Map{G.MulE}(inp0)
     
-    out0 = G.Reduce{G.Add}(out0)
+    out0 = G.Reduce{G.Add{R.Async}}(out0)
     
-    local inp1 = G.Zip(Fdx,Fdy)
+    local inp1 = G.Zip(G.RVFIFO{128}(FdxFO[2]),G.RVFIFO{128}(FdyFO[0]))
     local out1 = G.Map{G.MulE}(inp1)
-    out1 = G.Reduce{G.Add}(out1)
+    out1 = G.Reduce{G.Add{R.Async}}(out1)
     
-    local out2 = out1
+    --local out2 = out1
+    local out1FO = G.FanOut{2}(out1)
     
-    local inp3 = G.Zip(Fdy,Fdy)
+    local inp3 = G.Zip(G.RVFIFO{128}(FdyFO[1]),G.RVFIFO{128}(FdyFO[2]))
     local out3 = G.Map{G.MulE}(inp3)
-    out3 = G.Reduce{G.Add}(out3)
+    out3 = G.Reduce{G.Add{R.Async}}(out3)
     
-    local out = R.concatArray2d("out", {out0,out1,out2,out3}, 4 )
+    local out = R.concat{out0,G.RVFIFO{128}(out1FO[0]),G.RVFIFO{128}(out1FO[1]),out3}
     
-    return out
+    return G.TupleToArray(G.FanIn(out))
   end}
 
 local Minus = G.SchedulableFunction{"Minus",T.Tuple{P.NumberType("A"),P.NumberType("A")},
@@ -141,56 +167,67 @@ local CalcB = G.SchedulableFunction{"CalcB",
            T.Array2d(P.NumberType("ty"),P.SizeValue("w")),
            T.Array2d(P.NumberType("ty"),P.SizeValue("w")) },
   function(i)                              
-    local frame0 = i[0]
-    local frame1 = i[1]
-    local Fdx = i[2]
-    local Fdy = i[3]
+    local iFO = G.FanOut{4}(i)
+    local frame0 = iFO[0][0]
+    local frame1 = iFO[1][1]
+    local Fdx = iFO[2][2]
+    local Fdy = iFO[3][3]
 
     ---------
-    local gmf = R.concat("mfgmf",{frame1,frame0})
+    local gmf = R.concat("mfgmf",{G.RVFIFO{128}(frame1),G.RVFIFO{128}(frame0)})
     gmf = G.Zip(gmf)
     gmf = G.Map{Minus}(gmf)
+    local gmfFO = G.FanOut{2}(gmf)
     ---------
 
-    local out_0 = R.concat("o0tup",{Fdx, gmf})
+    local out_0 = R.concat("o0tup",{G.RVFIFO{128}(Fdx), G.RVFIFO{128}(gmfFO[0]) })
     out_0 = G.Zip(out_0)
     out_0 = G.Map{G.MulE}(out_0)
-    out_0 = G.Reduce{G.Add}(out_0)
+    out_0 = G.Reduce{G.Add{R.Async}}(out_0)
 
-    local out_1 = R.concat("o1tup",{Fdy, gmf})
+    local out_1 = R.concat("o1tup",{G.RVFIFO{128}(Fdy), G.RVFIFO{128}(gmfFO[1]) })
     out_1 = G.Zip(out_1)
     out_1 = G.Map{G.MulE}(out_1)
-    out_1 = G.Reduce{G.Add}(out_1)
+    out_1 = G.Reduce{G.Add{R.Async}}(out_1)
   
-    local out = R.concatArray2d("arrrrry0t",{out_0,out_1},2)
+    local out = G.FanIn(out_0,out_1)
+    out = G.TupleToArray(out)
+    
     return out
 end}
 
-local Solve = G.SchedulableFunction{"Solve", T.Tuple{T.Array2d(P.NumberType("AinvType"),4),T.Array2d(P.NumberType("btype"),2)},
+--local Solve = G.SchedulableFunction{"Solve", T.Tuple{T.Array2d(P.NumberType("AinvType"),4),T.Array2d(P.NumberType("btype"),2)},
+local Solve = G.Fmap{G.Function{"Solve", T.rv(T.Tuple{T.Array2d(T.Int(19,-11-bits.inv22inp[2]),4),T.Array2d(T.Int(20,-1),2)}),
   function(i)
-    local Ainv = i[0]
-    local b = i[1]
-    local b0, b1 = b[0], b[1]
-    b0 = G.Neg(b0)
-    b1 = G.Neg(b1)
-    local Ainv0, Ainv1, Ainv2, Ainv3 = Ainv[0], Ainv[1], Ainv[2], Ainv[3]
+    print("SOLVE",i.type)
+    local iFO = G.FanOut{2}(i)
+    local Ainv = G.FanOut{4}(iFO[0][0])
+    local b = G.FanOut{2}(iFO[1][1])
+    local b0, b1 = b[0][0], b[1][1]
+    b0 = G.FanOut{2}(G.Neg(b0))
+    b1 = G.FanOut{2}(G.Neg(b1))
+    local Ainv0, Ainv1, Ainv2, Ainv3 = G.RVFIFO{128}(Ainv[0][0]), G.RVFIFO{128}(Ainv[1][1]), G.RVFIFO{128}(Ainv[2][2]), G.RVFIFO{128}(Ainv[3][3])
 
-    local out_0_lhs = G.MulE(Ainv0,b0)
-    local out_0_rhs = G.MulE(Ainv1,b1)
+    local out_0_lhs = G.MulE( G.RVFIFO{128}(Ainv0), G.RVFIFO{128}(b0[0]) )
+    local out_0_rhs = G.MulE( G.RVFIFO{128}(Ainv1), G.RVFIFO{128}(b1[0]) )
     local out_0 = G.AddE( out_0_lhs, out_0_rhs )
     
-    local out_1_lhs = G.MulE(Ainv2,b0)
-    local out_1_rhs = G.MulE(Ainv3,b1)
+    local out_1_lhs = G.MulE( G.RVFIFO{128}(Ainv2), G.RVFIFO{128}(b0[1]) )
+    local out_1_rhs = G.MulE( G.RVFIFO{128}(Ainv3), G.RVFIFO{128}(b1[1]) )
     local out_1 = G.AddE(out_1_lhs,out_1_rhs)
     
     return G.TupleToArray(out_0,out_1)
-  end}
+end}}
 
-local Display = G.SchedulableFunction{"Display", T.Array2d(P.NumberType("ity"),2),
+--local Display = G.SchedulableFunction{"Display", T.Array2d(P.NumberType("ity"),2),
+local Display = G.Fmap{G.Function{"Display", T.rv(T.Array2d(T.Int(40,-12-bits.inv22inp[2]),2)),
   function(inp)
+    print("DISPLAY",inp.type)
+    local inpFO = G.FanOut{2}(inp)
+    
     local out = {}
     for i=0,1 do
-      local I = inp[i]
+      local I = inpFO[i][i]
       local B = G.MulE{32}(I)
 
       local FF = G.AddE{128}(B)
@@ -201,54 +238,60 @@ local Display = G.SchedulableFunction{"Display", T.Array2d(P.NumberType("ity"),2
       local FF_den = G.Denormalize(FF)
 
       local FF_trunc = G.RemoveMSBs{FF_den.type:deInterface().precision-8}(FF_den)
-      assert(FF_trunc.type:deInterface()==T.U8)      
-
+      --J.err(FF_trunc.type:deInterface()==T.U8,"FF_trunc is:",FF_trunc.type,FF_trunc.scheduleConstraints)
+      
       table.insert(out,FF_trunc)
     end
 
     local res = G.TupleToArray(unpack(out))
 
     return res
-  end}
+end}}
 
 local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),2),P.SizeValue("imsize")),
     function(inp)
-                                 
-      local frame0 = G.Map{G.Index{0}}(inp)
-      local frame1 = G.Map{G.Index{1}}(inp)
+
+      local inpFO = G.FanOut{2}(inp)
+      
+      local frame0 = G.Map{G.Index{0}}(inpFO[0])
+      local frame1 = G.Map{G.Index{1}}(inpFO[1])
   
       local lb0 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame0)
+      local lb0FO = G.FanOut{3}(lb0)
       local lb1 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame1)
 
-      local fdx = G.Map{G.Slice{{CONVWIDTH-2, CONVWIDTH, CONVWIDTH-1, CONVWIDTH-1}}}(lb0)
+      local fdx = G.Map{G.Slice{{CONVWIDTH-2, CONVWIDTH, CONVWIDTH-1, CONVWIDTH-1}}}(lb0FO[0])
 
       fdx = G.Map{Dx}(fdx)
 
       local fdx_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdx)
-
-      local fdy = G.Map{G.Slice{{CONVWIDTH-1, CONVWIDTH-1, CONVWIDTH-2, CONVWIDTH}}}(lb0)
+      local fdx_stencilFO = G.FanOut{2,R.Unoptimized}(fdx_stencil)
+      
+      local fdy = G.Map{G.Slice{{CONVWIDTH-1, CONVWIDTH-1, CONVWIDTH-2, CONVWIDTH}}}(lb0FO[1])
 
       local fdy = G.Map{Dy}(fdy)
       local fdy_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdy)
-
-      local Ainp = G.Zip( fdx_stencil, fdy_stencil )
+      local fdy_stencilFO = G.FanOut{2,R.Unoptimized}(fdy_stencil)
+      
+      local Ainpinp = R.concat{ G.RVFIFO{128}(fdx_stencilFO[0]), G.RVFIFO{128}(fdy_stencilFO[0]) }
+      print("AINPINP",Ainpinp.type,Ainpinp.rate)
+      local Ainp = G.Zip{R.Unoptimized}( Ainpinp  )
       local A = G.Map{CalcA}(Ainp)
 
       local Ainv = G.Map{Invert2x2}(A)
 
-      local f0_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb0)
+      local f0_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb0FO[2])
       local f1_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb1)
-      local binp = G.Zip(f0_slice,f1_slice,fdx_stencil,fdy_stencil)
+
+      local binp = G.FanIn{R.Unoptimized}( G.RVFIFO{128,R.Unoptimized}(f0_slice), G.RVFIFO{128,R.Unoptimized}(f1_slice), G.RVFIFO{128,R.Unoptimized}(fdx_stencilFO[1]), G.RVFIFO{128,R.Unoptimized}(fdy_stencilFO[1]) )
+      local binp = G.Zip{R.Unoptimized}( binp  )
       local b = G.Map{CalcB}(binp)
 
-      local sinp = G.Zip(Ainv,b)
+      local zipcc = R.concat{Ainv,b}
+      zipcc = G.FanIn{R.Unoptimized}(zipcc)
+      local sinp = G.Zip{R.Unoptimized}(zipcc)
       local vectorField = G.Map{Solve}(sinp)
 
-      local stype = vectorField.type:deInterface():arrayOver():arrayOver()
-
-      --local DISP = display(stype)
-      --local displayfn, displaycost = DISP[1], DISP[2]
-      --local out = G.Map{displayfn}(vectorField)
       local out = G.Map{Display}(vectorField)
       
       return out
@@ -267,7 +310,7 @@ local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
     local PadExtra = PadRadiusAligned - PadRadius
 
     local padded = G.Pad{{PadRadiusAligned, PadRadiusAligned, PadRadius+1, PadRadius}}(readStream)
-    
+
     local out = LK(padded)
     out = G.Crop{{PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0}}(out)
     return G.AXIWriteBurst{"out/soc_lk_"..CONVWIDTH.."_"..(V*CONVWIDTH),noc.write}(out)

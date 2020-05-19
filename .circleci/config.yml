@@ -110,6 +110,8 @@ jobs:
       - run: sudo apt-get install z3 luajit yosys time
       - run: yosys -V
       - run: cd examples; make -k yosysSOC
+      - run: cat examples/out/*.luatime.txt      
+      - run: cat examples/out/*.compiletime.txt
       - run: test -e examples/out/yosysSOC_done.txt || exit   
 #  state:
 #    docker:

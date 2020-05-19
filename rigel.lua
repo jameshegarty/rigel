@@ -314,7 +314,12 @@ functionGeneratorMT.__call=function(tab,...)
     else
       arg = rawarg[1]
     end
-    
+
+    if arg.scheduleConstraints~=nil and arg.scheduleConstraints.RV then
+      -- early out hack: if schedule pass is done (RV is known, just skip the apply)
+      return arg
+    end
+
     local arglist = {}
     for k,v in pairs(tab.curriedArgs) do arglist[k] = v end
 
@@ -324,7 +329,7 @@ functionGeneratorMT.__call=function(tab,...)
     local rfn = tab:complete(arglist)
 
     if arg.scheduleConstraints==nil then -- if we're doing the schedule pass, don't show an error
-      err( rfn.inputType==arg.type, "Failed to find a conversion for fn '",rfn.name,"' with \ninput type:'",rfn.inputType,"' \noutput type '",rfn.outputType,"' \nto convert to type:'",arg.type,"'")
+      err( rfn.inputType==arg.type, "Failed to find a conversion for fn '",rfn.name,"' with \ninput type:'",rfn.inputType,"'\ninput rate ",rfn.sdfInput," \noutput type '",rfn.outputType,"' \nto convert to type:'",arg.type,"' rate:",arg.rate)
     end
     
     return rfn(arg)
@@ -478,12 +483,17 @@ end
 
 -- top level function that implements logic to convert a fn to a given type.
 -- If this fails, it just returns fn
-darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInputRate, X )
+darkroom.convertInterface = J.memoize(function( fn, targetInputTypeOrig, targetInputRateOrig, X )
   assert( X==nil )
 
-  assert( types.isType(targetInputType) )
-  err( SDF.isSDF(targetInputRate), "convertInterfaces SDF should be SDF but is: ", targetInputRate )
+  assert( types.isType(targetInputTypeOrig) )
+  err( SDF.isSDF(targetInputRateOrig), "convertInterfaces SDF should be SDF but is: ", targetInputRateOrig )
   --print("CONVERT_INTERFACE ",targetInputType,targetInputRate," TO ",fn.inputType,fn.sdfInput )
+
+  -- nothing to do!
+  if fn.inputType == targetInputTypeOrig then
+return fn
+  end
   
   local G = require "generators.core"
   local C = require "generators.examplescommon"
@@ -491,7 +501,7 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
   
   local functionStack = {}
 
-  err( targetInputType:deSchedule()==fn.inputType:deSchedule(), "convertInterface: unscheduled types don't even match! nothing we can do. Converting ",targetInputType," to ",fn.inputType)
+  err( targetInputTypeOrig:deSchedule()==fn.inputType:deSchedule(), "convertInterface: unscheduled types don't even match! nothing we can do. Converting ",targetInputTypeOrig," to ",fn.inputType)
   
   -- does this require a space-time conversion?
   local function reshape( fnType, targetType )
@@ -503,11 +513,8 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
     if fnType:isArray() then
       -- if not an array, nothing we can do!
       if fnType.V:eq(0,0) and targetType.V:eq(1,1) then
-        --table.insert( functionStack, RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size )) )
         res = RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size ))
       elseif fnType.V:eq(1,1) and targetType.V:eq(0,0) then
-        --assert(false)  -- NYI
-
         res = G.Function{ "Promote_Seq_to_ParSeq_"..tostring(targetType:extractData()), types.rv(targetType:extractData()), SDF{1,1},
           function(inp)
             return C.broadcast( targetType:extractData(), 1, 1 )(inp)
@@ -529,7 +536,6 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
 
       elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
         -- recurse
-        
         if fnType.V:eq(0,0) then
           res = RM.mapSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
         else
@@ -538,7 +544,7 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
         end
       elseif fnType.V==targetType.V  and
         fnType:arrayOver()==targetType:arrayOver() then
-        -- nothing to do!
+          -- nothing to do!
       else
         print("convertInterface NYI - convert ",fn.inputType," to ",targetInputType)
         assert(false)
@@ -546,7 +552,7 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
     elseif fnType:isTuple() then
       assert( targetType:isTuple() and #fnType.list==#targetType.list )
 
-      res = G.Function{"FannedConvertInterface", types.RV(targetType), SDF{1,1},
+      res = G.Function{"FannedConvertInterface_"..tostring(targetType).."_"..tostring(fnType), types.RV(targetType), SDF{1,1},
         function(inp)
           local tmp = RM.broadcastStream( targetType, #targetType.list)(inp)
           local out = {}
@@ -584,9 +590,14 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
     
     return res
   end
+
+  local targetInputType = targetInputTypeOrig
+  local targetInputRate = targetInputRateOrig
   
+  -- rate optimization
   if targetInputType:deInterface()~=fn.inputType:deInterface() then
     if targetInputType:isArray() then
+      -- RV()[N] optimization
       err( fn.inputType:isArray(), "ConvertInterface NYI = if input is array of interfaces, so must output be. target: ",targetInputType," to ",fn.inputType )
       err( targetInputType.size==fn.inputType.size, "ConvertInterface NYI = if input is array of interfaces, size must match. target: ",targetInputType," to ",fn.inputType )
       assert( targetInputType.over:is("Interface") )
@@ -595,17 +606,21 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
       
       table.insert( functionStack, res )
     elseif targetInputType:isTuple() then
-      err( fn.inputType:isTuple(), "ConvertInterface NYI = if input is tuple of interfaces, so must output be. target: ",targetInputType," to ",fn.inputType )
-      err( #targetInputType.list==#fn.inputType.list, "ConvertInterface NYI = if input is tuple of interfaces, size must match. target: ",targetInputType," to ",fn.inputType )
+      -- {RV(),RV()} optimization
+
+      -- NOTE: at this point, the fn may expect a rv, not a RV, but we don't do that conversion yet! First: make the rates match
+      --err( fn.inputType:isTuple(), "ConvertInterface NYI = if input is tuple of interfaces, so must output be. target: ",targetInputType," to ",fn.inputType )
+
+      err( #targetInputType:deInterface().list==#fn.inputType:deInterface().list, "ConvertInterface NYI = if input is tuple of interfaces, size of tuple must match. target: ",targetInputType," to ",fn.inputType )
       assert( targetInputType.list[1]:is("Interface") )
 
       local res = G.Function{"TupleConvertInterface", targetInputType, targetInputRate,
         function(inp)
           local out = {}
-          for k,v in ipairs(targetInputType.list) do
+          for k,v in ipairs(targetInputType:deInterface().list) do
             local i = darkroom.selectStream( "str"..k, inp, k-1 )
 
-            local rec = reshape( fn.inputType.list[k].over, v.over )
+            local rec = reshape( fn.inputType:deInterface().list[k], v )
 
             if rec==nil then
               -- this is OK: means no change
@@ -613,7 +628,7 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
             else
               local recres = rec(i)
               table.insert( out, recres )
-              assert( out[#out].type==fn.inputType.list[k] )
+              assert( out[#out].type:deInterface()==fn.inputType:deInterface().list[k] )
             end
           end
 
@@ -627,26 +642,39 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
       
       table.insert( functionStack, res )
     else
+      -- simple case of RV(T1) to RV(T2)
       err( targetInputType:is("Interface") and fn.inputType:is("Interface"),"ConvertInterface NYI - must both be single interfaces, but is conversion from ",targetInputType," to ",fn.inputType )
+
       local res = reshape( fn.inputType.over, targetInputType.over )
+
       if res~=nil then
         table.insert( functionStack, res )
       end
     end
   end
 
-  local liftTargetInputType = targetInputType
-  local liftTargetInputRate = targetInputRate
+  --local liftTargetInputType = targetInputType
+  --local liftTargetInputRate = targetInputRate
   if #functionStack>0 then
-    liftTargetInputType = functionStack[#functionStack].outputType
-    liftTargetInputRate = functionStack[#functionStack].sdfOutput
+    targetInputType = functionStack[#functionStack].outputType
+    targetInputRate = functionStack[#functionStack].sdfOutput
   end
 
-  J.err( liftTargetInputType:deInterface()==fn.inputType:deInterface(),"Reshape failed: function has input type: ",fn.inputType," but reshape returned type: ", liftTargetInputType )
+  -- convert tuples of interfaces to interfaces of tuples, AFTER RATE MATCHING
+  -- this has to happen after rate matching, because after this conversion, the whole bundle will have 1 rate!
+  -- but some of the S-T conversions may require you to mess with individual (multiple) rates
+  if targetInputType:isTuple() and fn.inputType:isrv() and fn.inputType.over:isTuple() then
+    -- this means we are converting <RV(a),RV(b)> to rv({a,b}), by doing a packtuple
+    table.insert( functionStack, RM.packTuple( targetInputType.list ) )
+    targetInputType = functionStack[#functionStack].outputType
+  end
+  
+
+  J.err( targetInputType:deInterface()==fn.inputType:deInterface(),"Reshape failed: function has input type: ",fn.inputType," but reshape returned type: ", targetInputType )
 
   --J.err( liftTargetInputRate==fn.sdfInput, "Reshape failed: function has input rate: ",fn.sdfInput," but reshaped returned rate: ", liftTargetInputRate )
 
-  local mod = findLifts( fn.name, fn, liftTargetInputType, fn.inputType, fn.outputType )
+  local mod = findLifts( fn.name, fn, targetInputType, fn.inputType, fn.outputType )
 
   if mod~=nil then
     table.insert( functionStack, mod )
@@ -657,7 +685,7 @@ darkroom.convertInterface = J.memoize(function( fn, targetInputType, targetInput
   if #functionStack==1 then
     return functionStack[1]
   else
-    local res = C.linearPipeline( functionStack, "convertInterface_"..tostring(fn.inputType).."_to_"..tostring(targetInputType).."_"..fn.name )
+    local res = C.linearPipeline( functionStack, "convertInterface_"..tostring(fn.inputType).."_to_"..tostring(targetInputTypeOrig).."_"..fn.name )
     return res
   end
 end)
@@ -716,6 +744,7 @@ function functionGeneratorFunctions:complete( arglist, X )
   fn.generatorArgs = arglist
 
   if DARKROOM_VERBOSE then print("FunctionGenerator:complete() DONE,TRIVIAL",self.name) end
+
   return fn
 end
 
@@ -850,7 +879,7 @@ local function buildAndCheckSystolicModule( tab, isModule )
 end
 
 function buildAndCheckTerraModule(tab)
-  err( rawget(tab, "makeTerra")~=nil, "missing terraModule, and 'makeTerra' doesn't exist on module '"..tab.name.."'" )
+  err( rawget(tab, "makeTerra")~=nil, "missing terraModule, and 'makeTerra' doesn't exist on module '",tab.name,"'" )
   err( type(rawget(tab, "makeTerra"))=="function", "'makeTerra' function not a lua function, but is "..tostring(rawget(tab, "makeTerra")) )
   local tm = rawget(tab,"makeTerra")()
   err( terralib.types.istype(tm) and tm:isstruct(), "makeTerra for module '",tab.name,"' returned something other than a terra struct? returned: ",tm)
@@ -999,13 +1028,13 @@ function darkroomFunctionFunctions:sdfTransfer( Isdf, loc )
   -- (1) inputs are converged, but ratio is inconsistant. Return unconverged
   -- (2) ratio is consistant, but some inputs are unconverged. Return unconverged.
 
-  err( SDFRate.isSDFRate(self.sdfInput), "Missing SDF rate for fn "..self.name..". is: "..tostring(self.sdfInput))
-  err( SDFRate.isSDFRate(self.sdfOutput), "Missing SDF output rate for fn "..self.name)
+  err( SDFRate.isSDFRate(self.sdfInput), "Missing SDF rate for fn ",self.name,". is: ",self.sdfInput)
+  err( SDFRate.isSDFRate(self.sdfOutput), "Missing SDF output rate for fn ",self.name)
 
   local consistantRatio = true
 
   err( SDFRate.isSDFRate(Isdf), "sdfTransfer: input argument should be SDF rate" )
-  err( #self.sdfInput == #Isdf, "# of SDF streams doesn't match. Was ",#Isdf," but expected ",#self.sdfInput,", ",loc )
+  err( #self.sdfInput == #Isdf, "# of SDF streams into function '",self.name,"' doesn't match. Was ",#Isdf," but expected ",#self.sdfInput,", ",loc )
 
   local Uniform = require "uniform"
 
@@ -1020,7 +1049,7 @@ function darkroomFunctionFunctions:sdfTransfer( Isdf, loc )
     end
   end
 
-  err( consistantRatio, "SDFTransfer: ratio is not consistant going into function '",self.name,"', Input rate: ",Isdf," function rate: ",self.sdfInput )
+  err( consistantRatio, "SDFTransfer: ratio is not consistant going into function '",self.name,"', Input rate: ",Isdf," function rate: ",self.sdfInput, loc )
   
   local res = {}
   for i=1,#self.sdfOutput do
@@ -1276,7 +1305,7 @@ darkroom.newInstanceCallsite = J.memoize(function( instance, functionName, X )
 end)
 
 local function checkRigelFunction(tab)
-  err( type(tab.name)=="string", "rigel.newFunction: name must be string, but is: "..tostring(tab.name) )
+  err( type(tab.name)=="string", "rigel.newFunction: name must be string, but is: ",tab.name )
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( darkroom.SDF==false or tab.sdfInput:allLE1(), "rigel.newFunction: sdf input rate is not <=1, but is: "..tostring(tab.sdfInput) )
@@ -1582,7 +1611,8 @@ function darkroom.isModule(m) return darkroom.isPlainModule(m) or darkroom.isMod
 darkroomIRFunctions = {}
 darkroomIRFunctions.isIR=true
 setmetatable( darkroomIRFunctions,{__index=IR.IRFunctions})
-darkroomIRMT = {}--{__index = darkroomIRFunctions}
+darkroomIRMT = {}
+
 function darkroomIRMT.__index(tab,key)
   local res = rawget(tab,key)
   if res~=nil then return res end
@@ -1591,11 +1621,16 @@ function darkroomIRMT.__index(tab,key)
     return darkroomIRFunctions[key]
   end
 
+  if type(key)=="number" and tab.scheduleConstraints~=nil and tab.scheduleConstraints.RV then
+    -- HACK: early out for schedule pass
+    return tab
+  end
+  
   if type(key)=="number" and types.isHandshakeAny(tab.type) and (tab.type:isTuple() or tab.type:isArray()) then
     local res = darkroom.selectStream(nil,tab,key)
     rawset(tab,key,res)
     return res
-  elseif type(key)=="number" and (tab.type:extractData():isArray() or tab.type:extractData():isTuple()) then
+  elseif type(key)=="number" and (tab.type:deInterface():isArray() or tab.type:deInterface():isTuple()) then
     local G = require "generators.core"
     local res = G.Index{key}(tab)
     rawset(tab,key,res)
@@ -1961,7 +1996,7 @@ function darkroomIRFunctions:calcSDF( )
         else
           local rateList = {}
           for _,v in ipairs(self.inputs) do table.insert(rateList,v.rate) end
-          err(self.inputs[key].rate[1][1]==IR[1] and self.inputs[key].rate[1][2]==IR[2], "SDF ",self.kind," rate mismatch \n",unpack(rateList),"\n",self," ",self.loc)
+          err(self.inputs[key].rate[1][1]==IR[1] and self.inputs[key].rate[1][2]==IR[2], "SDF ",self.kind," rate mismatch. \ninput 0 rate is:",self.inputs[1].rate," type:",self.inputs[1].type,"\ninput ",(key-1)," rate is:",self.inputs[key].rate," type:",self.inputs[key].type,"\n",self," ",self.loc)
         end
       end
       res = {IR}
@@ -1979,6 +2014,12 @@ function darkroomIRFunctions:calcSDF( )
           print("        concat["..tostring(k).."] ",self.name,"RATE",SDF(v))
         end
       end
+    end
+
+    -- HACK: in schedule pass, we may switch to RV inside a concat!
+    -- broadcast the rate to make this work
+    if self.scheduleConstraints~=nil and self:outputStreams()>0 and self.inputs[1]:outputStreams()==0 then
+      res = J.broadcast(res[1],self:outputStreams())
     end
   elseif self.kind=="statements" then
     res = self.inputs[1].rate
@@ -2141,6 +2182,15 @@ end
 function darkroomIRFunctions:typecheckSchedulePass()
   if self.scheduleConstraints==nil then self.scheduleConstraints={} end
 
+  -- early out: if we already know we need RV, we're done
+  for k,v in ipairs(self.inputs) do
+    if v.scheduleConstraints.RV then
+      self.scheduleConstraints.RV = true
+      self.type = types.null()
+      return
+    end
+  end
+  
   if self.kind=="input" then
     -- nothing to do
   elseif self.kind=="apply" then
@@ -2148,7 +2198,7 @@ function darkroomIRFunctions:typecheckSchedulePass()
 
     --assert( self.inputs[1].type:isrv() ) -- we should have done this earlier in other nodes
 
-    J.err( self.inputs[1].type:deInterface()==self.fn.inputType:deInterface(),"Error, deinterfaced inputs to function '",self.fn.name,"' must match, but is: input:",self.inputs[1].type," fnInput:",self.fn.inputType )
+    J.err( self.inputs[1].type:deSchedule()==self.fn.inputType:deSchedule(),"Error, deScheduled inputs to function '",self.fn.name,"' must match, but is: input:",self.inputs[1].type," fnInput:",self.fn.inputType," input:deScheduled()=",self.inputs[1].type:deSchedule()," fnInput:deScheduled()=",self.fn.inputType:deSchedule() )
 
     if self.fn.inputType:isrv()==false or self.fn.outputType:isrv()==false then
       self.scheduleConstraints.RV = true
@@ -2166,14 +2216,34 @@ function darkroomIRFunctions:typecheckSchedulePass()
 
     -- just return the type the function gave us
     -- if this ended up RV, we'll get boxed into being RV, but whatever, we need to do that to prevent errors
-    -- (ie if we change the type to rv, the number of SDF streams may no longer match)
+    -- (ie if we change the type to RV, the number of SDF streams may no longer match)
     self.type = self.fn.outputType
   elseif self.kind=="concat" or self.kind=="concatArray2d" then
     self.scheduleConstraints.RV = false
+    local promoteToRV = false
     for k,i in ipairs(self.inputs) do
       self.scheduleConstraints.RV = self.scheduleConstraints.RV or i.scheduleConstraints.RV
+      if i.type:isrv()==false and i.type:isRV()==false then
+        -- if this is, for example rvV, we need to promote to RV in this node
+        promoteToRV = true
+        self.scheduleConstraints.RV = true
+      end
     end
-    self:typecheck() -- default to regular behavior
+
+    if promoteToRV then
+      if self.kind=="concatArray2d" then
+        J.map( self.inputs, function(i,k) err(i.type==self.inputs[1].type, "All inputs to concatArray2d must have same type! index "..tostring(k-1).." is type "..tostring(i.type)..", but index 0 is "..tostring(self.inputs[1].type)) end )
+        self.type = types.array2d(types.RV( self.inputs[1].type:deInterface() ), self.W, self.H )
+      elseif self.kind=="concat" then
+        self.type = types.tuple( J.map(self.inputs,function(v,k) return types.RV(v.type:deInterface()) end) )
+
+      else
+        print("NYI")
+        assert(false)
+      end
+    else
+      self:typecheck() -- default to regular behavior
+    end
   elseif self.kind=="selectStream" then
     self.scheduleConstraints.RV = self.inputs[1].scheduleConstraints.RV
     self:typecheck() -- default to regular behavior
@@ -2300,7 +2370,14 @@ function darkroomIRFunctions:codegenSystolicReady( module, rateMonitors, X )
         err( allSS==false or J.keycount(args)==n:outputStreams(), "Unconnected output? Module expects ",n:outputStreams()," stream readers, but only ",J.keycount(args)," were found. ",n.loc )
         
         if n:outputStreams()>=1 and n:parentCount(self)>1 then
-          err(allSS,"Error, a Handshaked, multi-reader node is being consumed by something other than a selectStream? Handshaked nodes with multiple consumers should use broadcastStream. ",n.loc)
+          if allSS==false then
+            print("Error, a Handshaked, multi-reader node is being consumed by something other than a selectStream? Node '",tostring(n),"' Inside function '",module.__name,"'. Handshaked nodes with multiple consumers should use broadcastStream. ",n.loc)
+
+            for dsNode,_ in n:parents(self) do
+              print("CONSUMER",dsNode,dsNode.loc)
+            end
+            assert(false)
+          end
         end
       end
       
@@ -2570,6 +2647,11 @@ function darkroom.apply( name, fn, input, sdfRateOverride )
   err( input==nil or darkroom.isIR( input ), "last argument to apply must be darkroom value or nil" )
   err( sdfRateOverride==nil or SDFRate.isSDFRate(sdfRateOverride), "sdfRateOverride must be SDF rate" )
 
+  if input.scheduleConstraints~=nil and input.scheduleConstraints.RV then
+    -- early out hack: if schedule pass is done (RV is known, just skip the apply)
+    return input
+  end
+
   if input==nil and sdfRateOverride==nil then
     sdfRateOverride={{1,1}}
   end
@@ -2656,7 +2738,6 @@ function darkroom.concat( name, t, X )
   else
     err( type(name)=="string", "first concat input should be name")
   end
-  
     
   err( type(t)=="table", "tuple input should be table of darkroom values" )
   err( X==nil, "rigel.concat: too many arguments")
@@ -2664,6 +2745,11 @@ function darkroom.concat( name, t, X )
   for k,v in ipairs(t) do
     err( darkroom.isIR(v),"concat input ",k-1," is not a darkroom value, is: ",v);
     table.insert( r.inputs, v )
+
+    -- early out if we already know schedule constraints
+    if v.scheduleConstraints~=nil and v.scheduleConstraints.RV then
+      return v
+    end
   end
   
   return darkroom.newIR( r )
@@ -2685,7 +2771,16 @@ function darkroom.concatArray2d( name, t, W, H, X )
     darkroom.__unnamedID = darkroom.__unnamedID+1
   end
   
-  J.map(t, function(n,k) assert(darkroom.isIR(n)); table.insert(r.inputs,n) end)
+  for k,v in ipairs(t) do
+    err( darkroom.isIR(v),"concatArray2d input ",k-1," is not a darkroom value, is: ",v);
+    table.insert( r.inputs, v )
+
+    -- early out if we already know schedule constraints
+    if v.scheduleConstraints~=nil and v.scheduleConstraints.RV then
+      return v
+    end
+  end
+  
   return darkroom.newIR( r )
 end
 

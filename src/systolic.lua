@@ -18,6 +18,9 @@ end
 systolic.isAST = systolicAST.isSystolicAST
 systolic.ast = systolicAST
 
+-- use xilinx dsps?
+systolic.DSPS = false
+
 local __usedNameCnt = 0
 function systolicAST.new(tab)
   assert(type(tab)=="table")
@@ -1674,6 +1677,9 @@ function userModuleFunctions:toVerilog()
     local t = {}
 
     local CEseen = {}
+    if systolic.DSPS==false then
+      table.insert(t,[[(* use_dsp="no" *)]])
+    end
     table.insert(t,"module "..self.name.."(")
 
     local portlist = {{"CLK",types.bool(),true}}
@@ -1940,7 +1946,10 @@ end
 ----------------------------
 regModuleFunctions={}
 setmetatable(regModuleFunctions,{__index=systolicModuleFunctions})
-regModuleMT={__index=regModuleFunctions}
+regModuleMT={__index=regModuleFunctions,
+             __tostring = function(tab)
+               return "RegModule:"..tostring(tab.type)
+end}
 
 function regModuleFunctions:instanceToVerilogStart( instance )
   if self.type:verilogBits()==0 then

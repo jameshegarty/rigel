@@ -260,9 +260,12 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, arraySize, X )
   err( X==nil, "packTuple: too many arguments" )
   
   local res = {kind="packTuple", disableFIFOCheck = disableFIFOCheck}
-  
-  J.map(typelist, function(t) err(t:isRV(),"packTuple: should be list of RV types, but is: "..tostring(t)) end )
 
+  for k,t in ipairs(typelist) do
+    err( types.isType(t),"packTuple: typelist should be list of types, but is:",t)
+    err(t:isRV(),"packTuple: should be list of RV types, but is: "..tostring(t))
+  end
+  
   if arraySize==nil then
     res.inputType = types.tuple(typelist)
     local schedList = {}
@@ -285,6 +288,7 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, arraySize, X )
       end
     end
   else
+    print("NYI - packTuple over an array")
     assert(false)
   end
     
@@ -1187,8 +1191,10 @@ end)
 -- take a fn:T1->T2 and map over a Seq, ie to f:T1{w,h}->T2{w,h}
 -- this is basically a trivial conversion
 modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
-  err( rigel.isFunction(fn), "mapSeq: first argument to map must be Rigel module, but is ",fn )
-
+  err( rigel.isPlainFunction(fn), "mapSeq: first argument to map must be Rigel module, but is ",fn )
+  err( fn.inputType.kind=="Interface", "mapSeq: fn input should be interface, but is: ",fn.inputType )
+  err( fn.outputType.kind=="Interface", "mapSeq: fn '",fn.name,"' output should be interface, but is: ",fn.outputType )
+       
   local G = require "generators.core"
     
   local res = G.Function{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
@@ -1197,13 +1203,15 @@ modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
   
   -- hackity hack
   if fn.inputType~=types.Interface() then
-    local inputType = fn.inputType:replaceVar("over",types.Seq(fn.inputType.over,W_orig,H_orig))
+    local inputType = fn.inputType:replaceVar("over",types.Seq(fn.inputType:deInterface(),W_orig,H_orig))
     assert(res.inputType:lower()==inputType:lower())
     res.inputType = inputType
   end
 
   if fn.outputType~=types.Interface() then
-    local outputType = fn.outputType:replaceVar("over",types.Seq(res.outputType.over,W_orig,H_orig))
+    local outputType = fn.outputType:replaceVar("over",types.Seq(fn.outputType:deInterface(),W_orig,H_orig))
+--    print("MAPSEQ",res.outputType,outputType)
+--    print("MAPSEQ_low",res.outputType:lower(),outputType:lower())
     assert(res.outputType:lower()==outputType:lower())
     res.outputType = outputType
   end
@@ -5021,7 +5029,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         if iDelayThis ~= delayTable[orig.inputs[1]] then
           local d = iDelayThis-delayTable[orig.inputs[1]]
           if verbose then print("DELAY",n.fn.name,d) end
-          res = modules.makeHandshake(modules.shiftRegister( n.inputs[1].type:deInterface(), d ))(res)
+          res = C.fifo( n.inputs[1].type:deInterface(), d )(res)
         end
 
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name
@@ -5083,6 +5091,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
           res = rigel.apply( J.sanitize(n.name.."_OFIFO"), OFIFO, res )
         end
       elseif n.kind=="apply" or n.kind=="applyMethod" then
+        -- can't applys of modules
         -- this is things like VR mode, tuples of handshakes, etc
         -- hopefully we can just ignore this...
         
@@ -5106,6 +5115,8 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         end
         
       elseif n.kind~="statements" then
+        -- all other nodes (like concats)
+        
         for k,inp in pairs(orig.inputs) do
           assert( type(delayTable[inp])=="number" )
           assert( type(delayTable[orig])=="number" )
@@ -5120,7 +5131,8 @@ local function insertFIFOs( out, delayTable, moduleName, X )
 
             local G = require "generators.core"
             if verbose then print("DELAY",delayDiff,n) end
-            res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
+            --res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
+            res.inputs[k] = C.fifo( inp.type:deInterface(), delayDiff )(res.inputs[k])
           end
         end
       end
@@ -5390,7 +5402,10 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
   else
     resdelay, delayTable = calculateDelaysGreedy( output )
   end
-    
+
+  local inputBurstiness = 0
+  local outputBurstiness = 0
+  
   if rigel.AUTO_FIFOS~=false then
     if HANDSHAKE_MODE and input~=nil and input.type:isInil()==false then
       output = insertFIFOs( output, delayTable, name )
@@ -5398,7 +5413,13 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
       output:visitEach(
         function(n)
           if n.kind=="apply" then
-            err( n.fn.inputBurstiness==0 and n.fn.outputBurstiness==0, "NYI: burstiness must be 0 for non-handshaked modules! \nmodule:",name,":",input.type,"->",output.type," \ncontains function:",n.fn.name,":",n.fn.inputType,"->",n.fn.outputType," \ninputBurstiness:", tostring(n.fn.inputBurstiness), " outputBurstiness:", tostring(n.fn.outputBurstiness)," loc:", n.loc )
+            if n==output and n.inputs[1].kind=="input" then
+              -- HACK! For wrappers, just propagate the bursts up!
+              inputBurstiness = n.fn.inputBurstiness
+              outputBurstiness = n.fn.outputBurstiness
+            else
+              err( n.fn.inputBurstiness==0 and n.fn.outputBurstiness==0, "NYI: burstiness must be 0 for non-handshaked modules! \nmodule:",name,":",input.type,"->",output.type," \ncontains function:",n.fn.name,":",n.fn.inputType,"->",n.fn.outputType," \ninputBurstiness:", tostring(n.fn.inputBurstiness), " outputBurstiness:", tostring(n.fn.outputBurstiness)," loc:", n.loc )
+            end
           end
       end)
     else
@@ -5510,19 +5531,19 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
 
     res.sdfOutput = output.rate
 
-    err(SDF.isSDF(res.sdfInput),"NOT SDF inp "..res.name.." "..tostring(res.sdfInput))
-    err(SDF.isSDF(res.sdfOutput),"NOT SDF out "..res.name.." "..tostring(res.sdfOutput))
+    err(SDF.isSDF(res.sdfInput),"NOT SDF inp ",res.name," ",tostring(res.sdfInput))
+    err(SDF.isSDF(res.sdfOutput),"NOT SDF out ",res.name," ",tostring(res.sdfOutput))
 
     if DARKROOM_VERBOSE then print("LAMBDA",name,"SDF INPUT",res.sdfInput[1][1],res.sdfInput[1][2],"SDF OUTPUT",res.sdfOutput[1][1],res.sdfOutput[1][2]) end
 
     -- each rate should be <=1
     for k,v in ipairs(res.sdfInput) do
-      err( v[1]:le(v[2]):assertAlwaysTrue(), "lambda '"..name.."' has strange SDF rate. input: "..tostring(res.sdfInput).." output:"..tostring(res.sdfOutput))
+      err( v[1]:le(v[2]):assertAlwaysTrue(), "lambda '",name,"' has strange SDF rate. input: ",tostring(res.sdfInput)," output:",tostring(res.sdfOutput))
     end
       
     -- each rate should be <=1
     for _,v in ipairs(res.sdfOutput) do
-      err( v[1]:le(v[2]):assertAlwaysTrue(), "lambda '"..name.."' has strange SDF rate. input: "..tostring(res.sdfInput).." output:"..tostring(res.sdfOutput))
+      err( v[1]:le(v[2]):assertAlwaysTrue(), "lambda '",name,"' has strange SDF rate. input: ",tostring(res.sdfInput)," output:",tostring(res.sdfOutput))
     end
 
   end
@@ -5687,7 +5708,7 @@ function modules.lift( name, inputType, outputType, delay, makeSystolic, makeTer
     err( ( (outputType==types.null() or outputType==types.Trigger) and systolicOutput==nil) or systolicAST.isSystolicAST(systolicOutput), "modules.lift: makeSystolic returned something other than a systolic value (module "..name.."), returned: ",systolicOutput )
 
     if outputType~=nil and systolicOutput~=nil then -- user may not have passed us a type, and is instead using the systolic system to calculate it
-      err( systolicOutput.type==rigel.lower(types.S(types.Par(outputType))), "lifted systolic output type does not match. Is "..tostring(systolicOutput.type).." but should be "..tostring(outputType)..", which lowers to "..tostring(rigel.lower(types.S(types.Par(outputType)))).." (module "..name..")" )
+      err( systolicOutput.type==rigel.lower(types.S(types.Par(outputType))), "lifted systolic output type does not match. Is ",systolicOutput.type," but should be ",outputType,", which lowers to ",rigel.lower(types.S(types.Par(outputType)))," (module ",name,")" )
     end
     
     if systolicInstances~=nil then

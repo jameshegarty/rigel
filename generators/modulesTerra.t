@@ -2009,7 +2009,7 @@ return {`mself.[n.name].ready}
           arg = readyInput
         else
           if J.keycount(args)>1 then
-            print("Error: a handshook node ("..tostring(n.name)..") has multiple consumers! This should only happen with broadcastStream! "..n.loc)
+            print("Error: a handshook node inside function '",fn.name,"' (node name: "..tostring(n.name).." node kind:",n.kind,") has multiple consumers! This should only happen with broadcastStream! ",n,n.loc)
             for parentNode,parentValue in pairs(args) do
               print("Consumer "..tostring(parentNode).." "..parentNode.loc)
             end

@@ -156,7 +156,9 @@ function(a)
   local ty = a.type:deInterface()
   --J.err( ty:isData(),"Index: input should be parallel type, but is: ", a.type )
 
-  if ty:isData() then
+  if ty:isData() or ty:isTuple() then
+    -- if this is a tuple, it may be a tuple of schedules, but that's ok - we can support that
+    
     local ity
     if ty:isArray() then
       ity = T.array2d(ty:arrayOver(),ty.size)
@@ -174,7 +176,8 @@ function(a)
   else
     -- perhaps this is a Seq or ParSeq?
     J.err( ty:isArray(),"Index: schedule type input is not an array? what could it be? ",ty)
-    J.err( ty.V:eq(R.Size(0,0)) or ty.V:eq(R.Size(1,1)),"Index: array vector size must be 0 or 1, but type is: ",ty)
+    --J.err( ty.V:eq(R.Size(0,0)) or ty.V:eq(R.Size(1,1)),"Index: array vector size must be 0 or 1, but type is: ",ty)
+    J.err( ty.V[2]==1 or ty.V[2]==0,"Index: NYI - array vector size must have height=1 or height=0, but type is: ",ty)
 
     local x,y
     if a.size~=nil then
@@ -184,7 +187,13 @@ function(a)
       x=a.number
       y=0
     end
-    return RM.cropSeq( ty:arrayOver(), ty.size[1], ty.size[2], ty.V[1], math.max(x-1,0), math.min(ty.size[1]-x,ty.size[1]-1), math.max(y-1,0), math.min(ty.size[2]-y,ty.size[2]-1), true, true )
+    if ty.V[1]>1 then
+      -- we can't use cropseq, if V is >1 (makes no sense, can't select 1 element)
+      -- so, as a workaround, just convert to full size array
+      return C.index( types.Array2d(ty:arrayOver(),ty.size), x, y )
+    else
+      return RM.cropSeq( ty:arrayOver(), ty.size[1], ty.size[2], ty.V[1], math.max(x-1,0), math.min(ty.size[1]-x,ty.size[1]-1), math.max(y-1,0), math.min(ty.size[2]-y,ty.size[2]-1), true, true )
+    end
   end
 end)
 
@@ -219,7 +228,8 @@ function(args)
 
   if args.type:isrv() then
     -- trivial case!
-    return C.broadcast( args.type:deInterface(), size[1], size[2] )
+    assert(size[2]==1)
+    return C.broadcastTuple( args.type:deInterface(), size[1] )
   else
     return RM.broadcastStream( args.type:deInterface(), size[1], size[2] )
   end
@@ -232,7 +242,8 @@ function(args)
     return C.identity( args.type:deInterface() )
   else
     if args.type:isTuple() then
-      return RM.packTuple( args.type.list, args.bool )
+      local fn =  RM.packTuple( args.type.list, args.bool )
+      return fn
     elseif args.type:isArray() then
       return RM.packTuple( args.type, args.bool, args.type.size )
     else
@@ -245,7 +256,17 @@ generators.FIFO = R.FunctionGenerator("core.FIFO",{"number","type"},{"bool","str
 function(args)
   return C.fifo( args.type:deInterface(), args.number, args.bool, nil, nil, nil, args.string )
 end )
-  
+
+-- add a fifo, but only if input is RV!!
+generators.RVFIFO = R.FunctionGenerator("core.FIFO",{"number","type"},{"bool","string"},
+function(args)
+  if args.type:isRV() then
+    return C.fifo( args.type:deInterface(), args.number, args.bool, nil, nil, nil, args.string )
+  else
+    return C.identity( args.type:deInterface() )
+  end
+end )
+
 generators.NE = R.FunctionGenerator("core.NE",{},{"async","number"},
 function(args)
   local res = {}
@@ -496,9 +517,9 @@ end,nil,false)
 generators.Crop = R.FunctionGenerator("core.Crop",{"bounds"},{},
 function(a)
   J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Crop: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
-  return C.cropHelperSeq(a.T,a.size[1],a.size[2],a.V[1],a.bounds[1],a.bounds[2],a.bounds[3],a.bounds[4],true)
+  return C.cropHelperSeq( a.S:deSchedule(), a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
 end,
-T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
+T.array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")) )
 
 generators.Downsample = R.FunctionGenerator("core.Downsample",{"size"},{},
 function(a)
@@ -566,14 +587,17 @@ generators.Fmap = R.FunctionGenerator("core.Fmap",{"rigelFunction","type","rate"
 function(args)
   J.err(R.isPlainFunction(args.rigelFunction),"core.FMap should only work on plain functions")
 
-  return R.FunctionGenerator("core.FMap_internal",{"rigelFunction"},{},function(a) return args.rigelFunction end,
-                             args.rigelFunction.inputType:deInterface() ):complete(args)
-end)
+  -- this is subtle, but we want to not optimize the type: just take whatever type was passed in, and do necessary conversions
+  -- this prevents a double conversion
+  return R.FunctionGenerator("core.FMap_internal",{"rigelFunction","type","rate"},{},function(a) return args.rigelFunction end,nil,false ):complete(args)
+--                             args.rigelFunction.inputType:deInterface(),false ):complete(args)
+end,nil,false)
 
 -- bool: allow stateful
 generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool"},
 function(args)
 
+--  print("MAP:SPECIALIZE TO TYPE",args.rigelFunction.name,types.rv(args.S))
   local fn = args.rigelFunction:specializeToType( types.rv(args.S), args.rate )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",args.D)
 
@@ -752,7 +776,8 @@ function(args)
 end,nil,false)
 
 -- string is name
-generators.SchedulableFunction = R.FunctionGenerator("core.Function",{"luaFunction","type","type1"},{"string","rate"},
+-- bool: force rv no matter what
+generators.SchedulableFunction = R.FunctionGenerator("core.SchedulableFunction",{"luaFunction","type","type1"},{"string","rate","bool"},
 function(args)
   --print("Schecule SchedulableFunction ",args.string,args.type,args.type1)
   
@@ -764,22 +789,50 @@ function(args)
   J.err( args.type1:isData(),"SchedulableFunction declared input type should be data type, but is: ",args.type1 )
   J.err( args.type1:isSupertypeOf(args.type:deSchedule(),{},""),"SchedulableFunction '",args.string,"' was passed an input type that can't be converted to declared type! declared:", args.type1, " passed:", args.type )
 
-  local schedulePassInput = R.input( types.rv(args.type:deInterface()), args.rate, true )
-  local scheduleOut = args.luaFunction(schedulePassInput)
-
-  J.err( R.isIR(scheduleOut), "SchedulableFunction: user function returned something other than a Rigel value? ",scheduleOut)
-  J.err( type(scheduleOut.scheduleConstraints)=="table","Internal Error, schedule pass didn't return constraints?")
-  J.err( type(scheduleOut.scheduleConstraints.RV)=="boolean","Internal Error, schedule pass didn't return RV constraint?")
-  
-  --print("Schedule Pass result, ",args.string," RV:", scheduleOut.scheduleConstraints.RV )
-  
   local input
-  if scheduleOut.scheduleConstraints.RV then
-    -- this needs an RV interface
-    input = R.input( types.RV(args.type:deInterface()), args.rate )
-  else
-    input = R.input( types.rv(args.type:deInterface()), args.rate )
+
+  local optType, optRate = args.type:optimize( args.rate )
+  
+  local RVMode
+
+  -- user explicitly forced rv!
+  if args.bool==true then
+    RVMode = false
+    input = R.input( types.rv(optType:deInterface()), optRate )
   end
+  
+  if RVMode==nil and #optRate>1 then
+    -- if we have multiple rates going into the function, and the rates are different, we basically have to do RV mode
+    for k,r in ipairs(optRate) do
+      if optRate[1]~=r then
+        print("!!!!!!!! rate mismatch into SchedulableFunction ",args.string," forcing RV! ",optType,SDF{optRate[1]},SDF{r})
+        RVMode = true
+        assert( optType:isTuple() or optType:isArray() )
+        input = R.input( optType, optRate)
+        break
+      end
+    end
+  end
+  
+  if RVMode==nil then
+    local schedulePassInput = R.input( types.rv(optType:deInterface()), optRate, true )
+    local scheduleOut = args.luaFunction(schedulePassInput)
+
+    J.err( R.isIR(scheduleOut), "SchedulableFunction: user function returned something other than a Rigel value? ",scheduleOut)
+    J.err( type(scheduleOut.scheduleConstraints)=="table","Internal Error, schedule pass didn't return constraints?")
+    J.err( type(scheduleOut.scheduleConstraints.RV)=="boolean","Internal Error, schedule pass didn't return RV constraint?")
+  
+    --print("Schedule Pass result, ",args.string," RV:", scheduleOut.scheduleConstraints.RV )
+    RVMode = scheduleOut.scheduleConstraints.RV
+
+    if RVMode then
+      -- this needs an RV interface
+      input = R.input( types.RV(optType:deInterface()), optRate )
+    else
+      input = R.input( types.rv(optType:deInterface()), optRate )
+    end
+  end
+  
 
   --print("Schedulable function ",args.string," input type:",input.type)
   
@@ -789,11 +842,8 @@ function(args)
   local resFn = RM.lambda( args.string, input, out )
 
   -- this will enable auto-lifting...
-  return R.FunctionGenerator("core.ScheduleableFunction_"..args.string,{},{"luaFunction","string","type1"},
-            function(a) return resFn end,
-            resFn.inputType:deInterface() ):complete(args)
-
-end,nil,true)
+  return generators.Fmap{resFn}:complete{type=args.type,rate=args.rate}
+end,nil,false)
 
 -- rigelFunction: the fn to call to perform the AXI read
 generators.AXIReadBurst = R.FunctionGenerator("core.AXIReadBurst",{"string","size","type","type1","rate","rigelFunction"},{"number","address"},
@@ -857,6 +907,7 @@ function(args)
   elseif args.type:deInterface():isTuple() then
     return C.slice( args.type:deInterface(), args.size[1], args.size[2], 0, 0, false )
   else
+    print("Slice: applying to unsupported type: ",args.type)
     assert(false)
   end
 end)

@@ -14,17 +14,17 @@ $(BUILDDIR)/%.$(1).bit: $(BUILDDIR)/%.v
 # hack to allow users of this include to override gold dir
 GOLDSTRPRE ?= gold/
 GOLDSTRPOST ?= .bmp
-$(BUILDDIR)/%.$(1).correct.txt : $(BUILDDIR)/%.$(1).bmp
-	diff $(BUILDDIR)/$$*.$(1).bmp $(GOLDSTRPRE)$$*$(GOLDSTRPOST) > $(BUILDDIR)/$$*.$(1).diff
-	test ! -s $(BUILDDIR)/$$*.$(1).diff && touch $$@
-	date
-
 $(BUILDDIR)/%.$(1).regcorrect.txt : $(BUILDDIR)/%.$(1).bmp
 	$(LUA) ../misc/regcheck.lua $(BUILDDIR)/$$*.$(1).regout.lua $(GOLDSTRPRE)$$*.regout.lua && touch $$@
 	date
 
 $(BUILDDIR)/%.$(1).cyclescorrect.txt : $(BUILDDIR)/%.$(1).bmp
 	$(LUA) ../misc/approxnumdiff.lua $(BUILDDIR)/$$*.$(1).cycles.txt $(GOLDSTRPRE)$$*.$(1).cycles.txt $$@ 0.05 smallerIsBetter
+
+$(BUILDDIR)/%.$(1).correct.txt : $(BUILDDIR)/%.$(1).bmp $(BUILDDIR)/%.$(1).cyclescorrect.txt $(BUILDDIR)/%.$(1).regcorrect.txt 
+	diff $(BUILDDIR)/$$*.$(1).bmp $(GOLDSTRPRE)$$*$(GOLDSTRPOST) > $(BUILDDIR)/$$*.$(1).diff
+	test ! -s $(BUILDDIR)/$$*.$(1).diff && touch $$@
+	date
 
 $(BUILDDIR)/%.$(1).raw: $(BUILDDIR)/%.$(1).bit
 	{ time -p $(MKPATH)/$(1)/run $(shell pwd)/$(BUILDDIR)/$$*.$(1).bit $(shell pwd)/$(BUILDDIR)/$$*.metadata.lua $(shell pwd)/$(BUILDDIR)/$$*.$(1).raw $(shell pwd)/$(BUILDDIR)/$$*.$(!); } 2>&1 | tee $(BUILDDIR)/$$*.runtimeraw.txt; exit $$$${PIPESTATUS[0]}

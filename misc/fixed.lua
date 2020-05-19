@@ -605,7 +605,8 @@ function fixedASTFunctions:toSystolic(inp)
         res = S.cast(args[1],fixed.extract(n.type))
       elseif n.kind=="lift" or n.kind=="lower" then
         -- don't actually do anything: we only add the wrapper at the very end
-        res = args[1]
+        res = S.cast(args[1],types.bits(n.inputs[1].type:verilogBits()))
+        res = S.cast( res, fixed.extract(n.type) )
       elseif n.kind=="lowerWithExp" then
         res = S.cast(args[1],n.type)
       elseif n.kind=="constant" then

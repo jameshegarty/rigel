@@ -132,7 +132,7 @@ SDFTOPMT.__call = function(tab,arg,X)
     arg={arg}
   end
   
-  assert(SDFRate.isSDFRate(arg))
+  J.err(SDFRate.isSDFRate(arg), "SDF: input doesn't match SDF rate format ",arg)
   
   local uarg = {}
   for _,v in ipairs(arg) do

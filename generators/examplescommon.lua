@@ -1132,7 +1132,7 @@ end
 C.lutinvert = J.memoize(function( ty, X )
   assert(X==nil)
   assert(types.isType(ty))
-  assert(ty:isData())
+  err( ty:isData(), "lutinvert: input type must be data type, but is: ",ty)
   local fixed = require "fixed"
   --fixed.expectFixed(ty)
   local signed = false
@@ -1826,6 +1826,30 @@ C.broadcast = memoize(function( A, W, H, X )
     "C.broadcast")
 end)
 C.arrayop=C.broadcast
+
+-- broadcast to a suple
+C.broadcastTuple = memoize(function( A, N, X )
+  err( types.isType(A), "C.broadcast: A must be type A")
+  err( A:isSchedule(), "C.broadcast: type should be basic, but is: "..tostring(A))
+  err( type(N)=="number", "broadcast: N should be number, but is: ",N)
+  assert(X==nil)
+  
+  local OT = types.tuple(J.broadcast(A,N))
+
+  local res = modules.lift( J.sanitize("Broadcast_"..tostring(A).."_N"..tostring(N)), A:lower(), OT:lower(), 0,
+    function(sinp) return S.tuple(J.broadcast(sinp,N)) end,
+    function() return CT.broadcastTuple(A,OT,N) end,
+    "C.broadcastTuple")
+
+  --print( res.inputType, types.rv(A), types.rv(A):lower() )
+  assert( res.inputType:lower()==types.rv(A):lower() )
+  assert( res.outputType:lower()==types.rv(OT):lower() )
+
+  res.inputType = types.rv(A)
+  res.outputType = types.rv(OT)
+  
+  return res
+end)
 
 -- extractStencils : A[w,h] -> A[(xmax-xmin+1)*(ymax-ymin+1)][w,h]
 -- min, max ranges are inclusive
@@ -3109,7 +3133,7 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig,
   outputType = types.RV( types.Array2d( ty, W_orig, H, V2w, V2h ) )
 
   local res = generators.Function{
-    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(inputType:extractData()),
+    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh).."_OIPC"..tostring(outputItemsPerCyc).."_W"..tostring(W_orig).."_H"..tostring(H), types.RV(inputType:extractData()),
     function(inp)
       local inprs
       if Vw==0 and Vh==0 then
@@ -3664,33 +3688,32 @@ end)
 C.NegF = J.memoize(function()
     local G = require "generators.core"
     return G.Function{"NegF",types.rv(types.FloatRec32),
-                                      function(i) return G.SubF(R.c(0,types.FloatRec32),i) end}
-
+      function(i) return G.SubF(R.c(0,types.FloatRec32),i) end}
 end)
 
 C.ConcatConst = J.memoize(function( ty, constTy, constValue)
     local G = require "generators.core"
     return G.Function{"ConcatConst_"..tostring(ty).."_"..tostring(constTy).."_"..tostring(constValue),
-                      types.rv(ty),
-                      function(i) return R.concat{i,R.c(constTy,constValue)} end}
+      types.rv(ty),
+      function(i) return R.concat{i,R.c(constTy,constValue)} end}
 
 end)
 
 C.ApplyTo = J.memoize(function( ty, fn, stream )
     local G = require "generators.core"
     return G.Function{"ApplyTo_"..tostring(ty).."_"..tostring(fn.name).."_"..tostring(stream),
-                      types.rv(ty),
-                      function(i)
-                        local tmp = fn(i[stream])
-                        local out = {}
-                        for j=1,#ty.list do
-                          if j-1==stream then
-                            table.insert( out, tmp )
-                          else
-                            table.insert( out, i[j-1] )
-                          end
-                        end
-                        return R.concat(out)
+      types.rv(ty),
+      function(i)
+        local tmp = fn(i[stream])
+        local out = {}
+        for j=1,#ty.list do
+          if j-1==stream then
+            table.insert( out, tmp )
+          else
+            table.insert( out, i[j-1] )
+          end
+        end
+        return R.concat(out)
     end}
 end)
 
