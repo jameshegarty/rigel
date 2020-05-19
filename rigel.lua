@@ -552,7 +552,7 @@ return fn
     elseif fnType:isTuple() then
       assert( targetType:isTuple() and #fnType.list==#targetType.list )
 
-      res = G.Function{"FannedConvertInterface", types.RV(targetType), SDF{1,1},
+      res = G.Function{"FannedConvertInterface_"..tostring(targetType).."_"..tostring(fnType), types.RV(targetType), SDF{1,1},
         function(inp)
           local tmp = RM.broadcastStream( targetType, #targetType.list)(inp)
           local out = {}
@@ -2370,7 +2370,14 @@ function darkroomIRFunctions:codegenSystolicReady( module, rateMonitors, X )
         err( allSS==false or J.keycount(args)==n:outputStreams(), "Unconnected output? Module expects ",n:outputStreams()," stream readers, but only ",J.keycount(args)," were found. ",n.loc )
         
         if n:outputStreams()>=1 and n:parentCount(self)>1 then
-          err(allSS,"Error, a Handshaked, multi-reader node is being consumed by something other than a selectStream? Handshaked nodes with multiple consumers should use broadcastStream. ",n.loc)
+          if allSS==false then
+            print("Error, a Handshaked, multi-reader node is being consumed by something other than a selectStream? Node '",tostring(n),"' Inside function '",module.__name,"'. Handshaked nodes with multiple consumers should use broadcastStream. ",n.loc)
+
+            for dsNode,_ in n:parents(self) do
+              print("CONSUMER",dsNode,dsNode.loc)
+            end
+            assert(false)
+          end
         end
       end
       

@@ -3133,7 +3133,7 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig,
   outputType = types.RV( types.Array2d( ty, W_orig, H, V2w, V2h ) )
 
   local res = generators.Function{
-    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh), types.RV(inputType:extractData()),
+    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh).."_OIPC"..tostring(outputItemsPerCyc).."_W"..tostring(W_orig).."_H"..tostring(H), types.RV(inputType:extractData()),
     function(inp)
       local inprs
       if Vw==0 and Vh==0 then

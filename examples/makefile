@@ -10,7 +10,7 @@ SRCS_SOC += soc_stereo_tiny_4_4.lua
 SRCS_SOC += soc_lk_4_4.lua soc_lk_6_6.lua soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua
 
 # too slow
-SRCS_VERILATOR_SOC = $(filter-out soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_6.lua, $(SRCS_SOC))
+SRCS_VERILATOR_SOC = $(filter-out soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua, $(SRCS_SOC))
 
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_VERILATOR_SOC))
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_VERILATOR_SOC))

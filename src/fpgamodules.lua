@@ -527,7 +527,14 @@ function modules.addShifter( module, exprs, stride, period, verbose, X )
     -- it's possible we may not even use regs[1]. This is just if we end up CSEing (optimizeShifter)
     --
     -- disable pipeling on the select to make sure all the reads/write happen in same cycle (or else we will create timing cycle)
-    pipelines = J.map( regs, function(r,i) return r:set( S.select(reading, exprs[i], regs[((i-1+stride)%#exprs)+1]:get()):disablePipeliningSingle() ) end )
+    pipelines = {}
+    for i,r in ipairs(regs) do
+      local lhs = exprs[i]
+      local rhs = regs[((i-1+stride)%#exprs)+1]:get()
+      local v =r:set( S.select(reading, lhs, rhs):disablePipeliningSingle() )
+      table.insert( pipelines, v )
+    end
+    
     table.insert( pipelines, phase:setBy( S.constant(1, types.uint(16) ) ) )
 
     --out = S.select( reading, exprs[1], regs[2]:get() )

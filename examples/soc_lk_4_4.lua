@@ -88,7 +88,8 @@ local Fout = G.Fmap{G.Function{"Fout", T.rv(T.tuple{T.array2d(T.Int(20,-2),4), T
     return G.TupleToArray(unpack(OT))
 end}}
 
-local Invert2x2 = G.SchedulableFunction{"Invert2x2", T.Array2d(P.NumberType("A"),4),
+--local Invert2x2 = G.SchedulableFunction{"Invert2x2", T.Array2d(P.NumberType("A"),4),
+local Invert2x2 = G.Fmap{G.Function{"Invert2x2", T.rv(T.Array2d(T.int(20,-2),4)),
   function(i)
     print("INV",i.type)
     local iFO = G.FanOut{2}(i)
@@ -97,9 +98,10 @@ local Invert2x2 = G.SchedulableFunction{"Invert2x2", T.Array2d(P.NumberType("A")
     local det = G.Fmap{C.lutinvert(denom.type:deInterface())}(denom)
     local res = Fout( G.RVFIFO{128}(iFO[1]), det )
     return res
-  end}
+end}}
 
-local Dx = G.SchedulableFunction{"Dx",T.Array2d(T.Uint(8),3),
+--local Dx = G.SchedulableFunction{"Dx",T.Array2d(T.Uint(8),3),
+local Dx = G.Fmap{G.Function{"Dx", T.rv(T.Array2d(T.Uint(8),3)),
   function(i)
     local iFO = G.FanOut{2}(i)
     local outl = G.UtoI(G.AddMSBs{1}(iFO[0][2]))
@@ -107,21 +109,23 @@ local Dx = G.SchedulableFunction{"Dx",T.Array2d(T.Uint(8),3),
     local outt = G.SubE(outl,outr)
     local out = G.RshiftE{1}(outt)
     return out
-  end}
+end}}
 
-local Dy = G.SchedulableFunction{"Dy", types.array2d(types.uint(8),1,3),
+--local Dy = G.SchedulableFunction{"Dy", types.array2d(types.uint(8),1,3),
+local Dy = G.Fmap{G.Function{"Dy", T.rv(types.array2d(types.uint(8),1,3)),
   function(i)
     local iFO = G.FanOut{2}(i)
     local outl = G.UtoI(G.AddMSBs{1}(G.Index{{0,2}}(iFO[0])))
     local outr = G.UtoI(G.AddMSBs{1}(G.Index{{0,0}}(iFO[1])))
     local outt = G.SubE(outl,outr)
     return G.RshiftE{1}(outt)
-  end}
+end}}
 
 local CalcA = G.SchedulableFunction{"CalcA",
   types.tuple{ types.array2d( P.NumberType("ty"), P.SizeValue("sz")),
                types.array2d( P.NumberType("ty"), P.SizeValue("sz")) },
   function(inp)
+    print("CALCA",inp.type)
     local inpFO = G.FanOut{2}(inp)
     
     local Fdx = inpFO[0][0]
@@ -138,13 +142,14 @@ local CalcA = G.SchedulableFunction{"CalcA",
     local out1 = G.Map{G.MulE}(inp1)
     out1 = G.Reduce{G.Add{R.Async}}(out1)
     
-    local out2 = out1
+    --local out2 = out1
+    local out1FO = G.FanOut{2}(out1)
     
     local inp3 = G.Zip(G.RVFIFO{128}(FdyFO[1]),G.RVFIFO{128}(FdyFO[2]))
     local out3 = G.Map{G.MulE}(inp3)
     out3 = G.Reduce{G.Add{R.Async}}(out3)
     
-    local out = R.concat{out0,out1,out2,out3}
+    local out = R.concat{out0,G.RVFIFO{128}(out1FO[0]),G.RVFIFO{128}(out1FO[1]),out3}
     
     return G.TupleToArray(G.FanIn(out))
   end}
@@ -191,8 +196,10 @@ local CalcB = G.SchedulableFunction{"CalcB",
     return out
 end}
 
-local Solve = G.SchedulableFunction{"Solve", T.Tuple{T.Array2d(P.NumberType("AinvType"),4),T.Array2d(P.NumberType("btype"),2)},
+--local Solve = G.SchedulableFunction{"Solve", T.Tuple{T.Array2d(P.NumberType("AinvType"),4),T.Array2d(P.NumberType("btype"),2)},
+local Solve = G.Fmap{G.Function{"Solve", T.rv(T.Tuple{T.Array2d(T.Int(19,-16),4),T.Array2d(T.Int(20,-1),2)}),
   function(i)
+    print("SOLVE",i.type)
     local iFO = G.FanOut{2}(i)
     local Ainv = G.FanOut{4}(iFO[0][0])
     local b = G.FanOut{2}(iFO[1][1])
@@ -210,10 +217,12 @@ local Solve = G.SchedulableFunction{"Solve", T.Tuple{T.Array2d(P.NumberType("Ain
     local out_1 = G.AddE(out_1_lhs,out_1_rhs)
     
     return G.TupleToArray(out_0,out_1)
-  end}
+end}}
 
-local Display = G.SchedulableFunction{"Display", T.Array2d(P.NumberType("ity"),2),
+--local Display = G.SchedulableFunction{"Display", T.Array2d(P.NumberType("ity"),2),
+local Display = G.Fmap{G.Function{"Display", T.rv(T.Array2d(T.Int(40,-17),2)),
   function(inp)
+    print("DISPLAY",inp.type)
     local inpFO = G.FanOut{2}(inp)
     
     local out = {}
@@ -237,7 +246,7 @@ local Display = G.SchedulableFunction{"Display", T.Array2d(P.NumberType("ity"),2
     local res = G.TupleToArray(unpack(out))
 
     return res
-  end}
+end}}
 
 local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),2),P.SizeValue("imsize")),
     function(inp)

@@ -1940,7 +1940,10 @@ end
 ----------------------------
 regModuleFunctions={}
 setmetatable(regModuleFunctions,{__index=systolicModuleFunctions})
-regModuleMT={__index=regModuleFunctions}
+regModuleMT={__index=regModuleFunctions,
+             __tostring = function(tab)
+               return "RegModule:"..tostring(tab.type)
+end}
 
 function regModuleFunctions:instanceToVerilogStart( instance )
   if self.type:verilogBits()==0 then

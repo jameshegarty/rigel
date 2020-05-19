@@ -373,9 +373,10 @@ function types.meet( a, b, op, loc)
       
   elseif a.kind=="int" and b.kind=="int" then
     local prec = math.max(a.precision,b.precision)
-    local thistype = types.int(prec)
+    local thistype = types.int( prec, a.exp )
     
     if cmpops[op] then
+      err( a.exp==b.exp, "NYI - ",op," with mismatched exponants! lhs:",a," rhs:",b)
       return types.bool(), thistype, thistype
     elseif op=="*" then
       local lhstype = types.int(prec,a.exp)
@@ -387,11 +388,14 @@ function types.meet( a, b, op, loc)
       local outtype = types.int( prec, a.exp )
       return outtype, outtype, outtype
     elseif binops[op] or treatedAsBinops[op] then
+      err( a.exp==b.exp, "NYI - ",op," with mismatched exponants! lhs:",a," rhs:",b)
       return thistype, thistype, thistype
     elseif op=="<<" or op==">>" then
+      err( a.exp==b.exp, "NYI - ",op," with mismatched exponants! lhs:",a," rhs:",b)
        -- don't cast shifts - the rhs leads to 2^n shift options!
        return a, a, b
     elseif op=="pow" then
+      err( a.exp==b.exp, "NYI - ",op," with mismatched exponants! lhs:",a," rhs:",b)
       local thistype = types.float(32)
       return thistype, thistype, thistype
     else
@@ -400,9 +404,10 @@ function types.meet( a, b, op, loc)
     end
   elseif a.kind=="uint" and b.kind=="uint" then
     local prec = math.max(a.precision,b.precision)
-    local thistype = types.uint(prec)
+    local thistype = types.uint( prec, a.exp )
     
     if cmpops[op] then
+      err( a.exp==b.exp, "NYI - ",op," with mismatched exponants! lhs:",a," rhs:",b)
       return types.bool(), thistype, thistype
     elseif op=="*" then
       local lhstype = types.uint(prec,a.exp)
@@ -414,11 +419,14 @@ function types.meet( a, b, op, loc)
       local outtype = types.uint( prec, a.exp )
       return outtype, outtype, outtype
     elseif binops[op] or treatedAsBinops[op] then
+      err( a.exp==b.exp, "NYI - ",op," with mismatched exponants! lhs:",a," rhs:",b)
       return thistype, thistype, thistype
     elseif op=="<<" or op==">>" then
+      err( a.exp==b.exp, "NYI - ",op," with mismatched exponants! lhs:",a," rhs:",b)
        -- don't cast shifts - the rhs leads to 2^n shift options!
        return a, a, b
     elseif op=="pow" then
+      err( a.exp==b.exp, "NYI - ",op," with mismatched exponants! lhs:",a," rhs:",b)
       local thistype = types.float(32)
       return thistype, thistype, thistype
     else
