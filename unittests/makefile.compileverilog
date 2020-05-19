@@ -32,3 +32,10 @@ $(BUILDDIR)/%.terra.raw: %.lua
 GOLDSTRPRE=$(BUILDDIR)/
 GOLDSTRPOST=.terra.bmp
 include ../platform/platform.mk
+
+# hack: terra doesn't write out reg info, so skip
+$(BUILDDIR)/%.terra.regcorrect.txt: $(BUILDDIR)/%.terra.bmp
+	touch $@
+
+$(BUILDDIR)/%.verilator.regcorrect.txt: $(BUILDDIR)/%.verilator.bmp
+	touch $@
