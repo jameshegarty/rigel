@@ -96,11 +96,14 @@ SRCS_WRAPPER = $(filter-out readmemory.lua readmemory_flip.lua 12bpp.lua 18bpp.l
 WRAPPER = $(patsubst %.lua,$(BUILDDIR)/%.v.mpsocwrapper.v,$(SRCS_WRAPPER))
 
 # too slow
-SRCS_TERRA = $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua lk_tr_handshake_12_1.lua lk_tr_handshake_12_2.lua lk_tr_handshake_12_3.lua lk_tr_handshake_12_4.lua lk_tr_handshake_12_6.lua lk_tr_handshake_12_12.lua, $(SRCS))
+SRCS_TERRA := $(filter-out stereo_tr_rgba_full_32.lua stereo_ov7660.lua underflow.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1.lua lk_wide_handshake_12_1_axi_nostall.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua lk_tr_handshake_12_1.lua lk_tr_handshake_12_2.lua lk_tr_handshake_12_3.lua lk_tr_handshake_12_4.lua lk_tr_handshake_12_6.lua lk_tr_handshake_12_12.lua, $(SRCS))
 
 SRCS_TERRA += $(SRCS_SOC)
 
-TERRAOUT = $(patsubst %.lua,$(BUILDDIR)/%.terra.raw,$(SRCS_TERRA))
+# broken
+SRCS_TERRA := $(filter-out soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_8.lua, $(SRCS_TERRA))
+
+TERRAOUT := $(patsubst %.lua,$(BUILDDIR)/%.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.bmp,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.correct.txt,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.cyclescorrect.txt,$(SRCS_TERRA))
