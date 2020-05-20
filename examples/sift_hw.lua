@@ -6,6 +6,9 @@ local S = require("systolic")
 local harness = require "generators.harness"
 local J = require "common"
 
+-- hardfloat doesn't work with this on
+R.default_nettype_none = false
+
 GRAD_INT = true
 GRAD_SCALE = 4 -- <2 is bad
 GRAD_TYPE = types.int(8)
@@ -30,8 +33,12 @@ function doit(full)
   local siftFn, siftType = sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, 4, 4 )
   local OTYPE = types.array2d(siftType,2)
 
-  harness{ outFile="sift_hw"..J.sel(full,"_1080p",""), fn=siftFn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={130*4,OUTPUT_COUNT}, outP=8 }
+  local outfile = "sift_hw"..J.sel(full,"_1080p","")
+  harness{ outFile=outfile, fn=siftFn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={130*4,OUTPUT_COUNT}, outP=8 }
 
+  io.output("out/"..outfile..".design.txt"); io.write("SIFT "..J.sel(full,"1080p","")); io.close()
+  io.output("out/"..outfile..".designT.txt"); io.write( 0.5 ); io.close()
+  io.output("out/"..outfile..".dataset.txt"); io.write("SIG16_zu9"); io.close()
 end
 
 doit(string.find(arg[0],"1080p")~=nil)

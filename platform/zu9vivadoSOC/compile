@@ -4,28 +4,31 @@ VERILOG_FILE=$1
 METADATA_FILE=$2
 BUILDDIR=$3
 OUTFILE=$4
+NAME=$5
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+TCLFILE=$NAME.tcl
+
 mkdir -p $BUILDDIR
 #$DIR/../../rigelLuajit $DIR/wrapper.lua $VERILOG_FILE $METADATA_FILE $VERILOG_FILE.mpsocwrapper.sv $DIR/../../platform/ mpsoc
+$DIR/../../rigelLuajit $DIR/../../misc/extractMetadata.lua $METADATA_FILE __XDC > $BUILDDIR/zu9.xdc
 cat $VERILOG_FILE $DIR/mpsoc_top_LL.sv > $VERILOG_FILE.mpsocwrapper.sv
 cd $BUILDDIR
-echo "read_verilog $VERILOG_FILE.mpsocwrapper.sv" > system.tcl
-echo "synth_design -top MPSOC_Top -part xczu9eg-ffvb1156-2-e -retiming" >> system.tcl
-echo "read_xdc $DIR/zu9.xdc" >> system.tcl
-echo "opt_design" >> system.tcl
-echo "place_design" >> system.tcl
-echo "phys_opt_design -retime" >> system.tcl
-echo "route_design" >> system.tcl
-echo "write_checkpoint -force final.dcp" >> system.tcl
-echo "write_bitstream -force system.bit" >> system.tcl
-echo "report_timing" >> system.tcl
-echo "report_timing_summary" >> system.tcl
-echo "report_utilization -hierarchical -file utilization_h.txt" >> system.tcl
-echo "report_utilization -file utilization.txt" >> system.tcl
-vivado -mode batch -source 'system.tcl' -nojournal -log 'vivado.log' > /dev/null
+echo "read_verilog $VERILOG_FILE.mpsocwrapper.sv" > $TCLFILE
+echo "synth_design -top MPSOC_Top -part xczu9eg-ffvb1156-2-e -retiming" >> $TCLFILE
+echo "read_xdc $DIR/zu9.xdc" >> $TCLFILE
+echo "opt_design" >> $TCLFILE
+echo "place_design" >> $TCLFILE
+echo "phys_opt_design -retime" >> $TCLFILE
+echo "route_design" >> $TCLFILE
+echo "write_checkpoint -force final.dcp" >> $TCLFILE
+echo "write_bitstream -force system.bit" >> $TCLFILE
+echo "report_timing" >> $TCLFILE
+echo "report_timing_summary" >> $TCLFILE
+echo "report_utilization -hierarchical -file utilization_h.txt" >> $TCLFILE
+echo "report_utilization -file utilization.txt" >> $TCLFILE
+vivado -source $TCLFILE -mode batch -nojournal -log 'vivado.log' > /dev/null
 bootgen -image $DIR/../axi/boot.bif -arch zynqmp -process_bitstream bin
-
-cp system.bit.bin $OUTFILE
+cp $BUILDDIR/system.bit.bin $OUTFILE"
                                           

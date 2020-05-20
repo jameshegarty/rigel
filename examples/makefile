@@ -9,6 +9,14 @@ SRCS_SOC += soc_convgenTaps_4_2.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_4_8
 SRCS_SOC += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua
 SRCS_SOC += soc_lk_4_4.lua soc_lk_6_6.lua soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua
 
+SIG20 := soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_6_6.lua soc_lk_4_4.lua
+SIG20 += soc_convgenTaps_8_1.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_4.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_8_16.lua soc_convgenTaps_8_32.lua
+SIG20 += soc_stereo_tiny_4_4.lua soc_stereo_full_64_64.lua
+
+ZU9VIVADOSOCBITS_SIG20 := $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.bit,$(SIG20))
+ZU9VIVADOSOCBITS_SIG20 += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SIG20))
+#ZU9VIVADOSOCBITS_SIG20 += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.stats2020.txt,$(SIG20))
+
 # too slow
 SRCS_VERILATOR_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua, $(SRCS_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua, $(SRCS_VERILATOR_SOC))
@@ -287,7 +295,7 @@ COVERAGE = $(patsubst %.lua,$(BUILDDIR)/%.coverage.txt,$(COVERAGE_SRCS))
 # split out siggraph 2016 stuff to run tests faster
 SIG16 := convpadcrop_wide_handshake_8_8_1080p.lua convpadcrop_wide_handshake_8_4_1080p.lua convpadcrop_wide_handshake_8_2_1080p.lua conv_tr_handshake_8_1_1080p.lua conv_tr_handshake_8_2_1080p.lua conv_tr_handshake_8_4_1080p.lua conv_tr_handshake_8_8_1080p.lua
 SIG16 += stereo_wide_handshake_full.lua stereo_tr_full_4.lua stereo_tr_full_8.lua stereo_tr_full_16.lua
-SIG16 += lk_wide_handshake_12_1_axi.lua lk_tr_handshake_12_1_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_12_axi.lua sift_hw_1080p.lua
+SIG16 += lk_wide_handshake_12_1.lua lk_tr_handshake_12_1.lua lk_tr_handshake_12_2.lua lk_tr_handshake_12_3.lua lk_tr_handshake_12_4.lua lk_tr_handshake_12_6.lua lk_tr_handshake_12_12.lua sift_hw_1080p.lua
 SIG16 += sift_hw.lua sift_hw_1080p.lua sift_desc_hw.lua
 
 # add some extra slow tests
@@ -309,6 +317,8 @@ VERILATOR_SIG16 += $(patsubst %.lua,$(BUILDDIR)/%.verilator.cyclescorrect.txt,$(
 SRCS_VERILATOR := $(filter-out $(SIG16_EXT), $(SRCS_VERILATOR))
 
 ZU9VIVADOBITS_SIG16 := $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.bit,$(SIG16))
+ZU9VIVADOBITS_SIG16 += $(patsubst %.lua,$(BUILDDIR)/%.verilator.correct.txt,$(SIG16))
+#ZU9VIVADOBITS_SIG16 += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.stats2020.txt,$(SIG16))
 
 VERILATOR := $(patsubst %.lua,$(BUILDDIR)/%.verilator,$(SRCS_VERILATOR))
 VERILATOR += $(patsubst %.lua,$(BUILDDIR)/%.verilator.raw,$(SRCS_VERILATOR))
@@ -391,6 +401,10 @@ zu9vivadobits: $(ZU9VIVADOBITS)
 
 zu9vivadoSOCbits: $(ZU9VIVADOSOCBITS)
 
+SIG20: $(ZU9VIVADOSOCBITS_SIG20)
+
+SIG16: $(ZU9VIVADOBITS_SIG16)
+
 zu9vivadoSOC: $(ZU9VIVADOSOC)
 
 axiverilog: $(AXIVERILOG)
@@ -409,7 +423,6 @@ asic: $(ASIC)
 coverage: $(COVERAGE)
 	touch $(BUILDDIR)/coverage_done.txt
 
-zu9vivadobitsSIG16: $(ZU9VIVADOBITS_SIG16)
 
 clean:
 	rm -Rf $(BUILDDIR)/*
@@ -480,6 +493,12 @@ $(BUILDDIR)/%.stats.txt : $(BUILDDIR)/%.axi.bmp
 $(BUILDDIR)/%.stats100.txt : $(BUILDDIR)/%.zynq100.bmp
 	../misc/stats.sh $(BUILDDIR)/build100_$* $(BUILDDIR)/$* $* axi100 $@
 
+$(BUILDDIR)/%.zu9vivado.stats2020.txt : $(BUILDDIR)/%.zu9vivado.brams.txt $(BUILDDIR)/%.zu9vivado.clbs.txt $(BUILDDIR)/%.zu9vivado.dsps.txt $(BUILDDIR)/%.verilator.correct.txt
+	../misc/stats2020.sh $*
+
+$(BUILDDIR)/%.zu9vivadoSOC.stats2020.txt : $(BUILDDIR)/%.zu9vivadoSOC.brams.txt $(BUILDDIR)/%.zu9vivadoSOC.clbs.txt $(BUILDDIR)/%.zu9vivadoSOC.dsps.txt $(BUILDDIR)/%.verilatorSOC.correct.txt
+	../misc/stats2020.sh $* SOC
+
 $(BUILDDIR)/%.32nm.txt : $(BUILDDIR)/%.v
 	$(eval $@_TOP := $(shell luajit ../misc/extractMetadata.lua $(BUILDDIR)/$*.metadata.lua topModule))
 	mkdir -p $(BUILDDIR)/$*_32nm
@@ -491,6 +510,18 @@ $(BUILDDIR)/%.32nmpnr.txt : $(BUILDDIR)/%.32nm.txt
 	rm -Rf $(BUILDDIR)/$*_32nm/chiptop.mw
 	cd $(BUILDDIR)/$*_32nm; icc_shell -x 'set TOP $($@_TOP); set FILE $*.v; set OUTFILE ../$*.32nmpnr.txt; set DDCFILE $*.ddc; set SYNFILE $*.synthesis.v;' -f ../../../platform/32nm/32nm_icc.tcl
 
+$(BUILDDIR)/%.zu9vivado.clbs.txt: $(BUILDDIR)/%.zu9vivado.bit
+	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "CLB\s*|" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.zu9vivadoSOC.clbs.txt: $(BUILDDIR)/%.zu9vivadoSOC.bit
+	 cat $(BUILDDIR)/$*_zu9vivadoSOC/utilization.txt | grep "CLB\s*|" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.zu9vivado.dsps.txt: $(BUILDDIR)/%.zu9vivado.bit
+	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "DSPs" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.zu9vivadoSOC.dsps.txt: $(BUILDDIR)/%.zu9vivadoSOC.bit
+	 cat $(BUILDDIR)/$*_zu9vivadoSOC/utilization.txt | grep "DSPs" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+
 $(BUILDDIR)/%.zu9vivado.luts.txt: $(BUILDDIR)/%.zu9vivado.bit
 	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "CLB LUTs" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
 
@@ -498,7 +529,10 @@ $(BUILDDIR)/%.zu9vivado.lutscorrect.txt: $(BUILDDIR)/%.zu9vivado.luts.txt
 	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.luts.txt $@ 0 smallerIsBetter
 
 $(BUILDDIR)/%.zu9vivado.brams.txt: $(BUILDDIR)/%.zu9vivado.bit
-	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "Block RAM Tile" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "Block RAM Tile" | grep -P -o "\d*\.?\d*" | head -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.zu9vivadoSOC.brams.txt: $(BUILDDIR)/%.zu9vivadoSOC.bit
+	 cat $(BUILDDIR)/$*_zu9vivadoSOC/utilization.txt | grep "Block RAM Tile" | grep -P -o "\d*\.?\d*" | head -1 | tr -d '\n' > $@
 
 $(BUILDDIR)/%.zu9vivado.bramscorrect.txt: $(BUILDDIR)/%.zu9vivado.brams.txt
 	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.brams.txt $@ 0 smallerIsBetter

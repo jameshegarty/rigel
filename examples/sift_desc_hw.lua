@@ -3,6 +3,9 @@ local RM = require "generators.modules"
 local types = require("types")
 local harness = require "generators.harness"
 
+-- hardfloat doesn't work with this on
+R.default_nettype_none = false
+
 GRAD_INT = true
 GRAD_SCALE = 4 -- <2 is bad
 GRAD_TYPE = types.int(8)

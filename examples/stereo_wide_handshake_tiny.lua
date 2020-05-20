@@ -58,6 +58,7 @@ function make(filename)
 
   io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth.." "..filename); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write(1); io.close()
+  io.output("out/"..outfile..".dataset.txt"); io.write("SIG16_zu9"); io.close()
 end
 
 make(string.sub(arg[0],#arg[0]-7,#arg[0]-4))

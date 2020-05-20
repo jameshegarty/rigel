@@ -108,9 +108,12 @@ return function(fn,t,instances)
   local cyc = (fn.sdfInput[1][2]/fn.sdfInput[1][1])
   if t~=nil and t.cycles~=nil then cyc=t.cycles end
   
+  local MHz = 150
+  if t~=nil and t.MHz~=nil then MHz = t.MHz end
+
   J.err( type(SOC.currentAddr)=="number","SOC.currentAddr should be a number?")
   J.err(SOC.currentAddr ~= 0x30008000,"SOC.currentAddr should imply a segment size > 0?")
   
-  f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",cycles="..Uniform(cyc):toEscapedString()..registerList..registerNames.."}" )
+  f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",MHz="..MHz..",cycles="..Uniform(cyc):toEscapedString()..registerList..registerNames.."}" )
   f:close()
 end

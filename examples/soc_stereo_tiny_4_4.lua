@@ -37,6 +37,11 @@ end
 
 assert(SW==SearchWindow)
 
+local outfile = "soc_stereo_"..test.."_"..tostring(SearchWindow).."_"..tostring(invV)
+io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth.." "..test); io.close()
+io.output("out/"..outfile..".designT.txt"); io.write( invV/SearchWindow ); io.close()
+io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
+
 local cycles = ((W+OffsetX+SearchWindow)*(H+7)*SearchWindow)/invV
 print("CYCLES",cycles)
 

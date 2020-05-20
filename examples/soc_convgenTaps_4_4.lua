@@ -20,12 +20,18 @@ local first = string.find(arg[0],"%d+")
 local ConvWidth = tonumber(string.sub(arg[0],first,first))
 local V = tonumber(string.sub(arg[0], string.find(arg[0],"%d+",first+1)))
 
+
 local ConvRadius = ConvWidth/2
 
 
 local PadRadius = J.upToNearest(V, ConvRadius)
 local cycles = ((1920+PadRadius*2)*(1080+ConvWidth))/(V/ConvWidth)
 print("CYCLES",cycles)
+
+local outfile = "soc_convgenTaps_"..tostring(ConvWidth).."_"..tostring(V)
+io.output("out/"..outfile..".design.txt"); io.write("Convolution 1080p "..ConvWidth.."x"..ConvWidth); io.close()
+io.output("out/"..outfile..".designT.txt"); io.write(V/ConvWidth); io.close()
+io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
 
 local regs = SOC.axiRegs({
     {"coeffs",RM.reg(ar(u(32),ConvWidth,ConvWidth),J.range(ConvWidth*ConvWidth))}},SDF{1,cycles}):instantiate("regs")

@@ -5,7 +5,7 @@ BUILDDIR ?= out
 
 define MyRule
 $(BUILDDIR)/%.$(1).bit: $(BUILDDIR)/%.v
-	{ time -p $(MKPATH)/$(1)/compile $(shell pwd)/$(BUILDDIR)/$$*.v $(BUILDDIR)/$$*.metadata.lua $(shell pwd)/$(BUILDDIR)/$$*_$(1) $(shell pwd)/$(BUILDDIR)/$$*.$(1).bit; } 2>&1 | tee $(BUILDDIR)/$$*.compiletimeraw.txt; exit $$$${PIPESTATUS[0]}
+	{ time -p $(MKPATH)/$(1)/compile $(shell pwd)/$(BUILDDIR)/$$*.v $(BUILDDIR)/$$*.metadata.lua $(shell pwd)/$(BUILDDIR)/$$*_$(1) $(shell pwd)/$(BUILDDIR)/$$*.$(1).bit $$*; } 2>&1 | tee $(BUILDDIR)/$$*.compiletimeraw.txt; exit $$$${PIPESTATUS[0]}
 	printf '$$*,' > $(BUILDDIR)/$$*.compiletime.txt
 	cat $(BUILDDIR)/$$*.compiletimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$$*.compiletime.txt
 	rm $(BUILDDIR)/$$*.compiletimeraw.txt

@@ -3250,11 +3250,11 @@ C.FloatToFloatRec = J.memoize(function( exp, sig, X )
   err( type(sig)=="number" ,"C.FloatToFloatRec: sig should be number, but is: ",sig )
   err( X==nil )
 
-  --local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
   --local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
   --local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
   --local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
-  local fNToRecFN = C.VerilogFile("generators/hardfloat/source/fNToRecFN.v")
+  local fNToRecFN = C.VerilogFile("generators/hardfloat/source/fNToRecFN.v", HardFloat_localFuncs)
 
   local inst = {}
   local ftof = fNToRecFN:instantiate("ftof")
@@ -3339,14 +3339,14 @@ C.sumF = J.memoize(function( exp, sig, subtract, X )
   err( type(subtract)=="boolean" )
   err( X==nil )
 
-  --  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
   local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
   local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
   local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v", HardFloat_consts)
 
   --  local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
   local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
-  local addRecFN = C.VerilogFile("generators/hardfloat/source/addRecFN.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN )
+  local addRecFN = C.VerilogFile("generators/hardfloat/source/addRecFN.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN, HardFloat_localFuncs )
 
   local inst = {}
   local intToFloat = addRecFN:instantiate("add")

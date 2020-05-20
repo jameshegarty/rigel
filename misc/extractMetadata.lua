@@ -79,6 +79,25 @@ elseif arg[2]=="__REGISTERSOUT" then
     str = str..k.." "..v.." "
   end
   print(str)
+elseif arg[2]=="__XDC" then
+  local ns = 1000/tostring(metadata.MHz)
+  print([[create_clock -add -name FCLK -period ]]..ns..[[ [get_nets FCLK0];
+set_property PACKAGE_PIN AG14     [get_ports {LED[0]}] ;# Bank  44 VCCO - VCC3V3   - IO_L10P_AD2P_44
+set_property IOSTANDARD  LVCMOS33 [get_ports {LED[0]}] ;# Bank  44 VCCO - VCC3V3   - IO_L10P_AD2P_44
+set_property PACKAGE_PIN AF13     [get_ports {LED[1]}] ;# Bank  44 VCCO - VCC3V3   - IO_L9N_AD3N_44
+set_property IOSTANDARD  LVCMOS33 [get_ports {LED[1]}] ;# Bank  44 VCCO - VCC3V3   - IO_L9N_AD3N_44
+set_property PACKAGE_PIN AE13     [get_ports {LED[2]}] ;# Bank  44 VCCO - VCC3V3   - IO_L9P_AD3P_44
+set_property IOSTANDARD  LVCMOS33 [get_ports {LED[2]}] ;# Bank  44 VCCO - VCC3V3   - IO_L9P_AD3P_44
+set_property PACKAGE_PIN AJ14     [get_ports {LED[3]}] ;# Bank  44 VCCO - VCC3V3   - IO_L8N_HDGC_AD4N_44
+set_property IOSTANDARD  LVCMOS33 [get_ports {LED[3]}] ;# Bank  44 VCCO - VCC3V3   - IO_L8N_HDGC_AD4N_44
+set_property PACKAGE_PIN AJ15     [get_ports {LED[4]}] ;# Bank  44 VCCO - VCC3V3   - IO_L8P_HDGC_AD4P_44
+set_property IOSTANDARD  LVCMOS33 [get_ports {LED[4]}] ;# Bank  44 VCCO - VCC3V3   - IO_L8P_HDGC_AD4P_44
+set_property PACKAGE_PIN AH13     [get_ports {LED[5]}] ;# Bank  44 VCCO - VCC3V3   - IO_L7N_HDGC_AD5N_44
+set_property IOSTANDARD  LVCMOS33 [get_ports {LED[5]}] ;# Bank  44 VCCO - VCC3V3   - IO_L7N_HDGC_AD5N_44
+set_property PACKAGE_PIN AH14     [get_ports {LED[6]}] ;# Bank  44 VCCO - VCC3V3   - IO_L7P_HDGC_AD5P_44
+set_property IOSTANDARD  LVCMOS33 [get_ports {LED[6]}] ;# Bank  44 VCCO - VCC3V3   - IO_L7P_HDGC_AD5P_44
+set_property PACKAGE_PIN AL12     [get_ports {LED[7]}] ;# Bank  44 VCCO - VCC3V3   - IO_L6N_HDGC_AD6N_44
+set_property IOSTANDARD  LVCMOS33 [get_ports {LED[7]}] ;# Bank  44 VCCO - VCC3V3   - IO_L6N_HDGC_AD6N_44]])
 elseif arg[2]=="INPUT_FILES" then
   local i=1
   local str = ""
