@@ -98,9 +98,6 @@ DUPS = $(patsubst %.raw,$(BUILDDIR)/%.raw.dup,$(RAWS))
 # NYI
 SRCS_VERILOG := $(filter-out pad.lua crop.lua stencil.lua downsample_2.lua downsample_4.lua upsample_2.lua upsample_4.lua, $(SRCS))
 
-# add file that is missing from VERILATOR_SOC
-SRCS_VERILOG += soc_lk_12_12.lua
-
 # dead code (float verilog)
 SRCS_VERILOG := $(filter-out sift_float.lua lk_wide_handshake_12_1_float.lua lk_wide_handshake_4_4_float.lua lk_wide_handshake_6_4_float.lua sift_desc.lua sift_desc_2_1.lua,  $(SRCS_VERILOG))
 
@@ -532,10 +529,10 @@ $(BUILDDIR)/%.zu9vivado.lutscorrect.txt: $(BUILDDIR)/%.zu9vivado.luts.txt
 	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.luts.txt $@ 0 smallerIsBetter
 
 $(BUILDDIR)/%.zu9vivado.brams.txt: $(BUILDDIR)/%.zu9vivado.bit
-	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "Block RAM Tile" | grep -P -o "[0-9]+\.[0-9]+" | head -1 | tr -d '\n' > $@
+	 cat $(BUILDDIR)/$*_zu9vivado/utilization.txt | grep "Block RAM Tile" | grep -P -o "\d*\.?\d*" | head -1 | tr -d '\n' > $@
 
 $(BUILDDIR)/%.zu9vivadoSOC.brams.txt: $(BUILDDIR)/%.zu9vivadoSOC.bit
-	 cat $(BUILDDIR)/$*_zu9vivadoSOC/utilization.txt | grep "Block RAM Tile" | grep -P -o "[0-9]+\.[0-9]+" | head -1 | tr -d '\n' > $@
+	 cat $(BUILDDIR)/$*_zu9vivadoSOC/utilization.txt | grep "Block RAM Tile" | grep -P -o "\d*\.?\d*" | head -1 | tr -d '\n' > $@
 
 $(BUILDDIR)/%.zu9vivado.bramscorrect.txt: $(BUILDDIR)/%.zu9vivado.brams.txt
 	$(LUA) ../misc/approxnumdiff.lua $^ gold/$*.zu9vivado.brams.txt $@ 0 smallerIsBetter

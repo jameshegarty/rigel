@@ -1,0 +1,30 @@
+BUILDDIR ?= out
+
+SIG20 := soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_6_6.lua soc_lk_4_4.lua
+SIG20 += soc_convgenTaps_8_1.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_4.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_8_16.lua soc_convgenTaps_8_32.lua
+SIG20 += soc_stereo_tiny_4_4.lua soc_stereo_full_64_64.lua
+
+SIG20_TODO := $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.launch,$(SIG20))
+SIG20_TODO += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.launch,$(SIG20))
+
+SIG16 := convpadcrop_wide_handshake_8_8_1080p.lua convpadcrop_wide_handshake_8_4_1080p.lua convpadcrop_wide_handshake_8_2_1080p.lua conv_tr_handshake_8_1_1080p.lua conv_tr_handshake_8_2_1080p.lua conv_tr_handshake_8_4_1080p.lua conv_tr_handshake_8_8_1080p.lua
+SIG16 += stereo_wide_handshake_full.lua stereo_tr_full_4.lua stereo_tr_full_8.lua stereo_tr_full_16.lua
+SIG16 += lk_wide_handshake_12_1.lua lk_tr_handshake_12_1.lua lk_tr_handshake_12_2.lua lk_tr_handshake_12_3.lua lk_tr_handshake_12_4.lua lk_tr_handshake_12_6.lua lk_tr_handshake_12_12.lua sift_hw_1080p.lua
+SIG16 += sift_hw.lua sift_hw_1080p.lua sift_desc_hw.lua
+
+SIG16_TODO := $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.launch,$(SIG16))
+SIG16_TODO += $(patsubst %.lua,$(BUILDDIR)/%.verilator.launch,$(SIG16))
+
+all: $(SIG20_TODO) $(SIG16_TODO)
+
+$(BUILDDIR)/%.zu9vivadoSOC.launch: %.lua
+	nc run make out/$*.zu9vivadoSOC.bit | grep JobId | grep -Eo "[0-9]+" > $@
+
+$(BUILDDIR)/%.verilatorSOC.launch: %.lua
+	nc run make out/$*.verilatorSOC.raw | grep JobId | grep -Eo "[0-9]+" > $@
+
+$(BUILDDIR)/%.zu9vivado.launch: %.lua
+	nc run make out/$*.zu9vivado.bit | grep JobId | grep -Eo "[0-9]+" > $@
+
+$(BUILDDIR)/%.verilator.launch: %.lua
+	nc run make out/$*.verilator.raw | grep JobId | grep -Eo "[0-9]+" > $@
