@@ -3250,11 +3250,11 @@ C.FloatToFloatRec = J.memoize(function( exp, sig, X )
   err( type(sig)=="number" ,"C.FloatToFloatRec: sig should be number, but is: ",sig )
   err( X==nil )
 
-  --local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
   --local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
   --local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
   --local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
-  local fNToRecFN = C.VerilogFile("generators/hardfloat/source/fNToRecFN.v")
+  local fNToRecFN = C.VerilogFile("generators/hardfloat/source/fNToRecFN.v", HardFloat_localFuncs)
 
   local inst = {}
   local ftof = fNToRecFN:instantiate("ftof")

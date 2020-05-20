@@ -71,6 +71,7 @@ function makeLK(T,window)
 
     io.output("out/"..outfile..".design.txt"); io.write("Lucas Kanade "..H.." "..window.."x"..window); io.close()
     io.output("out/"..outfile..".designT.txt"); io.write(1/T); io.close()
+    io.output("out/"..outfile..".dataset.txt"); io.write("SIG16_zu9"); io.close()
   end
 end
 

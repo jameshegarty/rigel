@@ -117,6 +117,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
 
   io.output("out/"..outfile..".design.txt"); io.write("Convolution "..sizestr..ConvWidth.."x"..ConvWidth); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()
+  io.output("out/"..outfile..".dataset.txt"); io.write("SIG16_zu9"); io.close()
 end
 
 local first = string.find(arg[0],"%d+")

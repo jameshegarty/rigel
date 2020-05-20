@@ -9,7 +9,7 @@ local J = require "common"
 R.AUTO_FIFOS = false
 
 --T = 8 -- throughput
-function MAKE(T,ConvWidth,size1080p)
+function MAKE( T, ConvWidth, size1080p )
   assert(T>=1)
   --ConvRadius = 1
   local ConvRadius = ConvWidth/2
@@ -19,6 +19,8 @@ function MAKE(T,ConvWidth,size1080p)
   
   local inputW = 128
   local inputH = 64
+
+  local MHz = 200
 
   if size1080p then
     inputW, inputH = 1920, 1080
@@ -62,13 +64,14 @@ function MAKE(T,ConvWidth,size1080p)
     outfile = outfile.."_1080p"
   end
 
-  harness{ outFile=outfile, fn=hsfn, inFile=infile, inSize={inputW,inputH}, outSize={outputW,outputH} }
+  harness{ outFile=outfile, fn=hsfn, inFile=infile, inSize={inputW,inputH}, outSize={outputW,outputH}, MHz=MHz }
 
   local sizestr = "128 "
   if size1080p then sizestr = "1080p " end
 
   io.output("out/"..outfile..".design.txt"); io.write("Convolution "..sizestr..ConvWidth.."x"..ConvWidth); io.close()
-  io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()
+  io.output("out/"..outfile..".designT.txt"); io.write(1/T); io.close()
+  io.output("out/"..outfile..".dataset.txt"); io.write("SIG16_zu9"); io.close()
 end
 
 local first = string.find(arg[0],"%d+")

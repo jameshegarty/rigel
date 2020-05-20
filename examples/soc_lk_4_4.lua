@@ -41,6 +41,11 @@ elseif CONVWIDTH==12 then
   W,H = 1920,1080
 end
 
+local outfile = "soc_lk_"..CONVWIDTH.."_"..(V*CONVWIDTH)
+io.output("out/"..outfile..".design.txt"); io.write("Lucas Kanade "..H.." "..CONVWIDTH.."x"..CONVWIDTH); io.close()
+io.output("out/"..outfile..".designT.txt"); io.write(V); io.close()
+io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
+
 local cycles = (W*H)/V
 print("CYCLES",cycles)
 
