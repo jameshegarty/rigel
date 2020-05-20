@@ -614,7 +614,7 @@ return fn
       err( #targetInputType:deInterface().list==#fn.inputType:deInterface().list, "ConvertInterface NYI = if input is tuple of interfaces, size of tuple must match. target: ",targetInputType," to ",fn.inputType )
       assert( targetInputType.list[1]:is("Interface") )
 
-      local res = G.Function{"TupleConvertInterface", targetInputType, targetInputRate,
+      local res = G.Function{"TupleConvertInterface_"..tostring(targetInputType).."_"..tostring(fn.inputType), targetInputType, targetInputRate,
         function(inp)
           local out = {}
           for k,v in ipairs(targetInputType:deInterface().list) do

@@ -1003,7 +1003,7 @@ function systolicASTFunctions:checkWiring( module, providesMap )
     end
     
     for fnname,fn in pairs (inst.module.functions) do
-      err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function "..fnname.." on instance "..inst.name.." (of type "..inst.module.name..") inside module '"..module.name.."'")
+      err( state[inst][fnname]~=nil or fn:isPure(), "Undriven function ",fnname," on instance ",inst.name," (of type ",inst.module.name,") inside module '",module.name,"'")
       
       if (fn:isPure()==false or self.onlyWire) and ((self.onlyWire and fn.implicitValid)==false) then
         err( state[inst][fnname][2]~=nil, "undriven valid bit, function '"..fnname.."' on instance '"..instance.name.."' in module '"..module.name.."'")

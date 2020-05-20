@@ -66,7 +66,9 @@ local FindBestMatch = G.SchedulableFunction{ "FindBestMatch", T.Array2d( T.Array
   function(i)
 
     local inp = G.FanOut{2}(i)
-
+    local inp0 = G.RVFIFO{128}(inp[0])
+    local inp1 = G.RVFIFO{128}(inp[1])
+    
     print("BEST",inp.type)
     local idx = {} -- build indices for the argmin
     for i=1,SearchWindow do
@@ -74,10 +76,10 @@ local FindBestMatch = G.SchedulableFunction{ "FindBestMatch", T.Array2d( T.Array
       idx[i] = SearchWindow+OffsetX-(i-1)
     end
 
-    local indices = G.Const{T.Array2d(T.U(8),SearchWindow),value=idx}(G.ValueToTrigger(inp[0]))
+    local indices = G.Const{T.Array2d(T.U(8),SearchWindow),value=idx}(G.ValueToTrigger(inp0))
     print("IDX",indices.type)
     --local casted = G.Map{G.Map{G.Map{G.AddMSBs{8}}}}(inp[1])
-    local SADOut = G.Map{G.SAD{T.Uint(16)}}(inp[1])
+    local SADOut = G.Map{G.SAD{T.Uint(16)}}(inp1)
     print("SAD",SADOut.type)
     local argminInp = G.Zip(G.FanIn(indices,SADOut)) --{u8,u16}[SearchWindow]
     print("ARGMININP",argminInp.type)
@@ -89,13 +91,15 @@ local FindBestMatch = G.SchedulableFunction{ "FindBestMatch", T.Array2d( T.Array
 local StereoModule = G.SchedulableFunction{ "StereoModule", T.Trigger,
   function(i)
     print("STEREO",i.type,i.rate)
-    local readStream = G.AXIReadBurst{ infile, {W,H}, T.Array2d(T.Uint(8),2), 4, noc.read }(i)
+    --local readStream = G.AXIReadBurst{ infile, {W,H}, T.Array2d(T.Uint(8),2), 4, noc.read }(i)
+    local readStream = G.AXIReadBurst{ infile, {W,H}, T.Tuple{T.Uint(8),T.Uint(8)}, 4, noc.read }(i)
     local inp = G.Pad{{OffsetX+SearchWindow,0,3,4}}(readStream)
     print("INP",inp.type,inp.rate)
     inp = G.FanOut{2}(inp)
 
     print("A",inp.type,inp.rate)
     ----
+    print("LEFT",inp.type)
     local left = G.Map{G.Index{0}}(inp[0])
     print("L",left.type)
     left = G.StencilOfStencils{{-(SearchWindow+SADWidth+OffsetX)+2,-(OffsetX), -SADWidth+1, 0},{SADWidth,SADWidth}}(left)

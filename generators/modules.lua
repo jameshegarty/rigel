@@ -2731,7 +2731,7 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
       local it = types.rv(types.Seq(types.Par(res.inputType:deInterface()),W_orig,H))
       assert( it:lower()==res.inputType:lower() )
       res.inputType = it
-      local ot = types.rvV(types.Seq(types.Par(res.outputType:deInterface().list[1]),W_orig-L-R,H-B-Top))
+      local ot = types.rvV(types.Seq(types.Par(res.outputType:deInterface().list[1]),W_orig-L-R_orig,H-B-Top))
       if indexMode then
         ot = types.rvV(res.outputType:deInterface().list[1])
       end
@@ -2739,11 +2739,11 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
 
       res.outputType = ot
     else
-      assert( indexMode==false)
+      err( indexMode==false, "NYI - cropSeq, framed, indexMode with V>0 not implemented")
       local it = types.rv(types.ParSeq(res.inputType:deInterface(),W_orig,H))
       assert( it:lower()==res.inputType:lower() )
       res.inputType = it
-      local ot =  types.rvV(types.ParSeq(res.outputType:deInterface().list[1],W_orig-L-R,H-B-Top))
+      local ot =  types.rvV(types.ParSeq(res.outputType:deInterface().list[1],W_orig-L-R_orig,H-B-Top))
       assert( ot:lower()==res.outputType:lower() )
       res.outputType = ot
     end
@@ -3167,7 +3167,7 @@ modules.linebuffer = memoize(function( A, w_orig, h, T, ymin, framed, X )
     end
   else
     res.inputType = types.rv(types.Par(res.inputType))
-    res.outputType = types.rv(types.Par(types.array2d(A,T,-ymin+1)))
+    res.outputType = types.rv(types.Par(types.array2d(A,math.max(T,1),-ymin+1)))
   end
   
   res.stateful = true

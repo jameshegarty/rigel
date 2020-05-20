@@ -1050,21 +1050,28 @@ function MT.linebuffer( res, A, w, h, T, ymin, framed, X )
       end
     end
   else
-    assert( T>0 )
+    --assert( T>0 )
     terra Linebuffer:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
     -- pretend that this happens in one cycle (delays are added later)
-    for i=0,[T] do
-      self.SR:pushBack( &(@inp)[i] )
-    end
-
-    for y=[ymin],1 do
-      for x=[-T+1],1 do
-        var outIdx = (y-ymin)*T+(x+T-1)
-        var peekIdx = x+y*[w]
-        --cstdio.printf("ASSN x %d  y %d outidx %d peekidx %d size %d\n",x,y,outIdx,peekIdx,w*(-ymin)+T)
-        (@out)[outIdx] = @(self.SR:peekBack(peekIdx))
+      escape
+        if T==0 then
+          emit quote self.SR:pushBack( inp ) end
+        else
+          emit quote for i=0,[T] do
+            self.SR:pushBack( &(@inp)[i] )
+          end end
+        end
       end
-    end
+
+      for y=[ymin],1 do
+        for x=[-math.max(T,1)+1],1 do
+          var outIdx = (y-ymin)*[math.max(T,1)]+(x+[math.max(T,1)]-1)
+          var peekIdx = x+y*[w]
+          --cstdio.printf("ASSN x %d  y %d outidx %d peekidx %d size %d\n",x,y,outIdx,peekIdx,w*(-ymin)+T)
+          (@out)[outIdx] = @(self.SR:peekBack(peekIdx))
+        end
+      end
+
     end
   end
 

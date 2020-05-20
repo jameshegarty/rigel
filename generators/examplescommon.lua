@@ -1200,8 +1200,17 @@ C.lutinvert = J.memoize(function( ty, X )
 end)
 
 -------------
-C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, offset, overlap )
-  J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+-- V: vector width of input. should be 0 or 1
+C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w_orig, h, T, xmin, xmax, ymin, ymax, offset, overlap, V )
+    --J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+  err( type(T)=="number","stencilLinebufferPartialOffsetOverlap: T must be number, but is:", T)
+  err( Uniform.isUniform(w_orig) or type(w_orig)=="number","stencilLinebufferPartialOffsetOverlap: w must be number, but is:", w_orig)
+  local w = Uniform(w_orig):toNumber()
+  err( type(h)=="number","stencilLinebufferPartialOffsetOverlap: h must be number, but is:", h)
+  err( type(xmin)=="number","stencilLinebufferPartialOffsetOverlap: xmin must be number, but is:", xmin)
+  err( type(xmax)=="number","stencilLinebufferPartialOffsetOverlap: xmax must be number, but is:", xmax)
+  err( type(ymin)=="number","stencilLinebufferPartialOffsetOverlap: ymin must be number, but is:", ymin)
+  err( type(ymax)=="number","stencilLinebufferPartialOffsetOverlap: ymax must be number, but is:", ymax)
   assert(T>=1);
   assert(w>0);
   assert(h>0);
@@ -1210,12 +1219,15 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
   assert(xmax==0)
   assert(ymax==0)
 
+  if V==nil then V=1 end
+  assert( type(V)=="number" and V==0 or V==1 )
+  
   local ST_W = -xmin+1
   local ssr_region = ST_W - offset - overlap
   local stride = ssr_region/T
   assert(stride==math.floor(stride))
 
-  local LB = RM.makeHandshake(RM.linebuffer( A, w, h, 1, ymin ))
+  local LB = RM.makeHandshake(RM.linebuffer( A, w_orig, h, V, ymin ))
   local SSR = RM.liftHandshake(RM.waitOnInput(RM.SSRPartial( A, T, xmin, ymin, stride, true )))
 
   local inp = R.input( LB.inputType )
@@ -2129,7 +2141,10 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
   return rigel.newFunction(res)
 end)
 
+C.StencilOfStencils = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, ymax, innerW, innerH, framed, X )
 
+end)
+  
 -- if index==true, then we return a value, not an array
 -- indices are inclusive
 C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )

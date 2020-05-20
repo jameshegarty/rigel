@@ -198,8 +198,22 @@ function(a)
 end)
 
 generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{},
-function(args) return C.valueToTrigger(args.D) end,
-P.DataType("D") )
+function(args)
+  if args.type:deInterface():isData() then
+    return C.valueToTrigger(args.type:deInterface())
+  elseif args.type:deInterface():isArray() then
+    local ty = args.type:deInterface()
+    -- a non-parallel array
+    J.err( ty.size:eq(ty.V) or ty.V:eq(0,0) or ty.V[2]==1 ,"ValueToTrigger: NYI, vector can only be 1D, but is: ",ty.V ) -- NYI
+    print("ITY",args.type)
+    local f = RM.liftHandshake(RM.liftDecimate(RM.cropSeq( ty:arrayOver(), ty.size[1], ty.size[2], ty.V[1], 0, ty.size[1]-ty.V[1], 0, ty.size[2]-ty.V[2], true )))
+
+    local g = RM.makeHandshake(C.valueToTrigger( f.outputType:deInterface() ) )
+    return C.compose(J.verilogSanitize("ValueToTriggerParseq"),g,f)
+  else
+    J.err(false,"NYI - ValueToTrigger on input type: ",args.type)
+  end
+end)
 
 generators.TriggerCounter = R.FunctionGenerator("core.TriggerCounter",{"number"},{},
 function(args)
@@ -483,18 +497,51 @@ types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")
 -- make a stencil with its interior filled with stencils
 -- "bounds" is for the outer stencil, "size" is for the inner stencil.
 --     since the inner stencil is all overlap regions fully contained in the outer stencil, this makes sense...
-generators.StencilOfStencils = R.FunctionGenerator("core.StencilOfStencils",{"bounds","rate","size"},{},
+generators.StencilOfStencils = R.FunctionGenerator("core.StencilOfStencils",{"bounds","rate","size","type"},{},
 function(a)
   J.err( a.imsize:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
-  local f = C.stencilLinebuffer( a.T, a.imsize[1], a.imsize[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
-  local stencilW = a.bounds[2]-a.bounds[1]+1
-  local stencilH = a.bounds[4]-a.bounds[3]+1
 
-  J.err( a.size[2]==stencilH, "NYI - StencilOfStencils, height of inner stencil must be height of outer stencil")
+  if a.rate:lt(SDF{1,1}) then
+--    
+    --    assert(false)
+    
+    local f = C.stencilLinebufferPartialOffsetOverlap( a.T, a.imsize[1], a.imsize[2], a.rate[1][2]:toNumber()/a.rate[1][1]:toNumber(), a.bounds[1], 0, a.bounds[3], a.bounds[4], -a.bounds[2], -a.bounds[3], a.V[1])
+    print("BOUNDS",a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4])
+    print(a.type,a.rate,f)
+
+    local stCount = (Uniform(a.bounds[2]):toNumber()-Uniform(a.bounds[1]):toNumber()+1-(a.size[1]-1))
+    local perCycleSearch = stCount*(a.rate[1][1]:toNumber()/a.rate[1][2]:toNumber())
+    print("PERCYCLE",perCycleSearch)
+    local g = RM.makeHandshake(C.unpackStencil( a.T, a.size[1], a.size[2], perCycleSearch ))
+
+    local res = C.compose("StencilOfStencils",g,f)
+
+    assert(res.inputType:isRV())
+    assert( res.inputType:lower()==a.type:lower() )
+    res.inputType = a.type
+
+    local vtype = res.outputType:deInterface()
+    local vtype = T.Array2d(vtype:arrayOver(),stCount,1,vtype.size)
+    print("VTYPE",vtype)
+    local OT = types.RV(a.type:deInterface():replaceVar("over",vtype))
+    assert( res.outputType:lower()==OT:lower() )
+    res.outputType = OT
+
+    print("RES",res)
+
+    return res
+  else
+    local f = C.stencilLinebuffer( a.T, a.imsize[1], a.imsize[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+    local stencilW = a.bounds[2]-a.bounds[1]+1
+    local stencilH = a.bounds[4]-a.bounds[3]+1
+
+    J.err( a.size[2]==stencilH, "NYI - StencilOfStencils, height of inner stencil must be height of outer stencil")
   
-  local g = C.unpackStencil( a.T, a.size[1], a.size[2], stencilW-a.size[1]+1, nil, true, a.imsize[1], a.imsize[2])
+--  local g = C.unpackStencil( a.T, a.size[1], a.size[2], stencilW-a.size[1]+1, nil, true, a.imsize[1], a.imsize[2])
+    local g = generators.Map{C.unpackStencil( a.T, a.size[1], a.size[2], stencilW-a.size[1]+1)}
 
-  return C.compose("StencilOfStencils",g,f)
+    return C.compose("StencilOfStencils",g,f)
+  end
 end,
 types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("imsize")) )
 
