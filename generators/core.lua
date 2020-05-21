@@ -206,9 +206,9 @@ function(args)
     -- a non-parallel array
     J.err( ty.size:eq(ty.V) or ty.V:eq(0,0) or ty.V[2]==1 ,"ValueToTrigger: NYI, vector can only be 1D, but is: ",ty.V ) -- NYI
     print("ITY",args.type)
-    local f = RM.liftHandshake(RM.liftDecimate(RM.cropSeq( ty:arrayOver(), ty.size[1], ty.size[2], ty.V[1], 0, ty.size[1]-ty.V[1], 0, ty.size[2]-ty.V[2], true )))
+    local f = RM.liftHandshake(RM.liftDecimate(RM.cropSeq( ty:arrayOver(), ty.size[1], ty.size[2], ty.V[1], 0, ty.size[1]-math.max(ty.V[1],1), 0, ty.size[2]-math.max(ty.V[2],1), true )))
 
-    local g = RM.makeHandshake(C.valueToTrigger( f.outputType:deInterface() ) )
+    local g = generators.Fmap{C.valueToTrigger( f.outputType:deSchedule() )}
     return C.compose(J.verilogSanitize("ValueToTriggerParseq"),g,f)
   else
     J.err(false,"NYI - ValueToTrigger on input type: ",args.type)
@@ -502,16 +502,11 @@ function(a)
   J.err( a.imsize:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
 
   if a.rate:lt(SDF{1,1}) then
---    
-    --    assert(false)
     
     local f = C.stencilLinebufferPartialOffsetOverlap( a.T, a.imsize[1], a.imsize[2], a.rate[1][2]:toNumber()/a.rate[1][1]:toNumber(), a.bounds[1], 0, a.bounds[3], a.bounds[4], -a.bounds[2], -a.bounds[3], a.V[1])
-    print("BOUNDS",a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4])
-    print(a.type,a.rate,f)
 
     local stCount = (Uniform(a.bounds[2]):toNumber()-Uniform(a.bounds[1]):toNumber()+1-(a.size[1]-1))
     local perCycleSearch = stCount*(a.rate[1][1]:toNumber()/a.rate[1][2]:toNumber())
-    print("PERCYCLE",perCycleSearch)
     local g = RM.makeHandshake(C.unpackStencil( a.T, a.size[1], a.size[2], perCycleSearch ))
 
     local res = C.compose("StencilOfStencils",g,f)
@@ -522,12 +517,10 @@ function(a)
 
     local vtype = res.outputType:deInterface()
     local vtype = T.Array2d(vtype:arrayOver(),stCount,1,vtype.size)
-    print("VTYPE",vtype)
+
     local OT = types.RV(a.type:deInterface():replaceVar("over",vtype))
     assert( res.outputType:lower()==OT:lower() )
     res.outputType = OT
-
-    print("RES",res)
 
     return res
   else
@@ -644,21 +637,33 @@ end,nil,false)
 generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool"},
 function(args)
 
---  print("MAP:SPECIALIZE TO TYPE",args.rigelFunction.name,types.rv(args.S))
-  local fn = args.rigelFunction:specializeToType( types.rv(args.S), args.rate )
-  J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",args.D)
+  local ty,rate
 
-  if args.size==args.V then
-    return RM.map( fn, args.size[1], args.size[2], args.bool )
-  elseif args.V:eq(R.Size(0,0)) then
-    return RM.mapSeq( fn, args.size[1], args.size[2] )
+  if R.isFunctionGenerator(args.rigelFunction) and args.rigelFunction.optimized==false then
+    ty, rate = args.type, args.rate
+  else
+    ty, rate = args.type:optimize(args.rate)
+  end
+
+  J.err( ty:deInterface():isArray(),"Error, Map must operate on an array! but input type was: ",args.type)
+  local S, size, V = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V
+  
+--  print("MAP:SPECIALIZE TO TYPE",args.rigelFunction.name,types.rv(args.S))
+  local fn = args.rigelFunction:specializeToType( types.rv(S), rate )
+  J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
+
+  if size==V then
+    return RM.map( fn, size[1], size[2], args.bool )
+  elseif V:eq(R.Size(0,0)) then
+    return RM.mapSeq( fn, size[1], size[2] )
   else -- parseq
-    return RM.mapParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2], args.bool )
+    return RM.mapParSeq( fn, V[1], V[2], size[1], size[2], args.bool )
   end
 
   assert(false)
 end,
-T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")))
+nil,false)
+--T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V"))
 
 -- This only works if the array size doesn't change!!
 generators.Flatmap = R.FunctionGenerator("core.Flatmap",{"rigelFunction","type","rate"},{},

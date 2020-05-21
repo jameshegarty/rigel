@@ -2668,6 +2668,8 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   err( V==0 or L%V==0, "cropSeq, L%V must be 0. L="..tostring(L).." V="..tostring(V))
   err( V==0 or (R%V):eq(0):assertAlwaysTrue(), "cropSeq, R%V must be 0, R="..tostring(R)..", V="..tostring(V))
   err( V==0 or ((W-L-R)%V):eq(0):assertAlwaysTrue(), "cropSeq, (W-L-R)%V must be 0")
+  err( (W-L-R):gt(0):assertAlwaysTrue(),"cropSeq, (W-L-R) must be >0! This means you have cropped the whole image! W=",W," L=",L," R=",R)
+  err( (H-B-Top)>0,"cropSeq, (H-B-Top) must be >0! This means you have cropped the whole image!")
   err( X==nil, "cropSeq: too many arguments" )
 
   --err( W:lt(math.pow(2,BITS)-1):assertAlwaysTrue(), "cropSeq: width too large!")
@@ -5029,10 +5031,10 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         if iDelayThis ~= delayTable[orig.inputs[1]] then
           local d = iDelayThis-delayTable[orig.inputs[1]]
           if verbose then print("DELAY",n.fn.name,d) end
-          res = C.fifo( n.inputs[1].type:deInterface(), d )(res)
+          res = C.fifo( n.inputs[1].type:deInterface(), d, nil, nil, nil, nil, "DELAYFIFO" )(res)
         end
 
-        local NAME = depth[orig].."_"..maxDepth.."_"..n.name
+        local NAME = depth[orig].."_"..maxDepth.."_"..n.name.."_"..n.fn.name
 
         --err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
         --err( n.fn.outputBurstiness<=16384, "outputBurstiness for module ",n.fn.name," is way too large: ",n.fn.outputBurstiness )
@@ -5054,7 +5056,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
               items = 16384/4
             end
             
-            IFIFO = C.fifo( n.inputs[1].type:deInterface(), items, nil, nil, nil,nil,  NAME )
+            IFIFO = C.fifo( n.inputs[1].type:deInterface(), items, nil, nil, nil,nil,  NAME.."IFIFO" )
           end
           if n.fn.outputBurstiness>0 then
             local items = n.fn.outputBurstiness + FIFOSizeToDelay( n.fn.outputBurstiness )
@@ -5065,7 +5067,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
               items = 16384/4
             end
 
-            OFIFO = C.fifo( n.type:deInterface(), items, nil, nil, nil, nil,  NAME )
+            OFIFO = C.fifo( n.type:deInterface(), items, nil, nil, nil, nil,  NAME.."_OFIFO" )
           end
         else
           IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness ), delayTable[orig] - n.fn.delay - extraDelayForFIFOs, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
@@ -5132,7 +5134,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
             local G = require "generators.core"
             if verbose then print("DELAY",delayDiff,n) end
             --res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
-            res.inputs[k] = C.fifo( inp.type:deInterface(), delayDiff )(res.inputs[k])
+            res.inputs[k] = C.fifo( inp.type:deInterface(), delayDiff, nil, nil, nil, nil, "DELAY" )(res.inputs[k])
           end
         end
       end
