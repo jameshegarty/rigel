@@ -71,8 +71,9 @@ local FindBestMatch = G.SchedulableFunction{ "FindBestMatch", T.Array2d( T.Array
     print("FINDBEST",i.type,i.rate)
     
     local inp = G.FanOut{2}(i)
-    local inp0 = G.RVFIFO{128,"bestmatch0"}(inp[0])
-    local inp1 = G.RVFIFO{128,"bestmatch1"}(inp[1])
+--    local inp0 = G.RVFIFO{128,"bestmatch0"}(inp[0])
+    --    local inp1 = G.RVFIFO{128,"bestmatch1"}(inp[1])
+    local inp0, inp1 = inp[0], inp[1]
     
     print("BEST",inp.type)
     local idx = {} -- build indices for the argmin
@@ -86,6 +87,8 @@ local FindBestMatch = G.SchedulableFunction{ "FindBestMatch", T.Array2d( T.Array
     --local casted = G.Map{G.Map{G.Map{G.AddMSBs{8}}}}(inp[1])
     local SADOut = G.Map{G.SAD{T.Uint(16)}}(inp1)
     print("SAD",SADOut.type)
+    indices = G.RVFIFO{128}(indices)
+    SADOut = G.RVFIFO{128}(SADOut)
     local argminInp = G.Zip(G.FanIn(indices,SADOut)) --{u8,u16}[SearchWindow]
     print("ARGMININP",argminInp.type)
     local res = G.Reduce{G.ArgMin}(argminInp)

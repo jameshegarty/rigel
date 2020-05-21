@@ -32,8 +32,13 @@ function(args)
     local seq = (sizeW*sizeH)/(V[1]*V[2])
     assert( type(seq)=="number")
     assert( type(V[2])=="number" and V[2]==1 ) -- NYI
+
+    print("BROADCASTSEQ",args.type,args.rate,args.size)
+    print("BROADCASTSEQ",V,seq)
+    -- C.broadcast = memoize(function( A, W, H, X )
     
-    local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(inputType,V[1],seq),RM.makeHandshake(C.broadcast(inputType,V[1],1)))
+    --local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(inputType,V[1],seq),RM.makeHandshake(C.broadcast(inputType,V[1],1)))
+    local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.makeHandshake(C.broadcast(inputType,V[1],1)), RM.upsampleXSeq(inputType,0,seq) )
     
     -- hackity hack
     res.outputType = T.RV(T.ParSeq(T.Array2d(inputType,V),args.size))
