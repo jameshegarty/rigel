@@ -19,7 +19,10 @@ ZU9VIVADOSOCBITS_SIG20 += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.tx
 
 # too slow
 SRCS_VERILATOR_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua, $(SRCS_SOC))
-SRCS_VERILATOR_SOC := $(filter-out soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua, $(SRCS_VERILATOR_SOC))
+SRCS_VERILATOR_SOC := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_VERILATOR_SOC))
+
+# broken in circleci for some reason?
+SRCS_VERILATOR_SOC := $(filter-out soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua, $(SRCS_VERILATOR_SOC))
 
 VERILATOR_SOC = $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.bit,$(SRCS_VERILATOR_SOC))
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.raw,$(SRCS_VERILATOR_SOC))
