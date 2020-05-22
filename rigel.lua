@@ -546,7 +546,7 @@ return fn
         fnType:arrayOver()==targetType:arrayOver() then
           -- nothing to do!
       else
-        print("convertInterface NYI - convert ",fn.inputType," to ",targetInputType)
+        print("convertInterface NYI - convert ",fnType," to ",targetType," function:",fn.name)
         assert(false)
       end
     elseif fnType:isTuple() then

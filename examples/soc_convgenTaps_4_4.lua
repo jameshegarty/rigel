@@ -59,16 +59,20 @@ local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
     
     local res = G.AXIReadBurst{"1080p.raw",{1920,1080},u(8),noc.read}(ii0)
 
-    local T = Uniform(res.type:deInterface().V[1]*res.type:deInterface().V[2]):toNumber()
-    local PadRadius = J.upToNearest(T, ConvRadius)
+    --local T = Uniform(res.type:deInterface().V[1]*res.type:deInterface().V[2]):toNumber()
+    --local PadRadius = J.upToNearest(T, ConvRadius)
 
     local pad = Pad{{PadRadius, PadRadius, ConvRadius, ConvRadius}}(res)
+    print("PAD",pad.type,pad.rate)
     local st = Stencil{{-ConvWidth+1,0,-ConvWidth+1,0}}(pad)
     st = G.Map{G.Map{AddMSBs{24}}}(st)
     -----
     local trig = G.Broadcast{R.Size(Uniform(1920+PadRadius*2),1080+ConvRadius*2)}(ii1)
     local coeffs = G.Map{RM.Storv(regs.coeffs)}(trig)
+    print("TOCOL",coeffs.type,coeffs.rate)
+    coeffs = G.Map{G.ToColumns}(coeffs)
     -----
+    print("STCOEFFS",st.type,coeffs.type)
     local padFanIn = G.FanIn(st,coeffs)
     local padZip = G.Zip(padFanIn)
     padZip = G.Map{G.Zip}(padZip)

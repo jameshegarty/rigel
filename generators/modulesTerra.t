@@ -979,7 +979,7 @@ function MT.changeRate( res, A, H, inputRate, outputRate, maxRate, outputCount, 
       if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN OUT validOut %d\n",valid(out)) end
     end
     terra ChangeRate:calculateReady()  self.ready = (self.phase==0) end
-  else
+  else -- inputRate <= outputRate
     terra ChangeRate:reset() self.phase = 0; end
     terra ChangeRate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
       [(function() if inputRate==0 then

@@ -495,7 +495,13 @@ end)
 generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate"},{},
 function(a)
   J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
-  return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+
+  if a.rate:lt(SDF{1,1}) then
+    assert(a.V:eq(0,0))
+    return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], math.floor(Uniform(a.rate[1][2]):toNumber()/Uniform(a.rate[1][1]):toNumber()), a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+  else
+    return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+  end
 end,
 types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
 
@@ -657,6 +663,12 @@ function(args)
   local fn = args.rigelFunction:specializeToType( types.rv(S), rate )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
 
+  if fn.inputType:isrv()==false or fn.outputType:isrv()==false then
+    -- NYI - we basically only support rv or RV, so if it can't be rv, ask for RV
+    fn = args.rigelFunction:specializeToType( types.RV(S), rate )
+    J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
+  end
+  
   if size==V then
     return RM.map( fn, size[1], size[2], args.bool )
   elseif V:eq(R.Size(0,0)) then
@@ -741,6 +753,20 @@ function(args)
       end):complete(args)
   end
 end)
+
+-- explicit reshape to column-wise
+generators.ToColumns = R.FunctionGenerator("core.ToColumns",{"type","rate"},{},
+function(args)
+  --J.err( args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size. size:",args.size," cycles:",args.number)
+  local outW = math.floor(args.size[1]*(Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()))
+  if outW == Uniform(args.size[1]):toNumber() then
+    -- hack around broken changerate!! fix
+    return C.identity( args.type:deInterface() )
+  else
+    return RM.changeRate( args.T, args.size[2], args.size[1], outW, true, args.size[1], args.size[2] )
+  end
+end,
+types.array2d(P.DataType("T"),P.SizeValue("size")), false )
 
 -- we disable optimization for this! Since it's really just a wrapper around the raw generator
 generators.SerSeq = R.FunctionGenerator("core.SerSeq",{"type","number","rate"},{},
