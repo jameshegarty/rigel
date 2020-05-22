@@ -531,12 +531,13 @@ table.insert(vstring,[=[
             end
 ]=])
 
-table.insert(vstring,[=[            
-            if (!w_wrotedata && w_select_r==]=]..REG_ADDR_BITS..[=['d1 && LITE_WVALID) begin
-                ]=]..J.sel(verbose,[[$display("AXI WRITE REG 1 %d",LITE_WDATA);]].."\n","")..[=[
-                donereg <= LITE_WDATA;
-            end
-]=])
+-- don't do this: only IP can write to done reg, to prevent multiple drivers
+--table.insert(vstring,[=[            
+--            if (!w_wrotedata && w_select_r==]=]..REG_ADDR_BITS..[=['d1 && LITE_WVALID) begin
+--                ]=]..J.sel(verbose,[[$display("AXI WRITE REG 1 %d",LITE_WDATA);]].."\n","")..[=[
+--                donereg <= LITE_WDATA;
+--            end
+--]=])
 
 table.insert(vstring,[=[
             if((w_wrotedata || LITE_WVALID) && (w_wroteresp || LITE_BREADY)) begin

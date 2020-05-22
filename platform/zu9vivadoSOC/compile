@@ -30,5 +30,5 @@ echo "report_utilization -hierarchical -file utilization_h.txt" >> $TCLFILE
 echo "report_utilization -file utilization.txt" >> $TCLFILE
 vivado -source $TCLFILE -mode batch -nojournal -log 'vivado.log' > /dev/null
 bootgen -image $DIR/../axi/boot.bif -arch zynqmp -process_bitstream bin
-cp $BUILDDIR/system.bit.bin $OUTFILE"
+cp $BUILDDIR/system.bit.bin $OUTFILE
                                           
