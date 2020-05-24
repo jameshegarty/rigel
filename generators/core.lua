@@ -498,7 +498,9 @@ function(a)
 
   if a.rate:lt(SDF{1,1}) then
     assert(a.V:eq(0,0))
-    return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], math.floor(Uniform(a.rate[1][2]):toNumber()/Uniform(a.rate[1][1]):toNumber()), a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+    local outT = math.floor(Uniform(a.rate[1][2]):toNumber()/Uniform(a.rate[1][1]):toNumber())
+    print("STENCIL LN OUTT",outT,a.rate)
+    return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], outT, a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
   else
     return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
   end

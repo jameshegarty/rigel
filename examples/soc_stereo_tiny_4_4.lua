@@ -119,7 +119,10 @@ local StereoModule = G.SchedulableFunction{ "StereoModule", T.Trigger,
     local right = G.Map{G.Index{1}}(inp[1])
     right = G.FIFO{128,"right"}(right)
     print("R",right.type, right.rate)
-    right = G.Stencil{{-SADWidth+1,0,-SADWidth+1,0}}(right)
+    -- override the default rate of this stencil op to 100%:
+    -- input rate is actually 25%, but since we are broadcasting after,
+    -- if we throughput reduce the stencil, it will actually lead to double buffering
+    right = G.Stencil{{-SADWidth+1,0,-SADWidth+1,0},SDF{1,1}}(right)
     print("R",right.type, right.rate)
     right = G.Map{G.Broadcast{{SearchWindow,1}}}(right)
     --right = G.Map{RM.upsampleXSeq( T.array2d(T.uint(8),8,8), 0, 4, true )}(right)

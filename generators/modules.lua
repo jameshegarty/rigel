@@ -3473,6 +3473,7 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_
   return rigel.newFunction(res)
 end)
 
+-- T: the number of cycles to take to emit the stencil. IE T=4 => serialize the stencil and send it out over 4 cycles.
 modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, framed_orig, framedW_orig, framedH_orig, X )
   err(T>=1,"SSRPartial: T should be >=1")
   assert(X==nil)

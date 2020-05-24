@@ -34,7 +34,7 @@ io.output("out/"..outfile..".designT.txt"); io.write(V/ConvWidth); io.close()
 io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
 
 local regs = SOC.axiRegs({
-    {"coeffs",RM.reg(ar(u(32),ConvWidth,ConvWidth),J.range(ConvWidth*ConvWidth))}},SDF{1,cycles}):instantiate("regs")
+    {"coeffs",RM.reg(ar(u(8),ConvWidth,ConvWidth),J.range(ConvWidth*ConvWidth))}},SDF{1,cycles}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
@@ -44,10 +44,14 @@ if terralib~=nil then ts=".terra" end
 
 local ConvInner = G.SchedulableFunction{ "ConvInner", T.Array2d(T.Tuple{P.DataType("L"),P.DataType("R")},P.SizeValue("size")),
 function(inp)
-  local out = G.Map{Mul}(inp)
+  print("ConvInner",inp.type)
+  local out = G.Map{G.TupleToArray}(inp)
+  local out = G.Map{G.Map{AddMSBs{24}}}(out)
+  out = G.Map{G.ArrayToTuple}(out)
+  local out = G.Map{Mul}(out)
   local res = Reduce{Add{R.Async}}(out)
   local sft = Rshift{J.sel(ConvWidth==4,7,11)}(res)
-  return RemoveMSBs{24}(sft)
+  return RemoveMSBs{sft.type:deInterface().precision-8}(sft)
 end}
 
 --local Conv = G.Function{ "Conv", SDF{1,cycles}, T.HandshakeTrigger,
@@ -65,7 +69,7 @@ local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
     local pad = Pad{{PadRadius, PadRadius, ConvRadius, ConvRadius}}(res)
     print("PAD",pad.type,pad.rate)
     local st = Stencil{{-ConvWidth+1,0,-ConvWidth+1,0}}(pad)
-    st = G.Map{G.Map{AddMSBs{24}}}(st)
+    --st = G.Map{G.Map{AddMSBs{24}}}(st)
     -----
     local trig = G.Broadcast{R.Size(Uniform(1920+PadRadius*2),1080+ConvRadius*2)}(ii1)
     local coeffs = G.Map{RM.Storv(regs.coeffs)}(trig)
