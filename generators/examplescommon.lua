@@ -2046,7 +2046,7 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
   return modules.lambda( J.sanitize("StencilLinebufferRegisterChain_A"..tostring(A).."_w"..w.."_h"..h.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)) ), I, out )
 end)
 
--- has rate T->1. Returns each stencil over 1/T cycles
+-- T is the number of cycles over which this should take. T=4 -> takes 4 cycles
 C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, framed_orig, X )
   J.err(Uniform.isUniform(w) or type(w)=="number","C.stencilLinebufferPartial: w must be number, but is:",w)
   J.err(Uniform.isUniform(h) or type(h)=="number","C.stencilLinebufferPartial: h must be number, but is:",h)

@@ -496,11 +496,18 @@ generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate"},{},
 function(a)
   J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
 
-  if a.rate:lt(SDF{1,1}) then
+  local STW = a.bounds[2]-a.bounds[1]+1
+  local V = J.canonicalV( a.rate, R.Size(STW,1) )
+  assert(V[2]==1)
+
+  print("STENCIL",STW,a.rate,V)
+  
+  if STW~=V[1]*V[2] then
     assert(a.V:eq(0,0))
-    local outT = math.floor(Uniform(a.rate[1][2]):toNumber()/Uniform(a.rate[1][1]):toNumber())
-    print("STENCIL LN OUTT",outT,a.rate)
-    return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], outT, a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+    assert( V[2]==1 )
+    --local outT = math.floor(Uniform(a.rate[1][2]):toNumber()/Uniform(a.rate[1][1]):toNumber())
+    --print("STENCIL LN OUTT",outT,a.rate)
+    return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], STW/V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
   else
     return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
   end
@@ -661,7 +668,7 @@ function(args)
   J.err( ty:deInterface():isArray(),"Error, Map must operate on an array! but input type was: ",args.type)
   local S, size, V = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V
   
---  print("MAP:SPECIALIZE TO TYPE",args.rigelFunction.name,types.rv(args.S))
+  --print("MAP:SPECIALIZE TO TYPE",args.rigelFunction.name,types.rv(S))
   local fn = args.rigelFunction:specializeToType( types.rv(S), rate )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
 
@@ -877,6 +884,8 @@ function(args)
   local input
 
   local optType, optRate = args.type:optimize( args.rate )
+
+  print("Schedulable",args.type,args.rate,optType,optRate)
   
   local RVMode
 

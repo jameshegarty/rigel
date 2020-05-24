@@ -69,6 +69,7 @@ local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
     local pad = Pad{{PadRadius, PadRadius, ConvRadius, ConvRadius}}(res)
     print("PAD",pad.type,pad.rate)
     local st = Stencil{{-ConvWidth+1,0,-ConvWidth+1,0}}(pad)
+    print("ST",st.type,st.rate)
     --st = G.Map{G.Map{AddMSBs{24}}}(st)
     -----
     local trig = G.Broadcast{R.Size(Uniform(1920+PadRadius*2),1080+ConvRadius*2)}(ii1)
@@ -79,6 +80,7 @@ local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
     print("STCOEFFS",st.type,coeffs.type)
     local padFanIn = G.FanIn(st,coeffs)
     local padZip = G.Zip(padFanIn)
+    print("PadSip",padZip.type,padZip.rate)
     padZip = G.Map{G.Zip}(padZip)
     res = G.Map{ConvInner}(padZip)
     res = Crop{{PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0}}(res)
