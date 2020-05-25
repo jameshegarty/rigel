@@ -9,7 +9,7 @@ SRCS_SOC += soc_convgenTaps_4_2.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_4_8
 SRCS_SOC += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua
 SRCS_SOC += soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua soc_lk_4_8.lua soc_lk_6_6.lua soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua
 
-SIG20 := soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_6_6.lua soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua soc_lk_4_8.lua
+SIG20 := soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_4.lua soc_lk_12_3.lua soc_lk_12_2.lua soc_lk_12_1.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_6_6.lua soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua soc_lk_4_8.lua
 SIG20 += soc_convgenTaps_8_1.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_4.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_8_16.lua soc_convgenTaps_8_32.lua
 SIG20 += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua
 
