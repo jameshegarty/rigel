@@ -260,7 +260,7 @@ local Display = G.Fmap{G.Function{"Display", T.rv(T.Array2d(T.Int(40,-12-bits.in
     return res
 end}}
 
-local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),2),P.SizeValue("imsize")),
+local LK = G.SchedulableFunction{"LK",types.Array2d(T.Tuple{types.uint(8),types.uint(8)},P.SizeValue("imsize")),
     function(inp)
 
       print("LKINP",inp.type,inp.rate)
@@ -297,10 +297,10 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),
       local Ainv = G.Map{Invert2x2}(A)
 
       local f0_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb0FO[2])
-      f0_slice = G.ToColumns(f0_slice)
+      f0_slice = G.Map{G.ToColumns}(f0_slice)
       print("F0",f0_slice.type,f0_slice.rate)
       local f1_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb1)
-      f1_slice = G.ToColumns(f1_slice)
+      f1_slice = G.Map{G.ToColumns}(f1_slice)
 
       print("F)",f0_slice.type,f0_slice.scheduleConstraints)
       local binp = R.concat{G.RVFIFO{128,R.Unoptimized}(f0_slice), G.RVFIFO{128,R.Unoptimized}(f1_slice), G.RVFIFO{128,R.Unoptimized}(fdx_stencilFO[1]), G.RVFIFO{128,R.Unoptimized}(fdy_stencilFO[1])}
@@ -325,7 +325,7 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),
 local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
   function(i)
     print("LKTOP",i.type,i.rate,i.scheduleConstraints)
-    local readStream = G.AXIReadBurst{ inputFilename, {W,H}, T.Array2d(T.Uint(8),2), 4, noc.read }(i)
+    local readStream = G.AXIReadBurst{ inputFilename, {W,H}, T.Tuple{T.Uint(8),T.Uint(8)}, 4, noc.read }(i)
     print("RSTReAM",readStream.type,readStream.rate)
     
     local PadExtra = PadRadiusAligned - PadRadius

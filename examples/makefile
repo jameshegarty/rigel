@@ -7,9 +7,9 @@ SRCS_SOC = soc_simple.lua soc_simple_uniform.lua soc_2in.lua soc_convgen.lua soc
 SRCS_SOC += soc_convgenTaps_4_2.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_4_8.lua soc_convgenTaps_4_16.lua  soc_convgenTaps_4_16.lua soc_convgenTaps_8_4.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_1.lua soc_convgenTaps_4_4.lua  soc_convgenTaps_8_16.lua  soc_convgenTaps_8_32.lua
 
 SRCS_SOC += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua
-SRCS_SOC += soc_lk_4_4.lua soc_lk_6_6.lua soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua
+SRCS_SOC += soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua soc_lk_4_8.lua soc_lk_6_6.lua soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua
 
-SIG20 := soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_6_6.lua soc_lk_4_4.lua
+SIG20 := soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_6_6.lua soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua soc_lk_4_8.lua
 SIG20 += soc_convgenTaps_8_1.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_4.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_8_16.lua soc_convgenTaps_8_32.lua
 SIG20 += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua
 
@@ -81,7 +81,7 @@ SRCS = $(wildcard *.lua)
 SRCS := $(filter-out pyramid_core.lua harris_core.lua sift_core.lua sift_core_hw.lua campipe_core.lua descriptor_core.lua  stereo_core.lua stereo_tr_core.lua  lk_core.lua lk_tr_core.lua $(SRCS_BJUMP) $(SRCS_PULPINO) $(SRCS_SOC),$(SRCS))
 
 # broken
-SRCS := $(filter-out soc_lk_12_4.lua soc_lk_12_3.lua soc_lk_12_2.lua soc_lk_12_1.lua soc_lk_4_1.lua, $(SRCS) )
+SRCS := $(filter-out soc_lk_12_4.lua soc_lk_12_3.lua soc_lk_12_2.lua soc_lk_12_1.lua, $(SRCS) )
 SRCS := $(filter-out soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua, $(SRCS) )
 
 RIGEL_VERILATOR_INCLUDE ?= $(shell pkg-config --variable=includedir verilator)

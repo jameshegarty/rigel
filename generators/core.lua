@@ -767,12 +767,16 @@ end)
 generators.ToColumns = R.FunctionGenerator("core.ToColumns",{"type","rate"},{},
 function(args)
   --J.err( args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size. size:",args.size," cycles:",args.number)
-  local outW = math.floor(args.size[1]*(Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()))
-  if outW == Uniform(args.size[1]):toNumber() then
+  --local outW = math.floor(args.size[1]*(Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()))
+  print("ToColumns",args.rate,args.size,args.type)
+  local V = J.canonicalV( args.rate, args.size, true)
+  
+  if args.size[1] == V[1] then
     -- hack around broken changerate!! fix
     return C.identity( args.type:deInterface() )
   else
-    return RM.changeRate( args.T, args.size[2], args.size[1], outW, true, args.size[1], args.size[2] )
+    assert(V[2]==args.size[2])
+    return RM.changeRate( args.T, args.size[2], args.size[1], V[1], true, args.size[1], args.size[2] )
   end
 end,
 types.array2d(P.DataType("T"),P.SizeValue("size")), false )
