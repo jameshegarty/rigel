@@ -326,7 +326,7 @@ functionGeneratorMT.__call=function(tab,...)
     if arglist.type==nil and (tab.requiredArgs.type~=nil or tab.optArgs.type~=nil) then arglist.type = arg.type end
     if arglist.rate==nil and (tab.requiredArgs.rate~=nil or tab.optArgs.rate~=nil) then arglist.rate = arg.rate end
 
-    local rfn = tab:complete(arglist)
+    local rfn = tab:complete(arglist,rawarg[1].loc)
 
     if arg.scheduleConstraints==nil then -- if we're doing the schedule pass, don't show an error
       err( rfn.inputType==arg.type, "Failed to find a conversion for fn '",rfn.name,"' with \ninput type:'",rfn.inputType,"'\ninput rate ",rfn.sdfInput," \noutput type '",rfn.outputType,"' \nto convert to type:'",arg.type,"' rate:",arg.rate)
@@ -483,12 +483,12 @@ end
 
 -- top level function that implements logic to convert a fn to a given type.
 -- If this fails, it just returns fn
-darkroom.convertInterface = J.memoize(function( fn, targetInputTypeOrig, targetInputRateOrig, X )
+darkroom.convertInterface = J.memoize(function( fn, targetInputTypeOrig, targetInputRateOrig, loc, X )
   assert( X==nil )
-
   assert( types.isType(targetInputTypeOrig) )
   err( SDF.isSDF(targetInputRateOrig), "convertInterfaces SDF should be SDF but is: ", targetInputRateOrig )
-  --print("CONVERT_INTERFACE ",targetInputType,targetInputRate," TO ",fn.inputType,fn.sdfInput )
+
+--  print("CONVERT_INTERFACE ",targetInputTypeOrig, targetInputRateOrig," TO ", fn.inputType, fn.sdfInput, fn.name )
 
   -- nothing to do!
   if fn.inputType == targetInputTypeOrig then
@@ -546,7 +546,7 @@ return fn
         fnType:arrayOver()==targetType:arrayOver() then
           -- nothing to do!
       else
-        print("convertInterface NYI - convert ",fn.inputType," to ",targetInputType)
+        print("convertInterface NYI - convert ",fnType," to ",targetType," calling function:",fn.name,loc)
         assert(false)
       end
     elseif fnType:isTuple() then
@@ -614,7 +614,7 @@ return fn
       err( #targetInputType:deInterface().list==#fn.inputType:deInterface().list, "ConvertInterface NYI = if input is tuple of interfaces, size of tuple must match. target: ",targetInputType," to ",fn.inputType )
       assert( targetInputType.list[1]:is("Interface") )
 
-      local res = G.Function{"TupleConvertInterface", targetInputType, targetInputRate,
+      local res = G.Function{"TupleConvertInterface_"..tostring(targetInputType).."_"..tostring(fn.inputType), targetInputType, targetInputRate,
         function(inp)
           local out = {}
           for k,v in ipairs(targetInputType:deInterface().list) do
@@ -692,7 +692,7 @@ end)
 
 -- this function either returns a plain function, or fails
 -- This may not return a function with exactly the type you asked for! You need to check for that!
-function functionGeneratorFunctions:complete( arglist, X )
+function functionGeneratorFunctions:complete( arglist, loc, X )
   assert( X==nil )
   
   if DARKROOM_VERBOSE then print("FunctionGenerator:complete() ",self.name) end

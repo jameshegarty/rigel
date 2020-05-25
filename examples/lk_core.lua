@@ -318,7 +318,9 @@ function makeLK( T, internalW, internalH, window, bits )
   cost = cost + Acost
 
   local fB, BType, Bcost = makeB( dType, window, bits )
+  print("F0SLC",lb0.type,lb0.rate)
   local f0_slice = R.apply("f0slice", RM.map(C.slice(st_type, 0, window-1, 0, window-1),T), lb0)
+  print("F0SLC",f0_slice.type,f0_slice.rate)
   local f1_slice = R.apply("f1slice", RM.map(C.slice(st_type, 0, window-1, 0, window-1),T), lb1)
   local sm_type = types.array2d(types.uint(8),window,window)
   local binp = R.apply("binp", C.SoAtoAoS(T,1,{sm_type,sm_type,dst_type,dst_type}), R.concat("btup",{f0_slice,f1_slice,fdx_stencil,fdy_stencil}))

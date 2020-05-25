@@ -46,7 +46,13 @@ io.output("out/"..outfile..".design.txt"); io.write("Lucas Kanade "..H.." "..CON
 io.output("out/"..outfile..".designT.txt"); io.write(V); io.close()
 io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
 
-local cycles = (W*H)/V
+local PadRadius = CONVWIDTH/2
+local PadRadiusAligned = PadRadius
+if V>1 then
+  PadRadiusAligned = J.upToNearest(V,CONVWIDTH/2)
+end
+
+local cycles = ((W+PadRadiusAligned*2)*(H+PadRadius*2+1))/V
 print("CYCLES",cycles)
 
 local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
@@ -172,6 +178,7 @@ local CalcB = G.SchedulableFunction{"CalcB",
            T.Array2d(P.NumberType("ty"),P.SizeValue("w")),
            T.Array2d(P.NumberType("ty"),P.SizeValue("w")) },
   function(i)                              
+    print("CALCB",i.type)
     local iFO = G.FanOut{4}(i)
     local frame0 = iFO[0][0]
     local frame1 = iFO[1][1]
@@ -253,9 +260,10 @@ local Display = G.Fmap{G.Function{"Display", T.rv(T.Array2d(T.Int(40,-12-bits.in
     return res
 end}}
 
-local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),2),P.SizeValue("imsize")),
+local LK = G.SchedulableFunction{"LK",types.Array2d(T.Tuple{types.uint(8),types.uint(8)},P.SizeValue("imsize")),
     function(inp)
 
+      print("LKINP",inp.type,inp.rate)
       local inpFO = G.FanOut{2}(inp)
       
       local frame0 = G.Map{G.Index{0}}(inpFO[0])
@@ -269,7 +277,10 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),
 
       fdx = G.Map{Dx}(fdx)
 
+      print("FDX",fdx.type,fdx.rate,fdx.scheduleConstraints)
       local fdx_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdx)
+      print("FDX_ST",fdx_stencil.type,fdx_stencil.rate,fdx_stencil.scheduleConstraints)
+      
       local fdx_stencilFO = G.FanOut{2,R.Unoptimized}(fdx_stencil)
       
       local fdy = G.Map{G.Slice{{CONVWIDTH-1, CONVWIDTH-1, CONVWIDTH-2, CONVWIDTH}}}(lb0FO[1])
@@ -286,12 +297,21 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),
       local Ainv = G.Map{Invert2x2}(A)
 
       local f0_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb0FO[2])
+      f0_slice = G.Map{G.ToColumns}(f0_slice)
+      print("F0",f0_slice.type,f0_slice.rate)
       local f1_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb1)
+      f1_slice = G.Map{G.ToColumns}(f1_slice)
 
-      local binp = G.FanIn{R.Unoptimized}( G.RVFIFO{128,R.Unoptimized}(f0_slice), G.RVFIFO{128,R.Unoptimized}(f1_slice), G.RVFIFO{128,R.Unoptimized}(fdx_stencilFO[1]), G.RVFIFO{128,R.Unoptimized}(fdy_stencilFO[1]) )
+      print("F)",f0_slice.type,f0_slice.scheduleConstraints)
+      local binp = R.concat{G.RVFIFO{128,R.Unoptimized}(f0_slice), G.RVFIFO{128,R.Unoptimized}(f1_slice), G.RVFIFO{128,R.Unoptimized}(fdx_stencilFO[1]), G.RVFIFO{128,R.Unoptimized}(fdy_stencilFO[1])}
+      print("BINP0",binp.type,binp.rate,binp.scheduleConstraints)
+      local binp = G.FanIn(binp  )
+      print("BINP",binp.type,binp.rate,binp.scheduleConstraints)
       local binp = G.Zip{R.Unoptimized}( binp  )
+      print("BIN2P",binp.type,binp.rate)
       local b = G.Map{CalcB}(binp)
 
+      print("BDONE",b.type)
       local zipcc = R.concat{Ainv,b}
       zipcc = G.FanIn{R.Unoptimized}(zipcc)
       local sinp = G.Zip{R.Unoptimized}(zipcc)
@@ -304,18 +324,14 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(types.array2d(types.uint(8),
 
 local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
   function(i)
-    local readStream = G.AXIReadBurst{ inputFilename, {W,H}, T.Array2d(T.Uint(8),2), 4, noc.read }(i)
-
-    local PadRadius = CONVWIDTH/2
-    local PadRadiusAligned = PadRadius
-    if V>1 then
-      PadRadiusAligned = J.upToNearest(V,CONVWIDTH/2)
-    end
+    print("LKTOP",i.type,i.rate,i.scheduleConstraints)
+    local readStream = G.AXIReadBurst{ inputFilename, {W,H}, T.Tuple{T.Uint(8),T.Uint(8)}, 4, noc.read }(i)
+    print("RSTReAM",readStream.type,readStream.rate)
     
     local PadExtra = PadRadiusAligned - PadRadius
 
     local padded = G.Pad{{PadRadiusAligned, PadRadiusAligned, PadRadius+1, PadRadius}}(readStream)
-
+    print("PADDED",padded.type,padded.rate,PadRadiusAligned,PadRadius)
     local out = LK(padded)
     out = G.Crop{{PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0}}(out)
     return G.AXIWriteBurst{"out/soc_lk_"..CONVWIDTH.."_"..(V*CONVWIDTH),noc.write}(out)

@@ -1514,7 +1514,7 @@ function TypeFunctions:optimize( rates )
           J.err( #rates==1,"NYI - optimize with multiple rates!, type:",self," rates:",rates)
                  
           -- try to optimize
-          local V = J.canonicalV( rates*SDF{ self.V[1]*self.V[2],self.size[1]*self.size[2]}, self.size )
+          local V = J.canonicalV( rates*SDF{ self.V[1]*self.V[2],self.size[1]*self.size[2]}, self.size, self:columnMajor() )
 
           if V:eq(0,0) then
             -- remainder was <1, so try to recurse
@@ -1587,6 +1587,8 @@ function TypeFunctions:optimize( rates )
 
   return self, rates
 end
+
+function TypeFunctions:columnMajor() return self:isArray() and self.V[2]>self.V[1] end
 
 function TypeFunctions:lower() return types.lower(self) end
 

@@ -782,10 +782,13 @@ function common.immutable(t)
   return setmetatable(t, mt)
 end
 
-function common.canonicalV( rate, size, X )
+-- columnMajor: return column major array instead of row major (the default)
+function common.canonicalV( rate, size, columnMajor, X )
   local R = require "rigel"
   local SDF = require "sdf"
   local Uniform = require "uniform"
+
+  if columnMajor==nil then columnMajor = false end
   
   common.err( SDF.isSDF(rate), "canonicalV: expected SDFRate for first argument, but was: ", rate)
   common.err( #rate==1, "canonicalV: only works with a single rate!")
@@ -800,18 +803,30 @@ function common.canonicalV( rate, size, X )
     return R.Size(1,1)
   else
     V = math.ceil(V)
-    while (sizeW*sizeH)%V~=0 do
+    V = math.min(V,sizeW*sizeH)
+    while (sizeW*sizeH)%V~=0 and V<sizeW*sizeH do
       V = V + 1
     end
-
-    if V<=sizeW then
-      return R.Size(V,1)
+    
+    if columnMajor then
+      if V<=sizeH then
+        return R.Size(1,V)
+      else
+        V = common.upToNearest(sizeH,V)
+        common.err( V%sizeH==0, "canonicalV: rate:",rate," size:",size," returned V:",V )
+        common.err( V<=sizeW*sizeH, "canonicalV: rate:",rate," size:",size," returned V:",V )
+        return R.Size( V/sizeH, sizeH )
+      end
     else
-      -- V>sizeW => V must have sizeW as a factor
-      V = common.upToNearest(sizeW,V)
-      common.err( V%sizeW==0, "canonicalV: rate:",rate," size:",size," returned V:",V )
-      common.err( V<=sizeW*sizeH, "canonicalV: rate:",rate," size:",size," returned V:",V )
-      return R.Size( sizeW, V/sizeW )
+      if V<=sizeW then
+        return R.Size(V,1)
+      else
+        -- V>sizeW => V must have sizeW as a factor
+        V = common.upToNearest(sizeW,V)
+        common.err( V%sizeW==0, "canonicalV: rate:",rate," size:",size," returned V:",V )
+        common.err( V<=sizeW*sizeH, "canonicalV: rate:",rate," size:",size," returned V:",V )
+        return R.Size( sizeW, V/sizeW )
+      end
     end
   end
 end

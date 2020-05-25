@@ -32,8 +32,13 @@ function(args)
     local seq = (sizeW*sizeH)/(V[1]*V[2])
     assert( type(seq)=="number")
     assert( type(V[2])=="number" and V[2]==1 ) -- NYI
+
+    print("BROADCASTSEQ",args.type,args.rate,args.size)
+    print("BROADCASTSEQ",V,seq)
+    -- C.broadcast = memoize(function( A, W, H, X )
     
-    local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(inputType,V[1],seq),RM.makeHandshake(C.broadcast(inputType,V[1],1)))
+    --local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(inputType,V[1],seq),RM.makeHandshake(C.broadcast(inputType,V[1],1)))
+    local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.makeHandshake(C.broadcast(inputType,V[1],1)), RM.upsampleXSeq(inputType,0,seq) )
     
     -- hackity hack
     res.outputType = T.RV(T.ParSeq(T.Array2d(inputType,V),args.size))
@@ -198,8 +203,22 @@ function(a)
 end)
 
 generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{},
-function(args) return C.valueToTrigger(args.D) end,
-P.DataType("D") )
+function(args)
+  if args.type:deInterface():isData() then
+    return C.valueToTrigger(args.type:deInterface())
+  elseif args.type:deInterface():isArray() then
+    local ty = args.type:deInterface()
+    -- a non-parallel array
+    J.err( ty.size:eq(ty.V) or ty.V:eq(0,0) or ty.V[2]==1 ,"ValueToTrigger: NYI, vector can only be 1D, but is: ",ty.V ) -- NYI
+    print("ITY",args.type)
+    local f = RM.liftHandshake(RM.liftDecimate(RM.cropSeq( ty:arrayOver(), ty.size[1], ty.size[2], ty.V[1], 0, ty.size[1]-math.max(ty.V[1],1), 0, ty.size[2]-math.max(ty.V[2],1), true )))
+
+    local g = generators.Fmap{C.valueToTrigger( f.outputType:deSchedule() )}
+    return C.compose(J.verilogSanitize("ValueToTriggerParseq"),g,f)
+  else
+    J.err(false,"NYI - ValueToTrigger on input type: ",args.type)
+  end
+end)
 
 generators.TriggerCounter = R.FunctionGenerator("core.TriggerCounter",{"number"},{},
 function(args)
@@ -476,25 +495,66 @@ end)
 generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate"},{},
 function(a)
   J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
-  return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+
+  local STW = a.bounds[2]-a.bounds[1]+1
+  local V = J.canonicalV( a.rate, R.Size(STW,1) )
+  assert(V[2]==1)
+
+  print("STENCIL",STW,a.rate,V)
+  
+  if STW~=V[1]*V[2] then
+    assert(a.V:eq(0,0))
+    assert( V[2]==1 )
+    --local outT = math.floor(Uniform(a.rate[1][2]):toNumber()/Uniform(a.rate[1][1]):toNumber())
+    --print("STENCIL LN OUTT",outT,a.rate)
+    return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], STW/V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+  else
+    return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+  end
 end,
 types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
 
 -- make a stencil with its interior filled with stencils
 -- "bounds" is for the outer stencil, "size" is for the inner stencil.
 --     since the inner stencil is all overlap regions fully contained in the outer stencil, this makes sense...
-generators.StencilOfStencils = R.FunctionGenerator("core.StencilOfStencils",{"bounds","rate","size"},{},
+generators.StencilOfStencils = R.FunctionGenerator("core.StencilOfStencils",{"bounds","rate","size","type"},{},
 function(a)
   J.err( a.imsize:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
-  local f = C.stencilLinebuffer( a.T, a.imsize[1], a.imsize[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
-  local stencilW = a.bounds[2]-a.bounds[1]+1
-  local stencilH = a.bounds[4]-a.bounds[3]+1
 
-  J.err( a.size[2]==stencilH, "NYI - StencilOfStencils, height of inner stencil must be height of outer stencil")
+  if a.rate:lt(SDF{1,1}) then
+    
+    local f = C.stencilLinebufferPartialOffsetOverlap( a.T, a.imsize[1], a.imsize[2], a.rate[1][2]:toNumber()/a.rate[1][1]:toNumber(), a.bounds[1], 0, a.bounds[3], a.bounds[4], -a.bounds[2], -a.bounds[3], a.V[1])
+
+    local stCount = (Uniform(a.bounds[2]):toNumber()-Uniform(a.bounds[1]):toNumber()+1-(a.size[1]-1))
+    local perCycleSearch = stCount*(a.rate[1][1]:toNumber()/a.rate[1][2]:toNumber())
+    local g = RM.makeHandshake(C.unpackStencil( a.T, a.size[1], a.size[2], perCycleSearch ))
+
+    local res = C.compose("StencilOfStencils",g,f)
+
+    assert(res.inputType:isRV())
+    assert( res.inputType:lower()==a.type:lower() )
+    res.inputType = a.type
+
+    local vtype = res.outputType:deInterface()
+    local vtype = T.Array2d(vtype:arrayOver(),stCount,1,vtype.size)
+
+    local OT = types.RV(a.type:deInterface():replaceVar("over",vtype))
+    assert( res.outputType:lower()==OT:lower() )
+    res.outputType = OT
+
+    return res
+  else
+    local f = C.stencilLinebuffer( a.T, a.imsize[1], a.imsize[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
+    local stencilW = a.bounds[2]-a.bounds[1]+1
+    local stencilH = a.bounds[4]-a.bounds[3]+1
+
+    J.err( a.size[2]==stencilH, "NYI - StencilOfStencils, height of inner stencil must be height of outer stencil")
   
-  local g = C.unpackStencil( a.T, a.size[1], a.size[2], stencilW-a.size[1]+1, nil, true, a.imsize[1], a.imsize[2])
+--  local g = C.unpackStencil( a.T, a.size[1], a.size[2], stencilW-a.size[1]+1, nil, true, a.imsize[1], a.imsize[2])
+    local g = generators.Map{C.unpackStencil( a.T, a.size[1], a.size[2], stencilW-a.size[1]+1)}
 
-  return C.compose("StencilOfStencils",g,f)
+    return C.compose("StencilOfStencils",g,f)
+  end
 end,
 types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("imsize")) )
 
@@ -597,21 +657,39 @@ end,nil,false)
 generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool"},
 function(args)
 
---  print("MAP:SPECIALIZE TO TYPE",args.rigelFunction.name,types.rv(args.S))
-  local fn = args.rigelFunction:specializeToType( types.rv(args.S), args.rate )
-  J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",args.D)
+  local ty,rate
 
-  if args.size==args.V then
-    return RM.map( fn, args.size[1], args.size[2], args.bool )
-  elseif args.V:eq(R.Size(0,0)) then
-    return RM.mapSeq( fn, args.size[1], args.size[2] )
+  if R.isFunctionGenerator(args.rigelFunction) and args.rigelFunction.optimized==false then
+    ty, rate = args.type, args.rate
+  else
+    ty, rate = args.type:optimize(args.rate)
+  end
+
+  J.err( ty:deInterface():isArray(),"Error, Map must operate on an array! but input type was: ",args.type)
+  local S, size, V = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V
+  
+  --print("MAP:SPECIALIZE TO TYPE",args.rigelFunction.name,types.rv(S))
+  local fn = args.rigelFunction:specializeToType( types.rv(S), rate )
+  J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
+
+  if fn.inputType:isrv()==false or fn.outputType:isrv()==false then
+    -- NYI - we basically only support rv or RV, so if it can't be rv, ask for RV
+    fn = args.rigelFunction:specializeToType( types.RV(S), rate )
+    J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
+  end
+  
+  if size==V then
+    return RM.map( fn, size[1], size[2], args.bool )
+  elseif V:eq(R.Size(0,0)) then
+    return RM.mapSeq( fn, size[1], size[2] )
   else -- parseq
-    return RM.mapParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2], args.bool )
+    return RM.mapParSeq( fn, V[1], V[2], size[1], size[2], args.bool )
   end
 
   assert(false)
 end,
-T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")))
+nil,false)
+--T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V"))
 
 -- This only works if the array size doesn't change!!
 generators.Flatmap = R.FunctionGenerator("core.Flatmap",{"rigelFunction","type","rate"},{},
@@ -684,6 +762,24 @@ function(args)
       end):complete(args)
   end
 end)
+
+-- explicit reshape to column-wise
+generators.ToColumns = R.FunctionGenerator("core.ToColumns",{"type","rate"},{},
+function(args)
+  --J.err( args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size. size:",args.size," cycles:",args.number)
+  --local outW = math.floor(args.size[1]*(Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()))
+  print("ToColumns",args.rate,args.size,args.type)
+  local V = J.canonicalV( args.rate, args.size, true)
+  
+  if args.size[1] == V[1] then
+    -- hack around broken changerate!! fix
+    return C.identity( args.type:deInterface() )
+  else
+    assert(V[2]==args.size[2])
+    return RM.changeRate( args.T, args.size[2], args.size[1], V[1], true, args.size[1], args.size[2] )
+  end
+end,
+types.array2d(P.DataType("T"),P.SizeValue("size")), false )
 
 -- we disable optimization for this! Since it's really just a wrapper around the raw generator
 generators.SerSeq = R.FunctionGenerator("core.SerSeq",{"type","number","rate"},{},
@@ -792,6 +888,8 @@ function(args)
   local input
 
   local optType, optRate = args.type:optimize( args.rate )
+
+  print("Schedulable",args.type,args.rate,optType,optRate)
   
   local RVMode
 

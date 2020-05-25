@@ -1200,8 +1200,17 @@ C.lutinvert = J.memoize(function( ty, X )
 end)
 
 -------------
-C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, offset, overlap )
-  J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+-- V: vector width of input. should be 0 or 1
+C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w_orig, h, T, xmin, xmax, ymin, ymax, offset, overlap, V )
+    --J.map({T,w,h,xmin,xmax,ymin,ymax}, function(i) assert(type(i)=="number") end)
+  err( type(T)=="number","stencilLinebufferPartialOffsetOverlap: T must be number, but is:", T)
+  err( Uniform.isUniform(w_orig) or type(w_orig)=="number","stencilLinebufferPartialOffsetOverlap: w must be number, but is:", w_orig)
+  local w = Uniform(w_orig):toNumber()
+  err( type(h)=="number","stencilLinebufferPartialOffsetOverlap: h must be number, but is:", h)
+  err( type(xmin)=="number","stencilLinebufferPartialOffsetOverlap: xmin must be number, but is:", xmin)
+  err( type(xmax)=="number","stencilLinebufferPartialOffsetOverlap: xmax must be number, but is:", xmax)
+  err( type(ymin)=="number","stencilLinebufferPartialOffsetOverlap: ymin must be number, but is:", ymin)
+  err( type(ymax)=="number","stencilLinebufferPartialOffsetOverlap: ymax must be number, but is:", ymax)
   assert(T>=1);
   assert(w>0);
   assert(h>0);
@@ -1210,12 +1219,15 @@ C.stencilLinebufferPartialOffsetOverlap = memoize(function( A, w, h, T, xmin, xm
   assert(xmax==0)
   assert(ymax==0)
 
+  if V==nil then V=1 end
+  assert( type(V)=="number" and V==0 or V==1 )
+  
   local ST_W = -xmin+1
   local ssr_region = ST_W - offset - overlap
   local stride = ssr_region/T
   assert(stride==math.floor(stride))
 
-  local LB = RM.makeHandshake(RM.linebuffer( A, w, h, 1, ymin ))
+  local LB = RM.makeHandshake(RM.linebuffer( A, w_orig, h, V, ymin ))
   local SSR = RM.liftHandshake(RM.waitOnInput(RM.SSRPartial( A, T, xmin, ymin, stride, true )))
 
   local inp = R.input( LB.inputType )
@@ -1646,7 +1658,10 @@ C.fifo = memoize(function( ty, size, nostall, csimOnly, VRLoad, includeSizeFn, n
   
   local st = R.applyMethod("s1",regs[1],"store",inp)
   local ld = R.applyMethod("l1",regs[1],"load")
-  local res = RM.lambda("C_FIFO_"..tostring(ty).."_size"..tostring(size).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_SZFN"..tostring(includeSizeFn).."_CSIMONLY"..tostring(csimOnly).."_DBGNAME"..tostring(name), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+
+  local bts = Uniform(ty:lower():verilogBits()):toNumber()
+  local KBs = math.floor((size*bts)/(8*1024))
+  local res = RM.lambda("C_FIFO_KB"..tostring(KBs).."_size_"..tostring(size).."_bits"..tostring(bts).."_ty"..tostring(ty).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_SZFN"..tostring(includeSizeFn).."_CSIMONLY"..tostring(csimOnly).."_DBGNAME"..tostring(name), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
   res.fifoed = true
   
   return res
@@ -2031,7 +2046,7 @@ C.stencilLinebufferRegisterChain = memoize(function( A, w, h, T, xmin, xmax, ymi
   return modules.lambda( J.sanitize("StencilLinebufferRegisterChain_A"..tostring(A).."_w"..w.."_h"..h.."_T"..T.."_xmin"..tostring(math.abs(xmin)).."_ymin"..tostring(math.abs(ymin)) ), I, out )
 end)
 
--- has rate T->1. Returns each stencil over 1/T cycles
+-- T is the number of cycles over which this should take. T=4 -> takes 4 cycles
 C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, ymax, framed_orig, X )
   J.err(Uniform.isUniform(w) or type(w)=="number","C.stencilLinebufferPartial: w must be number, but is:",w)
   J.err(Uniform.isUniform(h) or type(h)=="number","C.stencilLinebufferPartial: h must be number, but is:",h)
@@ -2129,7 +2144,10 @@ C.unpackStencil = memoize(function( A, stencilW, stencilH, T, arrHeight, framed,
   return rigel.newFunction(res)
 end)
 
+C.StencilOfStencils = memoize(function( A, w_orig, h_orig, T, xmin, xmax, ymin, ymax, innerW, innerH, framed, X )
 
+end)
+  
 -- if index==true, then we return a value, not an array
 -- indices are inclusive
 C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, X )

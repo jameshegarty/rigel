@@ -2668,6 +2668,8 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
   err( V==0 or L%V==0, "cropSeq, L%V must be 0. L="..tostring(L).." V="..tostring(V))
   err( V==0 or (R%V):eq(0):assertAlwaysTrue(), "cropSeq, R%V must be 0, R="..tostring(R)..", V="..tostring(V))
   err( V==0 or ((W-L-R)%V):eq(0):assertAlwaysTrue(), "cropSeq, (W-L-R)%V must be 0")
+  err( (W-L-R):gt(0):assertAlwaysTrue(),"cropSeq, (W-L-R) must be >0! This means you have cropped the whole image! W=",W," L=",L," R=",R)
+  err( (H-B-Top)>0,"cropSeq, (H-B-Top) must be >0! This means you have cropped the whole image!")
   err( X==nil, "cropSeq: too many arguments" )
 
   --err( W:lt(math.pow(2,BITS)-1):assertAlwaysTrue(), "cropSeq: width too large!")
@@ -2731,7 +2733,7 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
       local it = types.rv(types.Seq(types.Par(res.inputType:deInterface()),W_orig,H))
       assert( it:lower()==res.inputType:lower() )
       res.inputType = it
-      local ot = types.rvV(types.Seq(types.Par(res.outputType:deInterface().list[1]),W_orig-L-R,H-B-Top))
+      local ot = types.rvV(types.Seq(types.Par(res.outputType:deInterface().list[1]),W_orig-L-R_orig,H-B-Top))
       if indexMode then
         ot = types.rvV(res.outputType:deInterface().list[1])
       end
@@ -2739,11 +2741,11 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
 
       res.outputType = ot
     else
-      assert( indexMode==false)
+      err( indexMode==false, "NYI - cropSeq, framed, indexMode with V>0 not implemented")
       local it = types.rv(types.ParSeq(res.inputType:deInterface(),W_orig,H))
       assert( it:lower()==res.inputType:lower() )
       res.inputType = it
-      local ot =  types.rvV(types.ParSeq(res.outputType:deInterface().list[1],W_orig-L-R,H-B-Top))
+      local ot =  types.rvV(types.ParSeq(res.outputType:deInterface().list[1],W_orig-L-R_orig,H-B-Top))
       assert( ot:lower()==res.outputType:lower() )
       res.outputType = ot
     end
@@ -3167,7 +3169,7 @@ modules.linebuffer = memoize(function( A, w_orig, h, T, ymin, framed, X )
     end
   else
     res.inputType = types.rv(types.Par(res.inputType))
-    res.outputType = types.rv(types.Par(types.array2d(A,T,-ymin+1)))
+    res.outputType = types.rv(types.Par(types.array2d(A,math.max(T,1),-ymin+1)))
   end
   
   res.stateful = true
@@ -3471,6 +3473,7 @@ modules.SSR = memoize(function( A, T, xmin, ymin, framed, framedW_orig, framedH_
   return rigel.newFunction(res)
 end)
 
+-- T: the number of cycles to take to emit the stencil. IE T=4 => serialize the stencil and send it out over 4 cycles.
 modules.SSRPartial = memoize(function( A, T, xmin, ymin, stride, fullOutput, framed_orig, framedW_orig, framedH_orig, X )
   err(T>=1,"SSRPartial: T should be >=1")
   assert(X==nil)
@@ -5029,10 +5032,10 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         if iDelayThis ~= delayTable[orig.inputs[1]] then
           local d = iDelayThis-delayTable[orig.inputs[1]]
           if verbose then print("DELAY",n.fn.name,d) end
-          res = C.fifo( n.inputs[1].type:deInterface(), d )(res)
+          res = C.fifo( n.inputs[1].type:deInterface(), d, nil, nil, nil, nil, "DELAYFIFO" )(res)
         end
 
-        local NAME = depth[orig].."_"..maxDepth.."_"..n.name
+        local NAME = depth[orig].."_"..maxDepth.."_"..n.name.."_"..n.fn.name
 
         --err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
         --err( n.fn.outputBurstiness<=16384, "outputBurstiness for module ",n.fn.name," is way too large: ",n.fn.outputBurstiness )
@@ -5054,7 +5057,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
               items = 16384/4
             end
             
-            IFIFO = C.fifo( n.inputs[1].type:deInterface(), items, nil, nil, nil,nil,  NAME )
+            IFIFO = C.fifo( n.inputs[1].type:deInterface(), items, nil, nil, nil,nil,  NAME.."IFIFO" )
           end
           if n.fn.outputBurstiness>0 then
             local items = n.fn.outputBurstiness + FIFOSizeToDelay( n.fn.outputBurstiness )
@@ -5065,7 +5068,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
               items = 16384/4
             end
 
-            OFIFO = C.fifo( n.type:deInterface(), items, nil, nil, nil, nil,  NAME )
+            OFIFO = C.fifo( n.type:deInterface(), items, nil, nil, nil, nil,  NAME.."_OFIFO" )
           end
         else
           IFIFO = C.fifoWithMonitor( n.inputs[1].type:deInterface(), n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness ), delayTable[orig] - n.fn.delay - extraDelayForFIFOs, n.fn.delay, n.inputs[1].rate, true, NAME, n.fn.name, moduleName )
@@ -5132,7 +5135,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
             local G = require "generators.core"
             if verbose then print("DELAY",delayDiff,n) end
             --res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
-            res.inputs[k] = C.fifo( inp.type:deInterface(), delayDiff )(res.inputs[k])
+            res.inputs[k] = C.fifo( inp.type:deInterface(), delayDiff, nil, nil, nil, nil, "DELAY" )(res.inputs[k])
           end
         end
       end
