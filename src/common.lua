@@ -803,10 +803,11 @@ function common.canonicalV( rate, size, columnMajor, X )
     return R.Size(1,1)
   else
     V = math.ceil(V)
-    while (sizeW*sizeH)%V~=0 do
+    V = math.min(V,sizeW*sizeH)
+    while (sizeW*sizeH)%V~=0 and V<sizeW*sizeH do
       V = V + 1
     end
-
+    
     if columnMajor then
       if V<=sizeH then
         return R.Size(1,V)
