@@ -49,7 +49,7 @@ sift.lowerPair = J.memoize(function( FROM, TO, scale, X )
 end)
   
 ----------------
-local function calcGaussian(sig,GAUSS_WIDTH_inp,GAUSS_HEIGHT_inp)
+function sift.calcGaussian(sig,GAUSS_WIDTH_inp,GAUSS_HEIGHT_inp)
   assert(type(GAUSS_WIDTH_inp)=="number")
 
   local GAUSS_WIDTH = GAUSS_WIDTH_inp/2
@@ -91,9 +91,10 @@ local function calcGaussian(sig,GAUSS_WIDTH_inp,GAUSS_HEIGHT_inp)
 
   return GG
 end
+local calcGaussian = sift.calcGaussian
 
 -- T: tile size
-local function tileGaussian(G,W,H,T)
+function sift.tileGaussian(G,W,H,T)
   assert(type(G)=="table")
   assert(type(W)=="number")
   assert(type(T)=="number")
@@ -111,6 +112,7 @@ local function tileGaussian(G,W,H,T)
 
   return GG
 end
+local tileGaussian = sift.tileGaussian
 ----------------
 --[=[
 local function siftBucket(dxdyType,magtype)
