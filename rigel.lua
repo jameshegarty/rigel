@@ -537,7 +537,11 @@ return fn
       elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
         -- recurse
         if fnType.V:eq(0,0) then
-          res = RM.mapSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
+          if fnType.var then
+            res = RM.mapVarSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
+          else
+            res = RM.mapSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
+          end
         else
           print("NYI - ", targetType, " to ", fnType )
           assert(false)
@@ -2806,6 +2810,11 @@ function darkroom.selectStream( name, input, i, j, X )
   err( darkroom.isIR(input), "input must be IR")
   err(X==nil,"selectStream: too many arguments")
 
+  if input.scheduleConstraints~=nil and input.scheduleConstraints.RV then
+    -- early out hack: if schedule pass is done (RV is known, just skip this)
+    return input
+  end
+  
   r.i=i
   r.j=j
   r.loc = getloc()

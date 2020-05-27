@@ -13,9 +13,9 @@ local G = require "generators.core"
 local siftTerra
 if terralib~=nil then siftTerra = require("sift_core_hw_terra") end
 
-GAUSS_SIGMA = 5 --5
+local GAUSS_SIGMA = 5 --5
 
-sift = {}
+local sift = {}
 
 local Clamp = G.Function{"Clampint8",types.rv(types.FloatRec32),
   function(i)
@@ -456,7 +456,7 @@ function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
 end
 
 ----------------
-function posSub(x,y)
+local function posSub(x,y)
   local A = types.uint(16)
   local ITYPE = types.tuple {A,A}
 

@@ -215,6 +215,8 @@ local function parsePolyArgs( args, i )
   elseif P.isParamValue(args[i]) then
     err( args[i].kind=="SizeValue", "array2d parametric argument must be size, but is: "..tostring(args[i]))
     return args[i], i+1
+  elseif type(args[i])=="boolean" then
+    return args[i], i+1
   else
     err( type(args[i])=="number" or Uniform.isUniform(args[i]), "types.array2d: second argument must be numeric width or uniform but is ",args[i],",",type(args[i]) )
     err( type(args[i+1])=="number" or args[i+1]==nil or Uniform.isUniform(args[i+1]), "array2d h must be nil or number or Uniform, but is:",args[i+1],",",type(args[i+1]) )
@@ -236,6 +238,9 @@ end
 -- if size and V are passed as numbers: both dimensions must be given
 -- however, in the end, we store size and V as a rigel.Size
 -- last argument, var:bool, indicates that this is variable sized
+-- ex:
+-- array2d(ty,W,H)
+-- array2d(ty,W,H,Vw,Vh)
 function types.array2d( _type, ... )
   local Uniform = require "uniform"
   err( types.isType(_type) or P.isParamType(_type), "first argument to array2d must be Rigel type, but is: ",_type )
@@ -255,7 +260,9 @@ function types.array2d( _type, ... )
     --err( args[nexti]==nil, "types.array2d: too many arguments" )
   end
 
-  if R.isSize(size) and R.isSize(V) then
+  if type(V)=="boolean" then
+    err(false,"types.Array2d: NYI - fully parallel variable sized array!")
+  elseif R.isSize(size) and R.isSize(V) then
     err( (Uniform(size[1])*Uniform(size[2])):ge(Uniform(V[1])*Uniform(V[2])):assertAlwaysTrue(),"types.array2d: Vector size must be smaller than array size! size:",size," V:",V)
 
     local veq0 = (Uniform(V[1]):eq(0)):And(Uniform(V[2]):eq(0))

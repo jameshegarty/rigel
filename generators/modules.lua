@@ -1226,16 +1226,20 @@ modules.mapVarSeq = memoize(function( fn, W_orig, H_orig, X )
 
   local G = require "generators.core"
   
-  local res = G.Module{"MapVarSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
+  local res = G.Function{"MapVarSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
   assert( rigel.isFunction(res) )
   
   -- hackity hack
   if fn.inputType~=types.Interface() then
-    res.inputType = fn.inputType:replaceVar("over",types.VarSeq(res.inputType.over,W_orig,H_orig))
+    local NT = fn.inputType:replaceVar("over",types.Array2d(res.inputType.over,W_orig,H_orig,0,0,true))
+    assert( NT:lower()==res.inputType:lower() )
+    res.inputType = NT
   end
   
   if fn.outputType~=types.Interface() then
-    res.outputType = fn.outputType:replaceVar("over",types.VarSeq(res.outputType.over,W_orig,H_orig))
+    local NT = fn.outputType:replaceVar("over",types.Array2d(res.outputType.over,W_orig,H_orig,0,0,true))
+    assert( NT:lower()==res.outputType:lower() )
+    res.outputType = NT
   end
   
   return res
@@ -2817,11 +2821,11 @@ end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T
-modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed, X )
+modules.padSeq = memoize(function( A, W_orig, H, T, L, R_orig, B, Top, Value, framed, X )
   err( types.isType(A), "A must be a type")
   
   err( A~=nil, "padSeq A==nil" )
-  err( W~=nil, "padSeq W==nil" )
+  err( W_orig~=nil, "padSeq W==nil" )
   err( H~=nil, "padSeq H==nil" )
   err( T~=nil, "padSeq T==nil" )
   err( L~=nil, "padSeq L==nil" )
@@ -2833,23 +2837,24 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   err( type(framed)=="boolean","padSeq: framed should be boolean" )
   err( X==nil, "padSeq: too many arguments" )
   
-  J.map({W=W,H=H,T=T,L=L,B=B,Top=Top},function(n,k)
+  J.map({H=H,T=T,L=L,B=B,Top=Top},function(n,k)
         err(type(n)=="number","PadSeq expected number for argument "..k.." but is "..tostring(n)); 
         err(n==math.floor(n),"PadSeq non-integer argument "..k..":"..n); 
         err(n>=0,"n<0") end)
 
   local R = Uniform(R_orig)
+  local W = Uniform(W_orig)
   
   A:checkLuaValue(Value)
 
   if T~=0 then
-    err( W%T==0, "padSeq, W%T~=0, W="..tostring(W).." T="..tostring(T))
+    err( (W%T):eq(0):assertAlwaysTrue(), "padSeq, W%T~=0, W="..tostring(W_orig).." T="..tostring(T))
     err( L==0 or (L>=T and L%T==0), "padSeq, L<T or L%T~=0 (L="..tostring(L)..",T="..tostring(T)..")")
     err( (R:eq(0):Or( R:ge(T):And( (R%T):eq(0)))):assertAlwaysTrue(), "padSeq, R<T or R%T~=0") -- R==0 or (R>=T and R%T==0)
     err( Uniform((W+L+R)%T):eq(0):assertAlwaysTrue(), "padSeq, (W+L+R)%T~=0") -- (W+L+R)%T==0
   end
 
-  local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W, height=H}
+  local res = {kind="padSeq", type=A, T=T, L=L, R=R, B=B, Top=Top, value=Value, width=W_orig, height=H}
   
   if T==0 then
     res.inputType = A
@@ -2861,11 +2866,11 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   
   if framed then
     if T==0 then
-      res.inputType = types.rv(types.Seq( types.Par(res.inputType), W, H ))
-      res.outputType = types.rRvV(types.Seq( types.Par(res.outputType), W+L+R, H+B+Top ))
+      res.inputType = types.rv(types.Seq( types.Par(res.inputType), W_orig, H ))
+      res.outputType = types.rRvV(types.Seq( types.Par(res.outputType), W_orig+L+R, H+B+Top ))
     else
-      res.inputType = types.rv(types.ParSeq(res.inputType,W,H))
-      res.outputType = types.rRvV(types.ParSeq(res.outputType,W+L+R,H+B+Top))
+      res.inputType = types.rv(types.ParSeq(res.inputType,W_orig,H))
+      res.outputType = types.rRvV(types.ParSeq(res.outputType,W_orig+L+R,H+B+Top))
     end
   else
     res.inputType = types.rv(types.Par(res.inputType))
@@ -2875,16 +2880,17 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   local Tf = math.max(T,1)
   
   res.stateful = true
-  res.sdfInput, res.sdfOutput = SDF{ (W*H)/Tf, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/Tf}, SDF{1,1}
-  res.name = verilogSanitize("PadSeq_"..tostring(A).."_W"..W.."_H"..H.."_L"..L.."_R"..tostring(R_orig).."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
+  res.sdfInput, res.sdfOutput = SDF{ (W_orig*H)/Tf, ((Uniform(W)+Uniform(L)+R)*(H+B+Top))/Tf}, SDF{1,1}
+  res.name = verilogSanitize("PadSeq_"..tostring(A).."_W"..tostring(W_orig).."_H"..H.."_L"..L.."_R"..tostring(R_orig).."_B"..B.."_Top"..Top.."_T"..T.."_Value"..tostring(Value))
 
 
   local R_n = R:toNumber()
+  local W_n = W:toNumber()
   local padSim = function()
     local totalOut = 0
     for y=0,(H+B+Top)-1 do
-      for x=0,(W+L+R_n)-1,math.max(T,1) do
-        if x>=L and x<(W+L) and y>=B and y<(H+B) then
+      for x=0,(W_n+L+R_n)-1,math.max(T,1) do
+        if x>=L and x<(W_n+L) and y>=B and y<(H+B) then
           totalOut = totalOut+1
           coroutine.yield(true)
         else
@@ -2895,7 +2901,7 @@ modules.padSeq = memoize(function( A, W, H, T, L, R_orig, B, Top, Value, framed,
   end
 
   res.delay = 0
-  res.RVDelay, res.inputBurstiness = J.simulateFIFO( padSim, res.sdfInput, res.name, true, (W*H)/math.max(T,1) )
+  res.RVDelay, res.inputBurstiness = J.simulateFIFO( padSim, res.sdfInput, res.name, true, (W_n*H)/math.max(T,1) )
   --res.inputBurestiness = res.inputBurstiness + 1
   res.outputBurstiness = 1 -- hack: module starts up at time=0, regardless of when triggered. Do this to throttle it.
   

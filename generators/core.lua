@@ -76,16 +76,16 @@ end)
 -- Hack! clamp a variable sized array to a particular size
 generators.ClampToSize = R.FunctionGenerator("core.ClampToSize",{"size"},{},
 function(args)
-  local res = generators.Function{"ClampToSize_W"..tostring(args.size[1]).."_H"..tostring(args.size[2]),T.RV(T.VarSeq(T.Par(args.T),args.InSize[1],args.InSize[2])),SDF{1,1},function(inp) return inp end}
+  local res = generators.Function{"ClampToSize_W"..tostring(args.size[1]).."_H"..tostring(args.size[2]), T.RV(T.Array2d(args.S,args.InSize[1],args.InSize[2],0,0,true)),SDF{1,1},function(inp) return inp end}
 
   assert(R.isPlainFunction(res))
-  local newType = T.RV(T.Seq(T.Par(args.T),args.size[1],args.size[2]))
+  local newType = T.RV(T.Array2d(args.S,args.size[1],args.size[2],0,0))
   assert(res.outputType:lower()==newType:lower())
   res.outputType = newType
   
   return res
 end,
-T.VarSeq(T.Par(P.DataType("T")),P.SizeValue("InSize")) )
+T.Array2d( P.ScheduleType("S"),P.SizeValue("InSize"),R.Size(0,0),true) )
 
 
 
@@ -492,19 +492,19 @@ function(args)
   return mod
 end)
 
-generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate"},{},
+generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate","type"},{},
 function(a)
-  J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
+  J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V," inputType:",a.type ) -- NYI
 
   local STW = a.bounds[2]-a.bounds[1]+1
   local V = J.canonicalV( a.rate, R.Size(STW,1) )
-  assert(V[2]==1)
+  J.err( V[2]==1 or V[2]==0, "Stencil NYI: input array with tiled vector. inputType:",a.type)
 
   print("STENCIL",STW,a.rate,V)
   
-  if STW~=V[1]*V[2] then
+  if STW~=V[1]*V[2] and V[2]==1 then
     assert(a.V:eq(0,0))
-    assert( V[2]==1 )
+    --assert( V[2]==1 )
     --local outT = math.floor(Uniform(a.rate[1][2]):toNumber()/Uniform(a.rate[1][1]):toNumber())
     --print("STENCIL LN OUTT",outT,a.rate)
     return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], STW/V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
@@ -512,7 +512,7 @@ function(a)
     return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
   end
 end,
-types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
+types.array2d( P.DataType("T"),P.SizeValue("size"),P.SizeValue("V")) )
 
 -- make a stencil with its interior filled with stencils
 -- "bounds" is for the outer stencil, "size" is for the inner stencil.
@@ -630,18 +630,22 @@ P.SumType("opt",{types.rv(T.ParSeq(T.Array2d(T.Trigger,P.SizeValue("V")),P.SizeV
                  types.rv(T.Seq(T.Par(T.Trigger),P.SizeValue("size")))}) )
 
 -- this takes an Seq of arrays, and flattens it into a parseq
-generators.Flatten = R.FunctionGenerator("core.Flatten",{},{},
+generators.Flatten = R.FunctionGenerator("core.Flatten",{"type","rate"},{},
 function(args)
-  local res = generators.Function{"Flatten_VW"..tostring(args.inner[1]).."_VH"..tostring(args.inner[2]).."_W"..tostring(args.outer[1]).."_H"..tostring(args.outer[2]),T.RV(T.Seq(T.Par(T.Array2d(args.D,args.inner)),args.outer)),SDF{1,1},function(inp) return inp end}
+  J.err( args.outerV:eq(0,0), "Flatten NYI - outer array must be fully sequential, but outer V was:",args.outerV," and input type was: ", args.type)
+
+  local res = generators.Function{"Flatten_VW"..tostring(args.innerV[1]).."_VH"..tostring(args.innerV[2]).."_W"..tostring(args.outerSize[1]).."_H"..tostring(args.outerSize[2]), T.RV(T.Array2d( T.Array2d(args.innerT,args.innerSize,args.innerV),args.outerSize,args.outerV)),SDF{1,1},function(inp) return inp end}
 
   assert(R.isPlainFunction(res))
-  local newType = T.RV(T.ParSeq(T.Array2d(args.D,args.inner),args.outer[1]*args.inner[1],args.outer[2]*args.inner[2]))
+  local W,H = args.outerSize[1]*args.innerSize[1], args.outerSize[2]*args.innerSize[2]
+  print("FLATTENWH",W,H,args.innerV,args.innerT)
+  local newType = T.RV(T.Array2d( args.innerT, W, H, args.innerV ))
   assert(res.outputType:lower()==newType:lower())
   res.outputType = newType
 
   return res
 end,
-T.Seq(T.Par(T.Array2d(P.DataType("D"),P.SizeValue("inner"))),P.SizeValue("outer"))  )
+T.Array2d( T.Array2d(P.DataType("innerT"),P.SizeValue("innerSize"),P.SizeValue("innerV")), P.SizeValue("outerSize"), P.SizeValue("outerV") )  )
 
 generators.Fmap = R.FunctionGenerator("core.Fmap",{"rigelFunction","type","rate"},{},
 function(args)
@@ -666,7 +670,7 @@ function(args)
   end
 
   J.err( ty:deInterface():isArray(),"Error, Map must operate on an array! but input type was: ",args.type)
-  local S, size, V = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V
+  local S, size, V, var = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V, ty:deInterface().var
   
   --print("MAP:SPECIALIZE TO TYPE",args.rigelFunction.name,types.rv(S))
   local fn = args.rigelFunction:specializeToType( types.rv(S), rate )
@@ -677,15 +681,23 @@ function(args)
     fn = args.rigelFunction:specializeToType( types.RV(S), rate )
     J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
   end
-  
-  if size==V then
-    return RM.map( fn, size[1], size[2], args.bool )
-  elseif V:eq(R.Size(0,0)) then
-    return RM.mapSeq( fn, size[1], size[2] )
-  else -- parseq
-    return RM.mapParSeq( fn, V[1], V[2], size[1], size[2], args.bool )
-  end
 
+  if var then
+    if V:eq(R.Size(0,0)) then
+      return RM.mapVarSeq(fn, size[1], size[2] )
+    else
+      assert(false)
+    end
+  else
+    if size==V then
+      return RM.map( fn, size[1], size[2], args.bool )
+    elseif V:eq(R.Size(0,0)) then
+      return RM.mapSeq( fn, size[1], size[2] )
+    else -- parseq
+      return RM.mapParSeq( fn, V[1], V[2], size[1], size[2], args.bool )
+    end
+  end
+  
   assert(false)
 end,
 nil,false)
@@ -694,9 +706,24 @@ nil,false)
 -- This only works if the array size doesn't change!!
 generators.Flatmap = R.FunctionGenerator("core.Flatmap",{"rigelFunction","type","rate"},{},
 function(args)
-  return RM.flatmap( args.rigelFunction, args.V[1], args.V[2], args.size[1], args.size[2], args.V[1], args.V[2], args.size[1], args.size[2] )
+
+  local ty,rate
+
+  if R.isFunctionGenerator(args.rigelFunction) and args.rigelFunction.optimized==false then
+    ty, rate = args.type, args.rate
+  else
+    ty, rate = args.type:optimize(args.rate)
+  end
+
+  J.err( ty:deInterface():isArray(),"Error, Flatmap must operate on an array! but input type was: ",args.type)
+  local S, size, V = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V
+
+  local fn = args.rigelFunction:specializeToType( types.rv(S), rate )
+  J.err( fn~=nil, "Flatmap: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
+
+  return RM.flatmap( fn, args.V[1], args.V[2], args.size[1], args.size[2], args.V[1], args.V[2], args.size[1], args.size[2] )
 end,
-T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")) )
+T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")), false )
 
 generators.Reduce = R.FunctionGenerator("core.Reduce",{"rigelFunction"},{},
 function(args)
@@ -966,12 +993,29 @@ end,
 types.array2d( P.ScheduleType("T"), P.SizeValue("size"), P.SizeValue("V") ) )
 
 -- change dims of array
-generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size"},{},
+generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size","type"},{},
 function(args)
   J.err( args.size[1]*args.size[2]==args.insize[1]*args.insize[2], "ReshapeArray: total number of items must not change. Input size: ",args.insize," requested reshape: ",args.size )
-  return C.cast( T.Array2d(args.T,args.insize), T.Array2d(args.T,args.size) )
+
+  if args.V:eq(0,0) then
+    local tmp = C.identity( args.type:deInterface(), "ReshapeArray" )
+
+    local IT = types.rv(args.type:deInterface())
+    print(tmp.inputType,IT)
+    assert( tmp.inputType:lower()==IT:lower() )
+    tmp.inputType = IT
+    local OT = types.rv( types.Array2d(args.T, args.size, 0, 0) )
+    assert( tmp.outputType:lower()==OT:lower() )
+    tmp.outputType = OT
+    
+    return tmp
+  else
+    return C.cast( T.Array2d(args.T,args.insize), T.Array2d(args.T,args.size) )
+  end
 end,
-types.array2d(P.DataType("T"),P.SizeValue("insize")) )
+types.array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V")) )
+
+generators.Reshape = generators.ReshapeArray
 
 generators.Sort = R.FunctionGenerator("core.Sort",{"rigelFunction"},{},
 function(args)
