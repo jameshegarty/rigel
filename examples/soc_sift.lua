@@ -49,22 +49,20 @@ local TILES_Y = 4
 local GAUSS  = {14 , 62 , 104 , 62 , 14}
 
 local Clamp = G.Function{"Clampint8",types.rv(types.FloatRec32),
-  function(i)
-    local v127 = G.FtoFR(R.c(types.Float32,127))
-    local vm128 = G.FtoFR(R.c(types.Float32,-128))
-    local tmp = G.Sel(G.GTF(i,v127),v127,i)
-    local tmp = G.Sel(G.LTF(i,vm128),vm128,tmp)
-    return tmp
-  end}
+function(i)
+  local v127 = G.FtoFR(R.c(types.Float32,127))
+  local vm128 = G.FtoFR(R.c(types.Float32,-128))
+  local tmp = G.Sel(G.GTF(i,v127),v127,i)
+  local tmp = G.Sel(G.LTF(i,vm128),vm128,tmp)
+  return tmp
+end}
 
 
 local siftlowerPair = J.memoize(function( TO, scale, X )
---  assert(types.isType(FROM))
   assert(types.isType(TO))
   assert( scale==math.floor(scale) )
   assert( X==nil )
 
---  assert( FROM:isFloat() )
   assert( TO:isInt() )
   assert(TO==types.int(8))
   assert( scale==4 )
@@ -79,41 +77,6 @@ local siftlowerPair = J.memoize(function( TO, scale, X )
       return G.ArrayToTuple(tmp)
     end}
 end)
-
-
---[=[
-function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
-  assert(type(ConvWidth)=="number")
-  assert(type(ConvHeight)=="number")
-  assert(type(tab)=="table")
-  assert(type(shift)=="number")
-  assert(X==nil)
-
-  local inp = R.input( types.rv(types.Par(types.array2d( A, ConvWidth, ConvHeight ))) )
-  local r
-  if A:isFloatRec() then
-    r = R.constant( "convkernel", tab, types.array2d( types.Float32, ConvWidth, ConvHeight) )
-    r = G.Map{G.FloatRec{32}}(r)
-  else
-    r = R.constant( "convkernel", tab, types.array2d( A, ConvWidth, ConvHeight) )
-  end
-  
-  local packed = G.ZipToArray(inp,r)
-
-  local conv = packed
-  if A:isFloatRec()==false then
-    conv = G.Map{G.Map{G.FloatRec{32}}}(packed)
-  end
-  conv = G.Map{G.ArrayToTuple}(conv)
-
-  conv = G.Map{G.MulF}(conv)
-  conv = G.Reduce{G.AddF}(conv)
-  conv = G.MulF{1/math.pow(2,shift)}(conv)
-
-  local convolve = RM.lambda( "convolveConstant_W"..tostring(ConvWidth).."_H"..tostring(ConvHeight), inp, conv )
-  return convolve
-end
-]=]
 
 function ConvolveFloat( ConvWidth, ConvHeight, coeffs, shift )
   return G.Function{"ConvolveFloat", T.rv(T.Array2d( T.FloatRec32, ConvWidth, ConvHeight )),
@@ -140,18 +103,18 @@ function(i)
 end}
 
 harrisHarrisKernel = G.SchedulableFunction{"HarrisKernel",T.Tuple{T.FloatRec32,T.FloatRec32},
-  function(i)
-    local dx, dy = i[0], i[1]
-    local Ixx, Ixy, Iyy = G.MulF(dx,dx), G.MulF(dx,dy), G.MulF(dy,dy)
-    local det = G.SubF(G.MulF(Ixx,Iyy),G.MulF(Ixy,Ixy))
-    local tr = G.AddF(Ixx,Iyy)
-    local trsq = G.MulF(tr,tr)
+function(i)
+  local dx, dy = i[0], i[1]
+  local Ixx, Ixy, Iyy = G.MulF(dx,dx), G.MulF(dx,dy), G.MulF(dy,dy)
+  local det = G.SubF(G.MulF(Ixx,Iyy),G.MulF(Ixy,Ixy))
+  local tr = G.AddF(Ixx,Iyy)
+  local trsq = G.MulF(tr,tr)
 
-    local K = 0.00000001
-    local Krigel = G.FloatRec{32}(G.Const{T.Float32,K}(G.ValueToTrigger(i)))
-    local out = G.SubF( det, G.MulF(trsq,Krigel) )
-    return out
-  end}
+  local K = 0.00000001
+  local Krigel = G.FloatRec{32}(G.Const{T.Float32,K}(G.ValueToTrigger(i)))
+  local out = G.SubF( det, G.MulF(trsq,Krigel) )
+  return out
+end}
 
 harrisNMS = G.Function{"NMS", T.rv(types.Array2d(types.FloatRec32,3,3)),
 function(i)
@@ -167,29 +130,6 @@ function(i)
   local out = G.And(nms, aboveThresh)
   return out
 end}
---[=[
-function harrismakeDXDY(W,H,X)
-  assert(type(W)=="number")
-  assert(type(H)=="number")
-  assert(X==nil)
-
-  local T = 1
-  local A = types.uint(8)
-  local inp = R.input(R.Handshake(types.array2d(types.uint(8),T)))
-
-  local blurXFn = ConvolveFloat(5,1,GAUSS,8)
-  local bxi = G.Map{G.FloatRec{32}}(inp)
-  local blurX = R.apply("blurX",C.stencilKernelPadcrop(types.FloatRec32,W,H,T,2,2,0,0,0,blurXFn),bxi)
-
-  local blurYFn = ConvolveFloat( 1,5,GAUSS,8)
-  local blurXY = R.apply("blurXY",C.stencilKernelPadcrop( types.FloatRec32, W, H, T, 0,0,2,2,0, blurYFn ),blurX)
-
-  local dxdySt = C.stencilKernelPadcrop( types.FloatRec32,W,H,T,1,1,1,1,0, harrisDXDYKernel )
-  local dxdy = R.apply("dxdy", dxdySt, blurXY )
-
-  return RM.lambda("dxdytop", inp, dxdy)
-end
-]=]
 
 HarrisDXDY = G.SchedulableFunction{"HarrisDXDY",T.Array2d(T.U(8),P.SizeValue("size")),
 function(i)
@@ -211,7 +151,6 @@ function(i)
   
   return dxdy
 end}
-
 
 function siftbucketReduce( descType, N,X)
   assert(types.isType(descType))
@@ -284,6 +223,25 @@ local siftMag = J.memoize(function(dxdyType)
       return out
     end}
 end)
+
+function posSub(x,y)
+  local A = types.uint(16)
+  local ITYPE = types.tuple {A,A}
+
+  local ps = RM.lift("Possub", types.tuple{A,A}, types.tuple{A,A},1,
+    function(sinp)
+      local xinp = S.index(sinp,0)
+      local yinp = S.index(sinp,1)
+      
+      local xo = xinp-S.constant(x,A)
+      local yo = yinp-S.constant(y,A)
+      
+      return S.tuple{xo,yo}
+    end,
+    function() return siftTerra.posSub(ITYPE,x,y) end)
+
+  return ps
+end
 
 function siftaddPos( dxdyType, W, H, subX, subY, TILES_X, TILES_Y, X )
   assert(types.isType(dxdyType))
@@ -398,8 +356,8 @@ local siftaddDescriptorPos = J.memoize(function( descType, TILES_X, TILES_Y, X)
   return G.Function{"descpos",types.rv(types.tuple{types.array2d(descType,TILES_X*TILES_Y*8),types.uint(16),types.uint(16)}),
     function(i)
       local desc = i[0]
-      local px = G.FRtoF(G.UtoFR(i[1])) --inp:index(1):lift(0)
-      local py = G.FRtoF(G.UtoFR(i[2])) --inp:index(2):lift(0)
+      local px = G.UtoFR(i[1]) --inp:index(1):lift(0)
+      local py = G.UtoFR(i[2]) --inp:index(2):lift(0)
       
       local a = {px,py}
       for i=0,(TILES_X*TILES_Y*8-1) do table.insert(a,desc[i]) end
@@ -409,37 +367,54 @@ local siftaddDescriptorPos = J.memoize(function( descType, TILES_X, TILES_Y, X)
     end}
 end)
 
-function siftKernel( dxdyType, TILES_X, TILES_Y, X )
-  assert( type(TILES_X)=="number" )
-  assert( type(TILES_Y)=="number" )
-  assert(X==nil)
+--function siftKernel( dxdyType, TILES_X, TILES_Y, X )
+--  assert( type(TILES_X)=="number" )
+--  assert( type(TILES_Y)=="number" )
+--  assert(X==nil)
+
+--  print("SiftKernel",dxdyType)
   
+--  local dxdyPair = types.tuple{dxdyType,dxdyType}
+--  local posType = types.uint(16)
+--  local PTYPE = types.tuple{posType,posType}
+--  local ITYPE = types.tuple{types.array2d(dxdyPair,TILES_X*4,TILES_Y*4),PTYPE}
+
+--  local fifos = {}
+--  local statements = {}
+
+--  local inp = R.input(R.Handshake(ITYPE))
+local SiftKernel = G.SchedulableFunction{"SiftKernel",
+T.Tuple{T.Array2d(T.Tuple{T.I8,T.I8},TILES_X*4,TILES_Y*4), T.Tuple{T.U16,T.U16} },
+function(i)
+  local dxdyType = types.I8
   local dxdyPair = types.tuple{dxdyType,dxdyType}
   local posType = types.uint(16)
-  local PTYPE = types.tuple{posType,posType}
-  local ITYPE = types.tuple{types.array2d(dxdyPair,TILES_X*4,TILES_Y*4),PTYPE}
+  
+  --local inp_broad = R.apply("inp_broad", RM.broadcastStream(types.Par(ITYPE),2), inp)
+  local inp = G.FanOut{2}(i)
 
-  local fifos = {}
-  local statements = {}
+  --local inp_pos = C.fifo(ITYPE,1,nil,true)(R.selectStream("i0",inp_broad,0))
+  --local inp_pos = G.FIFO{1}(inp[0])
+  --local pos = R.apply("p",RM.makeHandshake(C.index(ITYPE,1)), inp_pos)
 
-  local inp = R.input(R.Handshake(ITYPE))
-  local inp_broad = R.apply("inp_broad", RM.broadcastStream(types.Par(ITYPE),2), inp)
+  local pos = inp[0][1]
+  --local pos = C.fifo(PTYPE,1024)(pos)
+  pos = G.FIFO{1024}(pos)
+  
+  --local pos0, pos1 = RS.fanOut{input=pos,branches=2}
+  local posFO = G.FanOut{2}(pos)
 
-  local inp_pos = C.fifo(ITYPE,1,nil,true)(R.selectStream("i0",inp_broad,0))
-  local pos = R.apply("p",RM.makeHandshake(C.index(ITYPE,1)), inp_pos)
+  --local posX = R.apply("px",RM.makeHandshake(C.index(PTYPE,0)),pos0)
+  --local posX = C.fifo(posType,1024)(posX)
+  local posX = G.FIFO{1024}(posFO[0][0])
+  
+  --local posY = R.apply("py",RM.makeHandshake(C.index(PTYPE,1)),pos1)
+  --local posY = C.fifo(posType,1024)(posY)
+  local posY = G.FIFO{1024}(posFO[1][1])
 
-  local pos = C.fifo(PTYPE,1024)(pos)
-  local pos0, pos1 = RS.fanOut{input=pos,branches=2}
-
-  local posX = R.apply("px",RM.makeHandshake(C.index(PTYPE,0)),pos0)
-
-  local posX = C.fifo(posType,1024)(posX)
-  local posY = R.apply("py",RM.makeHandshake(C.index(PTYPE,1)),pos1)
-
-  local posY = C.fifo(posType,1024)(posY)
-
-  local inp_dxdy = C.fifo(ITYPE,1,nil,true)(R.selectStream("i1",inp_broad,1))
-  local dxdy = R.apply("dxdy",RM.makeHandshake(C.index(ITYPE,0,0)), inp_dxdy)
+  --local inp_dxdy = C.fifo(ITYPE,1,nil,true)(R.selectStream("i1",inp_broad,1))
+  local dxdy = inp[1][0]
+  --local dxdy = R.apply("dxdy",RM.makeHandshake(C.index(ITYPE,0,0)), inp_dxdy)
 
   local dxdyTile = R.apply("TLE",RM.makeHandshake( sifttile(TILES_X*4,TILES_Y*4,4,dxdyPair)),dxdy)
   local dxdy = R.apply( "down1", RM.liftHandshake(RM.changeRate(types.array2d(dxdyPair,16),1,TILES_X*TILES_Y,1)), dxdyTile )
@@ -474,25 +449,33 @@ function siftKernel( dxdyType, TILES_X, TILES_Y, X )
 
   local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( RS.modules.sumPow2{inType=types.int(32),outType=types.int(32)},(TILES_X*TILES_Y*8)))),desc1)
   --local desc_sum = R.apply("sumlift",RM.makeHandshake( sift.fixedLift(types.int(32))), desc_sum)
-  desc_sum = G.Float(G.ItoFR(desc_sum))
+  desc_sum = G.ItoFR(desc_sum)
 
   --local desc_sum = R.apply("sumsqrt",RM.makeHandshake( sift.fixedSqrt(descType)), desc_sum)
-  desc_sum = G.Float(G.SqrtF( G.FtoFR(desc_sum) ))
+  desc_sum = G.SqrtF( desc_sum )
+  --desc_sum = G.Broadcast{{TILES_X*TILES_Y*8,1}}(desc_sum)
+
+  local descType = T.FloatRec32
   local desc_sum = R.apply("DAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc_sum)
   local desc_sum = R.apply("sumup",RM.upsampleXSeq( descType, 1, TILES_X*TILES_Y*8), desc_sum)
   local desc_sum = R.apply("Didx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc_sum)
 
   --local desc0 = R.apply("d0lift",RM.makeHandshake( sift.fixedLift(types.int(32))), desc0)
-  desc0 = G.FRtoF(G.ItoFR(desc0))
-  local desc = R.apply("pt",RM.packTuple{types.RV(types.Par(descType)),types.RV(types.Par(descType))},R.concat("PTT",{desc0,desc_sum}))
+  desc0 = G.ItoFR(desc0)
+  print("DESC0",desc0.type,desc0.rate)
+  
+  --local desc = R.apply("pt",RM.packTuple{types.RV(types.Par(descType)),types.RV(types.Par(descType))},R.concat("PTT",{desc0,desc_sum}))
+  local desc = G.FanIn(desc0,desc_sum)
   --local desc = R.apply("ptt",RM.makeHandshake( sift.fixedDiv(descType)),desc)
-  desc = G.TupleToArray(desc)
-  desc = G.Map{G.FtoFR}(desc)
-  desc = G.ArrayToTuple(desc)
+  print("DESC",desc.type,desc.rate)
+--  desc = G.TupleToArray(desc)
+--  desc = G.Map{G.FtoFR}(desc)
+  print("DESC",desc.type,desc.rate)
+--  desc = G.ArrayToTuple(desc)
 
   desc = G.DivF(desc)
 
-  desc = G.Float(desc)
+  --desc = G.Float(desc)
   
   local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
@@ -501,31 +484,13 @@ function siftKernel( dxdyType, TILES_X, TILES_Y, X )
   local desc_pack = R.apply("dp", RM.packTuple{types.RV(types.Par(types.array2d(descType,TILES_X*TILES_Y*8))),types.RV(types.Par(posType)),types.RV(types.Par(posType))},R.concat("DPT",{desc,posX,posY}))
   local desc = R.apply("addpos",RM.makeHandshake( siftaddDescriptorPos( descType, TILES_X, TILES_Y )), desc_pack)
 
-  table.insert(statements,1,desc)
+--  table.insert(statements,1,desc)
 
-  local siftfn = RM.lambda("siftd",inp,R.statements(statements),fifos)
+--  local siftfn = RM.lambda("siftd",inp,R.statements(statements),fifos)
   
-  return siftfn, descType
-end
-
-function posSub(x,y)
-  local A = types.uint(16)
-  local ITYPE = types.tuple {A,A}
-
-  local ps = RM.lift("Possub", types.tuple{A,A}, types.tuple{A,A},1,
-    function(sinp)
-      local xinp = S.index(sinp,0)
-      local yinp = S.index(sinp,1)
-      
-      local xo = xinp-S.constant(x,A)
-      local yo = yinp-S.constant(y,A)
-      
-      return S.tuple{xo,yo}
-    end,
-    function() return siftTerra.posSub(ITYPE,x,y) end)
-
-  return ps
-end
+  --  return siftfn, descType
+  return desc
+end}
 
 function SiftTop( FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
   assert(type(FILTER_FIFO)=="number")
@@ -533,35 +498,16 @@ function SiftTop( FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
   assert(type(TILES_Y)=="number")
   assert(X==nil)
 
-  --local fifos = {}
-  --local statements = {}
-
-  --local ITYPE = types.array2d(types.uint(8),T)
-  
-  --local inpraw = R.input(R.Handshake(ITYPE))
-  --local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
-  --local inp = inpraw
-
   return G.SchedulableFunction{"SiftTop", T.Array2d(T.U(8),P.SizeValue("size")),
     function(inp)                           
 
---      local dxdyFn, dxdyType = harrismakeDXDY(W,H)
       local dxdyType = types.Float32
       local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
 
-      --local out = R.apply("dxdy",G.Flatmap{dxdyFn},inp)
       local out = HarrisDXDY(inp)
 
---      out = G.Map{G.TupleToArray}(out)
---      out = G.Map{G.Map{G.Float}}(out)
---      out = G.Map{G.ArrayToTuple}(out)
-      
-      --out = R.apply("pad", RM.liftHandshake(RM.padSeq(DXDY_PAIR, W, H, 1, 7, 8, 7, 8, {0,0})), out)
       out = G.Pad{{7,8,7,8}}(out)
       
-      --out = R.apply("dxdyix",RM.makeHandshake(C.index(types.array2d(DXDY_PAIR,1,1),0,0)),out)
-      
-      --local dxdyBroad = R.apply("dxdy_broad", RM.broadcastStream(types.Par(DXDY_PAIR),2), out)
       local dxdyBroad = G.FanOut{2}(out)
 
       local internalW = W+15
@@ -571,23 +517,14 @@ function SiftTop( FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
       -- right branch: make the harris bool
       local right = R.selectStream("d1",dxdyBroad,1)
       
-      --right = C.fifo(DXDY_PAIR,128)(right)
       right = G.RVFIFO{128}(right)
       
---      right = G.TupleToArray(right)
---      right = G.Map{G.FloatRec{32}}(right)
---      right = G.ArrayToTuple(right)
-      
       right = G.Map{harrisHarrisKernel}(right)
-      --right = G.Map{G.Float}(right)
       local harrisType = types.Float32
-      --local right = R.apply("AO",RM.makeHandshake(C.arrayop(harrisType,1,1)), right)
       
       -- now stencilify the harris
-      --local right = R.apply( "harris_st", RM.makeHandshake(C.stencilLinebuffer(harrisType, internalW, internalH, 1,-2,0,-2,0)), right)
       local right = G.Stencil{{-2,0,-2,0}}(right)
       
-      --right = G.Map{G.FloatRec{32}}(right)
       right = G.Map{harrisNMS}(right)
       
       -------------------------------
@@ -600,76 +537,44 @@ function SiftTop( FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
         DXDY_PAIR = types.tuple{GRAD_TYPE,GRAD_TYPE}
       end
 
-      --      left = C.fifo(DXDY_PAIR,2048/DXDY_PAIR:verilogBits())(left)
       left = G.FIFO{2048/DXDY_PAIR:verilogBits()}(left)
 
-      --local left = R.apply("stlbinp", RM.makeHandshake(C.arrayop(DXDY_PAIR,1,1)), left)
-      --local left = R.apply( "stlb", RM.makeHandshake(C.stencilLinebuffer(DXDY_PAIR, internalW, internalH, 1,-TILES_X*4+1,0,-TILES_Y*4+1,0)), left)
       left = G.Stencil{{-TILES_X*4+1,0,-TILES_Y*4+1,0}}(left)
       left = G.Map{siftaddPos( dxdyType, internalW, internalH, 15, 15, TILES_X, TILES_Y )}(left)
       -------------------------------
 
-
-      local FILTER_TYPE = types.tuple{types.array2d(DXDY_PAIR,TILES_X*4,TILES_Y*4),types.tuple{types.uint(16),types.uint(16)}}
-      local FILTER_PAIR = types.tuple{FILTER_TYPE,types.bool()}
-      
       -- merge left/right
-      --local out = R.apply("merge",RM.packTuple{types.RV(types.Par(FILTER_TYPE)),types.RV(types.Par(types.bool()))},R.concat("MPT",{left,right}))
       local out = G.Zip(left,right)
 
-      --local out = R.apply("cropao", RM.makeHandshake(C.arrayop(FILTER_PAIR,1,1)), out)
-      --local out = R.apply("crp", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(FILTER_PAIR,W+15,H+15,1,15,0,15,0))), out)
       out = G.Crop{{15,0,15,0}}(out)
-      --local out = R.apply("crpidx", RM.makeHandshake(C.index(types.array2d(FILTER_PAIR,1,1),0,0)), out)
-      
-      --local filterFn = RM.filterSeq( FILTER_TYPE, W, H, FILTER_RATE, FILTER_FIFO, false )
 
-      --local out = R.apply("FS",RM.liftHandshake(RM.liftDecimate(filterFn)),out)
-      print("FILTERIN",out.type,out.rate)
       out = G.Filter{{FILTER_RATE[1],FILTER_RATE[2]}}(out)
-      print("FILTEROUT",out.type,out.rate)
-      --local out = C.fifo(FILTER_TYPE,FILTER_FIFO)(out)
+
       out = G.FIFO{FILTER_FIFO}(out)
 
-      local siftFn, descType = siftKernel( dxdyType, TILES_X, TILES_Y )
+      --local siftFn, descType = siftKernel( dxdyType, TILES_X, TILES_Y )
 
-      --local out = R.apply("sft", siftFn, out)
-      out = G.Map{siftFn}(out)
+      out = G.Map{SiftKernel}(out)
 
       -- hack: we know how many descriptors will be written out, so just clamp the array to that size!
       -- this will allow use to use the standard DMAs
-      print("CLAMPTOSIZEIN",out.type,out.rate)
       out = G.ClampToSize{{OUTPUT_COUNT,1}}(out)
-      print("CLAMPOUT",out.type,out.rate)
       out = G.Flatten(out)
-      --local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2)), out )
 
       -- bitcast to uint8[8] for display...
-      --out = G.Fmap{C.bitcast(types.array2d(types.Float32,2),types.Array2d(types.uint(8),8))}(out)
+      out = G.Map{G.Float}(out)
       out = G.Map{G.Bitcast{types.Array2d(types.Uint(8),4)}}(out)
-      print("OUT",out.type)
       out = G.Flatten(out)
-      print("OUT",out.type)
-
       out = G.Reshape{{130*4,OUTPUT_COUNT}}(out)
       
-      --table.insert( statements, 1, out )
-      --local fn = RM.lambda( "siftTop", inpraw, R.statements(statements), fifos )
       return out
     end}
 end
 
 local OffsetModule = G.SchedulableFunction{ "OffsetModule", T.Trigger,
   function(i)
-    print("TOP",i.type,i.rate)
     local readStream = G.AXIReadBurst{ "boxanim_256.raw", {W,H}, T.u(8), 8, noc.read }(i)
-    print("READSTREAM",readStream.type,readStream.rate)
-    --local SiftTop = siftTop(W,H,8,FILTER_RATE,FILTER_FIFO,TILES_X,TILES_Y)
-    --print("ST",SiftTop.inputType,SiftTop.outputType)
-    --SiftTop.inputType=T.RV(T.Array2d(T.uint(8),W,H,8,1))
-    --SiftTop.outputType=T.RV(T.Array2d(T.uint(8),130*4,OUTPUT_COUNT,8,1))
     local offset = SiftTop(FILTER_RATE,FILTER_FIFO,TILES_X,TILES_Y)(readStream)
-    print("OFF",offset.type,offset.rate)
     return G.AXIWriteBurst{"out/soc_sift",noc.write}(offset)
   end}
 

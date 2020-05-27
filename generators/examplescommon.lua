@@ -214,7 +214,8 @@ C.ArrayToTuple = memoize(function(T,W,H,X)
   if H==nil then H=1 end
   err(type(H)=="number","ArrayToTuple: H must be number")
   err( X==nil,"ArrayToTuple: too many arguments")
-
+  err( W*H>0, "ArrayToTuple: W*H must be >0, but is W:",W," H:",H)
+  
   local G = require "generators.core"
   return G.Function{"ArrayToTuple_"..tostring(T).."_W"..tostring(W).."_H"..tostring(H), types.rv(types.Par(types.array2d(T,W,H))),
     function(inp)

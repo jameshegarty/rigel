@@ -271,6 +271,7 @@ function(args)
   end
 end)
 
+-- bool: nostall
 generators.FIFO = R.FunctionGenerator("core.FIFO",{"number","type"},{"bool","string"},
 function(args)
   return C.fifo( args.type:deInterface(), args.number, args.bool, nil, nil, nil, args.string )
@@ -1061,12 +1062,14 @@ function(a)
 end,
 P.TupleType("T") )
 
-generators.ArrayToTuple = R.FunctionGenerator("core.ArrayToTuple",{},{},
+generators.ArrayToTuple = R.FunctionGenerator("core.ArrayToTuple",{"type"},{},
 function(a)
+  J.err( a.V==a.size,"ArrayToTuple: NYI - non fully parallel array: ",a.type)
+  
   local C = require "generators.examplescommon"
   return C.ArrayToTuple( a.D, a.size[1], a.size[2] )
 end,
-T.Array2d(P.DataType("D"),P.SizeValue("size")) )
+T.Array2d(P.DataType("D"),P.SizeValue("size"),P.SizeValue("V")) )
 
 generators.Filter = R.FunctionGenerator("core.Filter",{"size"},{},
 function(args)

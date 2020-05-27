@@ -1864,6 +1864,8 @@ if terralib~=nil then require("typesTerra") end
 for i=1,64 do
   types["u"..tostring(i)] = types.uint(i)
   types["U"..tostring(i)] = types.uint(i)
+  types["i"..tostring(i)] = types.int(i)
+  types["I"..tostring(i)] = types.int(i)
 end
 
 function types.export(t)
