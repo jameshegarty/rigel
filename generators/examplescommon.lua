@@ -3736,4 +3736,41 @@ C.ApplyTo = J.memoize(function( ty, fn, stream )
     end}
 end)
 
+C.Tile = J.memoize(function( A, W, H, TileW, TileH, X )
+  assert(type(W)=="number")
+  assert(type(H)=="number")
+  assert(type(TileW)=="number")
+  assert(type(TileH)=="number")
+  assert(W%TileW==0)
+  assert(H%TileH==0)
+
+  local ITYPE = types.array2d(A,W,H)
+  local inp = R.input(types.rv(types.Par(ITYPE)))
+
+  local tab = {}
+  for y=0,H-1 do
+    tab[y] = {}
+    for x=0,W-1 do
+      tab[y][x] = R.apply("idx_"..y.."_"..x, C.index( ITYPE, x, y ), inp)
+    end
+  end
+
+  local outarr = {}
+  for ty=0,(H/TileH)-1 do
+    for tx=0,(W/TileW)-1 do
+      local out = {}
+      for y=0,TileH-1 do
+        for x=0,TileW-1 do
+          table.insert(out, tab[ty*TileH+y][tx*TileW+x])
+        end
+      end
+      table.insert(outarr, R.concatArray2d("AR_"..ty.."_"..tx,out,TileW,TileH) )
+    end
+  end
+
+  local fin = R.concatArray2d("fin",outarr,(W/TileW),(H/TileH))
+
+  return RM.lambda("tile", inp, fin )
+end)
+
 return C

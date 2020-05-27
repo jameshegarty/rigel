@@ -1016,7 +1016,7 @@ function TypeFunctions:checkLuaValue(v)
     err( #v==#self.list, "incorrect number of channels, is "..(#v).." but should be "..#self.list )
     J.map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
   elseif self:isFloat() or self:isFloatRec() then
-    err( type(v)=="number", "float must be number")
+    err( type(v)=="number", "checkLuaValue: ",self," type expects lua value to be a number, but is: ",v)
   elseif self:isInt() then
     err( type(v)=="number", "int must be number")
     err( v==math.floor(v), "integer systolic constant must be integer")

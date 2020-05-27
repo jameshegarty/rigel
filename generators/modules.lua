@@ -1032,7 +1032,7 @@ modules.map = memoize(function( f, W_orig, H_orig, allowStateful, X )
   local H = Uniform(H_orig)
   --err( type(H)=="number", "map: H must be number" )
 
-  err( f.inputType:isrv(), "map: error, mapping a module with a non-rv input type? name:",f.name," ",f.inputType)
+  err( f.inputType:isrv(), "map: error, mapping a module with a non-rv input type? name:",f.name," ",f.inputType," W:",W_orig," H:",H_orig)
   err( f.outputType==types.Interface() or f.outputType:isrv(), "map: error, mapping a module with a non-rv output type? name:",f.name," ",f.outputType)
   err( f.inputType:deInterface():isData(), "map: error, map can only map a fully parallel function, but is: name:",f.name," inputType:",f.inputType)
   err( f.outputType:deInterface():isData(), "map: error, map can only map a fully parallel function, but is: name:",f.name," outputType:",f.outputType)

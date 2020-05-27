@@ -513,8 +513,10 @@ return fn
     if fnType:isArray() then
       -- if not an array, nothing we can do!
       if fnType.V:eq(0,0) and targetType.V:eq(1,1) then
+        -- trivial conversion from V=1 to V=0
         res = RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size ))
       elseif fnType.V:eq(1,1) and targetType.V:eq(0,0) then
+        -- trivial conversion from V=0 to V=1
         res = G.Function{ "Promote_Seq_to_ParSeq_"..tostring(targetType:extractData()), types.rv(targetType:extractData()), SDF{1,1},
           function(inp)
             return C.broadcast( targetType:extractData(), 1, 1 )(inp)
@@ -530,10 +532,24 @@ return fn
         res = RM.makeHandshake(res)
       elseif fnType.V[1]*fnType.V[2] ~= targetType.V[1]*targetType.V[2] then
         -- we need to serialize
-        res = C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
-                                        fnType.V[1]*fnType.V[2],
-                                        targetType.size[1], targetType.size[2] )
 
+        local resStack = {}
+        table.insert( resStack, C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
+                                        fnType.V[1]*fnType.V[2],
+                                        targetType.size[1], targetType.size[2] ) )
+
+        if targetType:arrayOver()~=fnType:arrayOver() then
+          local FT, TT = fnType.over, resStack[#resStack].outputType:deInterface():arrayOver()
+          print("RESHAPE RECURSE, FuncType:",FT,"target:",TT)
+          table.insert( resStack, RM.mapSeq(reshape( FT, TT ), fnType.size[1], fnType.size[2]) )
+        end
+
+        if #resStack==1 then
+          res = resStack[1]
+        else
+          res = C.linearPipeline(resStack,"ConvertInterface_Ser_stack")
+        end
+        print("ChangeRateRowMajor",fnType,targetType,res.inputType,res.outputType)
       elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
         -- recurse
         if fnType.V:eq(0,0) then
@@ -587,7 +603,7 @@ return fn
 
     if res~=nil then
       err( res.inputType==types.RV(targetType), "convertInterface: conversion function input type should have been: ",types.RV(targetType)," but was: ",res.inputType )
-      err( res.outputType==types.RV(fnType), "convertInterface: conversion function output type should have been: ",types.RV(fnType)," but was: ",res.outputType )
+      err( res.outputType==types.RV(fnType), "convertInterface: conversion function output type should have been: ",types.RV(fnType)," but was: ",res.outputType,". input type should be: ",types.RV(targetType),", and was correct." )
     else
       err( targetType==fnType, "convertInterface: conversion function returned noop, but should have been conversion from ",targetType," to ",fnType )
     end

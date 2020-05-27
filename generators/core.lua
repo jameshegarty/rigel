@@ -211,10 +211,27 @@ function(args)
     -- a non-parallel array
     J.err( ty.size:eq(ty.V) or ty.V:eq(0,0) or ty.V[2]==1 ,"ValueToTrigger: NYI, vector can only be 1D, but is: ",ty.V ) -- NYI
     print("ITY",args.type)
-    local f = RM.liftHandshake(RM.liftDecimate(RM.cropSeq( ty:arrayOver(), ty.size[1], ty.size[2], ty.V[1], 0, ty.size[1]-math.max(ty.V[1],1), 0, ty.size[2]-math.max(ty.V[2],1), true )))
 
-    local g = generators.Fmap{C.valueToTrigger( f.outputType:deSchedule() )}
-    return C.compose(J.verilogSanitize("ValueToTriggerParseq"),g,f)
+--    local fnStack = {}
+
+--    local crpType
+--    if ty:arrayOver():isArray() then
+      -- recurse! it's an array of arrays of ...
+--      table.insert(fnStack, generators.Map{generators.ValueToTrigger}{type=args.type,rate=args.rate})
+--      crpType = T.Trigger
+--    else
+--      table.insert( fnStack, generators.Map{C.valueToTrigger( ty:arrayOver() )} )
+--      crpType = ty:arrayOver()
+--    end
+
+    local g = generators.Map{generators.ValueToTrigger}:complete({type=T.RV(args.type:deInterface()),rate=args.rate})
+    assert( R.isPlainFunction(g) )
+
+    local f = RM.liftHandshake(RM.liftDecimate(RM.cropSeq( T.Trigger, ty.size[1], ty.size[2], ty.V[1], 0, ty.size[1]-math.max(ty.V[1],1), 0, ty.size[2]-math.max(ty.V[2],1), true, true )) )
+    print("VALUETOTRIG",args.type,g.inputType,g.outputType,f.inputType,f.outputType)
+
+    --    return C.linearPipeline(fnStack,
+    return C.compose(J.verilogSanitize("ValueToTriggerParseq"),f,g)
   else
     J.err(false,"NYI - ValueToTrigger on input type: ",args.type)
   end
@@ -662,26 +679,23 @@ end,nil,false)
 generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool"},
 function(args)
 
-  local ty,rate
+  J.err( args.type:deInterface():isArray(),"Error, Map must operate on an array! but input type was: ",args.type)
 
-  if R.isFunctionGenerator(args.rigelFunction) and args.rigelFunction.optimized==false then
-    ty, rate = args.type, args.rate
-  else
-    ty, rate = args.type:optimize(args.rate)
-  end
-
-  J.err( ty:deInterface():isArray(),"Error, Map must operate on an array! but input type was: ",args.type)
-  local S, size, V, var = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V, ty:deInterface().var
-  
-  --print("MAP:SPECIALIZE TO TYPE",args.rigelFunction.name,types.rv(S))
-  local fn = args.rigelFunction:specializeToType( types.rv(S), rate )
+  -- NOTE: we send the fn we are mapping over the original (non-optimized) type, b/c it may not
+  -- want to optimize the type!
+  local S = args.type:deInterface():arrayOver()
+  --print( "MAP:SPECIALIZE TO TYPE", args.rigelFunction.name,types.rv(S))
+  local fn = args.rigelFunction:specializeToType( types.rv(S), args.rate )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
 
   if fn.inputType:isrv()==false or fn.outputType:isrv()==false then
     -- NYI - we basically only support rv or RV, so if it can't be rv, ask for RV
-    fn = args.rigelFunction:specializeToType( types.RV(S), rate )
+    fn = args.rigelFunction:specializeToType( types.RV(S), args.rate )
     J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
   end
+
+  local ty, rate = args.type:optimize(args.rate)
+  local S, size, V, var = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V, ty:deInterface().var
 
   if var then
     if V:eq(R.Size(0,0)) then
@@ -702,7 +716,6 @@ function(args)
   assert(false)
 end,
 nil,false)
---T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V"))
 
 -- This only works if the array size doesn't change!!
 generators.Flatmap = R.FunctionGenerator("core.Flatmap",{"rigelFunction","type","rate"},{},
@@ -728,7 +741,11 @@ T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")), false )
 
 generators.Reduce = R.FunctionGenerator("core.Reduce",{"rigelFunction"},{},
 function(args)
-  local fn = args.rigelFunction:specializeToType( T.rv(types.Tuple{args.T,args.T}), SDF{1,1} )
+
+  -- we don't support non-parallel reduction functions: so just coerce it into a parallel type
+  local tyOver = args.S:deSchedule()
+  
+  local fn = args.rigelFunction:specializeToType( T.rv(types.Tuple{tyOver,tyOver}), SDF{1,1} )
 
   J.err( fn.inputType:isrv() and fn.outputType:isrv(),"Reduce: error, reduce can only operator over rv functions, but fn had type: ",fn.inputType,"->",fn.outputType)
   
@@ -740,7 +757,7 @@ function(args)
     return RM.reduce( fn, args.size[1],args.size[2])
   end
 end,
-T.Array2d(P.DataType("T"),P.SizeValue("size"),P.SizeValue("V")))
+T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")))
 
 generators.ReduceSeq = R.FunctionGenerator("core.ReduceSeq",{"type","rigelFunction","number","rate"},{},
 function(args)
@@ -1027,7 +1044,7 @@ types.array2d(P.DataType("T"),P.SizeValue("size")) )
 
 generators.Identity = R.FunctionGenerator("core.Identity",{},{},
 function(args) return C.identity(args.T) end,
-P.DataType("T") )
+P.ScheduleType("T") )
 
 generators.Sel = R.FunctionGenerator("core.Sel",{},{},
 function(args)
@@ -1095,6 +1112,7 @@ generators.Const = R.FunctionGenerator("core.Const",{"type1"},{"number","value"}
 function(args)
   local value = args.value
   if args.number~=nil then value = args.number end
+  args.type1:checkLuaValue(value)
   return C.triggerToConstant(args.type1, value )
 end,
 T.Trigger )
@@ -1298,6 +1316,16 @@ end)
 generators.NegF = R.FunctionGenerator("core.NegF",{"type","rate"},{},
 function(args) return C.NegF() end,
 T.FloatRec32 )
+
+-- size: size of each tile (NOT the number of tiles)
+generators.Tile = R.FunctionGenerator("core.Tile",{"type","rate","size"},{},
+function(args)
+  if args.V~=args.insize then
+    print("Warning: NYI - Tile on non-fully parallel array: ",args.type)
+  end
+  return C.Tile( args.T, args.insize[1], args.insize[2], args.size[1], args.size[2] )
+end,
+T.Array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V") ) )
 
 function generators.export(t)
   if t==nil then t=_G end
