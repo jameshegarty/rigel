@@ -450,6 +450,36 @@ C.sub = memoize(function( A, B, outputType, async )
   return partial
 end)
 
+C.subConst = memoize(function( ty, value_orig, async, outputType )
+  err(types.isType(ty),"subConst: first argument should be type, but is: ",ty)
+
+  if async==nil then async=false end
+  assert( type(async)=="boolean" )
+
+  if outputType==nil then outputType = ty end
+  assert( types.isType(outputType) )
+
+  assert( ty.exp==outputType.exp )
+
+  local value = Uniform(value_orig)
+  err( value:isNumber(),"subConst expected numeric input")
+  value = value * math.pow(2,math.max(-ty.exp,0))  -- rescale by exp, to be in right scale
+
+  print("VALUE",value_orig,value)
+  
+  local instanceMap = value:getInstances()
+  
+  local plus100mod = RM.lift( J.sanitize("sub_"..tostring(ty).."_"..tostring(value)), ty, outputType , J.sel(async==true,0,1) ,
+    function(plus100inp)
+      local res = S.cast(plus100inp,outputType) - S.cast(value:toSystolic(ty),outputType)
+      if async==true then res = res:disablePipelining() end
+      return res
+    end,
+    function() return CT.subConsttfn( ty, value, outputType ) end, nil,nil, instanceMap )
+
+  return plus100mod
+end)
+
 -----------------------------
 C.rshiftConst = memoize(function(A,const)
   err( types.isType(A),"C.rshift: type should be rigel type")

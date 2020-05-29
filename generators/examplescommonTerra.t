@@ -401,6 +401,28 @@ function CT.plusConsttfn( ty, value_orig, outputType, X)
   end
 end
 
+function CT.subConsttfn( ty, value_orig, outputType, X)
+  local value = Uniform(value_orig)
+  
+  local out = symbol(outputType:toTerraType(true))
+  local q = quote end
+  if ty:verilogBits()~=ty:sizeof()*8 then
+    local valuen = value:toNumber()
+    local vbits = math.ceil(math.log(valuen)/math.log(2))
+    if outputType:verilogBits()>=math.max(vbits,ty:verilogBits())+1 then
+      -- we know this has enough bits to not overflow, so no need to truncate...
+    else
+      q = quote @[out] = [trunc(`@[out],outputType)] end
+    end
+  end
+
+print("SUBCONST",value_orig,ty,outputType)
+  return terra( a : ty:toTerraType(true), [out] ) 
+    @[out] =  [outputType:toTerraType()](@a)-[outputType:toTerraType()]([value:toTerra()]) 
+    [q]
+  end
+end
+
 function CT.denormalize(ty)
   if ty.exp<0 then
     -- throw out frac bits

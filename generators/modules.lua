@@ -191,9 +191,10 @@ end)
 -- Zips Seq types (this is just a trivial conversion)
 -- takes rv([A{W,H},B{W,H},C{W,H}]) to rv({A,B,C}{W,H})
 -- typelist: list of {A,B,C} schedule types
-modules.ZipSeq = memoize(function( var, typelist, W, H, Vw, Vh, X )
+modules.ZipSeq = memoize(function( var, W, H, ... )
   err( Uniform.isUniform(W) or type(W)=="number", "ZipSchedules: first argument should be number (width), but is:",W)
   err( Uniform.isUniform(H) or type(H)=="number", "ZipSchedules: second argument should be number (height), but is:",H)
+  local typelist = {...}
   err( type(typelist)=="table", "ZipSchedules: typelist must be table")
   err( J.keycount(typelist)==#typelist, "ZipSchedules: typelist must be lua array")
   assert(type(var)=="boolean")
@@ -2919,7 +2920,7 @@ modules.padSeq = memoize(function( A, W_orig, H, T, L, R_orig, B, Top, Value, fr
     local pvalid = S.parameter("process_valid", types.bool() )
     
     local C1 = S.ge( posX:get(), S.constant(L,types.uint(32)))
-    local C2 = S.lt( posX:get(), S.constant(L+W,types.uint(32)))
+    local C2 = S.lt( posX:get(), Uniform(L+W):toSystolic(types.U32) )
     local xcheck
     
     if L==0 then
@@ -5579,7 +5580,7 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
       local I = module:add( inst:toSystolicInstance() )
         
       if inst.module.stateful then
-        J.err(module:lookupFunction("reset")~=nil,"module '"..fn.name.."' instantiates a stateful module '"..inst.module.name.."', but is not itself stateful? stateful="..tostring(res.stateful) )
+        J.err(module:lookupFunction("reset")~=nil,"module '",fn.name,"' instantiates a stateful module '",inst.module.name,"', but is not itself stateful? stateful=",res.stateful )
         module:lookupFunction("reset"):addPipeline( I["reset"](I,nil,module:lookupFunction("reset"):getValid()) )
       end
     end

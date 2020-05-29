@@ -21,7 +21,6 @@ generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"type","rate","size
 function(args)
   local V = J.canonicalV( args.rate, args.size )
 
-  --print("BROADCAST",args.type,args.rate,args.size,V)
   local inputType = args.type:deSchedule()
   
   if V==args.size then
@@ -33,11 +32,6 @@ function(args)
     assert( type(seq)=="number")
     assert( type(V[2])=="number" and V[2]==1 ) -- NYI
 
-    print("BROADCASTSEQ",args.type,args.rate,args.size)
-    print("BROADCASTSEQ",V,seq)
-    -- C.broadcast = memoize(function( A, W, H, X )
-    
-    --local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(inputType,V[1],seq),RM.makeHandshake(C.broadcast(inputType,V[1],1)))
     local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.makeHandshake(C.broadcast(inputType,V[1],1)), RM.upsampleXSeq(inputType,0,seq) )
     
     -- hackity hack
@@ -204,34 +198,20 @@ end)
 
 generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{},
 function(args)
+
   if args.type:deInterface():isData() then
     return C.valueToTrigger(args.type:deInterface())
   elseif args.type:deInterface():isArray() then
     local ty = args.type:deInterface()
     -- a non-parallel array
     J.err( ty.size:eq(ty.V) or ty.V:eq(0,0) or ty.V[2]==1 ,"ValueToTrigger: NYI, vector can only be 1D, but is: ",ty.V ) -- NYI
-    print("ITY",args.type)
-
---    local fnStack = {}
-
---    local crpType
---    if ty:arrayOver():isArray() then
-      -- recurse! it's an array of arrays of ...
---      table.insert(fnStack, generators.Map{generators.ValueToTrigger}{type=args.type,rate=args.rate})
---      crpType = T.Trigger
---    else
---      table.insert( fnStack, generators.Map{C.valueToTrigger( ty:arrayOver() )} )
---      crpType = ty:arrayOver()
---    end
 
     local g = generators.Map{generators.ValueToTrigger}:complete({type=T.RV(args.type:deInterface()),rate=args.rate})
     assert( R.isPlainFunction(g) )
 
     local f = RM.liftHandshake(RM.liftDecimate(RM.cropSeq( T.Trigger, ty.size[1], ty.size[2], ty.V[1], 0, ty.size[1]-math.max(ty.V[1],1), 0, ty.size[2]-math.max(ty.V[2],1), true, true )) )
-    print("VALUETOTRIG",args.type,g.inputType,g.outputType,f.inputType,f.outputType)
 
-    --    return C.linearPipeline(fnStack,
-    return C.compose(J.verilogSanitize("ValueToTriggerParseq"),f,g)
+    return C.compose(J.verilogSanitize("ValueToTriggerParseq_"..tostring(args.type:deInterface())),f,g)
   else
     J.err(false,"NYI - ValueToTrigger on input type: ",args.type)
   end
@@ -306,7 +286,6 @@ end )
 
 generators.NE = R.FunctionGenerator("core.NE",{},{"async","number"},
 function(args)
-  local res = {}
   if args.number~=nil then
     -- add a const (unary op)
     return R.FunctionGenerator( "core.NE", {}, {}, function(a) return C.NEConst(a.T,args.number) end, T.rv(T.Par(P.DataType("T"))), T.rv(T.Par(types.bool()) ) )
@@ -317,8 +296,6 @@ end)
 
 generators.Add = R.FunctionGenerator("core.Add",{"type","rate"},{"async","number"},
 function(args)
-  
-  local res = {}
   if args.number~=nil then
     -- add a const (unary op)
     return R.FunctionGenerator( "core.AddConst", {}, {"async","number"}, function(a) return C.plusConst( a.T, args.number ) end, P.NumberType("T") ):complete(args)
@@ -365,11 +342,18 @@ generators.Neg = R.FunctionGenerator("core.Neg", {}, {"async"},
 function(a) return C.neg( a.T.precision, a.T.exp ) end,
 P.IntType("T") )
 
-generators.Sub = R.FunctionGenerator("core.Sub",{},{"async"},
+generators.Sub = R.FunctionGenerator("core.Sub",{"type","rate"},{"async","number"},
 function(args)
-  return C.sub( args.T, args.T, args.T, args.async )
-end,
-T.tuple{P.NumberType("T"),P.NumberType("T")} )
+  if args.number~=nil then
+    -- add a const (unary op)
+    return R.FunctionGenerator( "core.SubConst", {}, {"async","number"}, function(a) return C.subConst( a.T, args.number ) end, P.NumberType("T") ):complete(args)
+  else
+    return R.FunctionGenerator("core.SubNonconst", {}, {"async","number"}, function(a) return C.sub( a.T, a.T, a.T, args.async ) end, T.tuple{P.NumberType("T"),P.NumberType("T")} ):complete(args)
+  end
+
+--  return C.sub( args.T, args.T, args.T, args.async )
+end) --,
+--T.tuple{P.NumberType("T"),P.NumberType("T")} )
 
 -- extend out bitwidth
 generators.SubE = R.FunctionGenerator("core.SubE",{},{"async"},
@@ -475,7 +459,7 @@ local function zipfn(asArray)
 
     if args.V:eq(0,0) then
       assert(asArray==false) -- NYI
-      return RM.ZipSeq( false, typelist, args.size[1], args.size[2] )
+      return RM.ZipSeq( false, args.size[1], args.size[2], unpack(typelist) )
     else
       return RM.SoAtoAoS( args.V[1], args.V[2], typelist, asArray, args.size[1], args.size[2] )
     end
@@ -517,14 +501,9 @@ function(a)
   local STW = a.bounds[2]-a.bounds[1]+1
   local V = J.canonicalV( a.rate, R.Size(STW,1) )
   J.err( V[2]==1 or V[2]==0, "Stencil NYI: input array with tiled vector. inputType:",a.type)
-
-  print("STENCIL",STW,a.rate,V)
   
   if STW~=V[1]*V[2] and V[2]==1 then
     assert(a.V:eq(0,0))
-    --assert( V[2]==1 )
-    --local outT = math.floor(Uniform(a.rate[1][2]):toNumber()/Uniform(a.rate[1][1]):toNumber())
-    --print("STENCIL LN OUTT",outT,a.rate)
     return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], STW/V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
   else
     return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
@@ -602,7 +581,6 @@ T.array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")) )
 generators.Downsample = R.FunctionGenerator("core.Downsample",{"size"},{},
 function(a)
   J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Downsample: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
-  print("DOWNSAMPLE",a.T,a.V,a.imsize)
   return C.downsampleSeq( a.T, a.imsize[1], a.imsize[2], a.V[1], a.size[1], a.size[2], true )
 end,
 T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("imsize")) )
@@ -636,16 +614,16 @@ function(args)
 end,
 T.Trigger )
 
-
 -- unlike Pos above, this expects a trigger for every pixel
-generators.PosCounter = R.FunctionGenerator("core.PosCounter",{},{},
+-- this means we don't have to explicitly give the image dimensions
+-- bool: if true, return as tuple instead of array
+generators.PosCounter = R.FunctionGenerator("core.PosCounter",{},{"bool"},
 function(args)
-  local V = 0
-  if args.opt==0 then assert(args.V[2]==1);V=args.V[1] end
-  return RM.posSeq(args.size[1],args.size[2],V,nil,true,true)
+  J.err(args.V[2]==1 or args.V[2]==0,"PosCounter: V")
+  print("POSCOUNTER",args.bool)
+  return RM.posSeq(args.size[1],args.size[2],args.V[1],nil,true,args.bool~=true)
 end,
-P.SumType("opt",{types.rv(T.ParSeq(T.Array2d(T.Trigger,P.SizeValue("V")),P.SizeValue("size"))),
-                 types.rv(T.Seq(T.Par(T.Trigger),P.SizeValue("size")))}) )
+T.Array2d( T.Trigger, P.SizeValue("size"), P.SizeValue("V") ) )
 
 -- this takes an Seq of arrays, and flattens it into a parseq
 generators.Flatten = R.FunctionGenerator("core.Flatten",{"type","rate"},{},
@@ -656,7 +634,6 @@ function(args)
 
   assert(R.isPlainFunction(res))
   local W,H = args.outerSize[1]*args.innerSize[1], args.outerSize[2]*args.innerSize[2]
-  print("FLATTENWH",W,H,args.innerV,args.innerT)
   local newType = T.RV(T.Array2d( args.innerT, W, H, args.innerV ))
   assert(res.outputType:lower()==newType:lower())
   res.outputType = newType
@@ -676,7 +653,7 @@ function(args)
 end,nil,false)
 
 -- bool: allow stateful
-generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool"},
+generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool","unoptimized"},
 function(args)
 
   J.err( args.type:deInterface():isArray(),"Error, Map must operate on an array! but input type was: ",args.type)
@@ -684,6 +661,7 @@ function(args)
   -- NOTE: we send the fn we are mapping over the original (non-optimized) type, b/c it may not
   -- want to optimize the type!
   local S = args.type:deInterface():arrayOver()
+
   --print( "MAP:SPECIALIZE TO TYPE", args.rigelFunction.name,types.rv(S))
   local fn = args.rigelFunction:specializeToType( types.rv(S), args.rate )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
@@ -694,7 +672,12 @@ function(args)
     J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
   end
 
-  local ty, rate = args.type:optimize(args.rate)
+  local ty, rate
+  if args.unoptimized==true then
+    ty,rate = args.type,args.rate
+  else
+     ty,rate = args.type:optimize(args.rate)
+  end
   local S, size, V, var = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V, ty:deInterface().var
 
   if var then
@@ -797,7 +780,6 @@ function(args)
       -- special case of taking [1,1;w,h} to {w,h} (not really a changerate)
       return SerToWidthArrayToScalar( a.T, a.size )
     else
-      print("CR1",a.V,a.size)
       return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
     end
   else
@@ -811,9 +793,6 @@ end)
 -- explicit reshape to column-wise
 generators.ToColumns = R.FunctionGenerator("core.ToColumns",{"type","rate"},{},
 function(args)
-  --J.err( args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size. size:",args.size," cycles:",args.number)
-  --local outW = math.floor(args.size[1]*(Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()))
-  print("ToColumns",args.rate,args.size,args.type)
   local V = J.canonicalV( args.rate, args.size, true)
   
   if args.size[1] == V[1] then
@@ -918,7 +897,7 @@ end,nil,false)
 
 -- string is name
 -- bool: force rv no matter what
-generators.SchedulableFunction = R.FunctionGenerator("core.SchedulableFunction",{"luaFunction","type","type1"},{"string","rate","bool"},
+generators.SchedulableFunction = R.FunctionGenerator("core.SchedulableFunction",{"luaFunction","type","type1"},{"string","rate","bool","unoptimized"},
 function(args)
   --print("Schecule SchedulableFunction ",args.string,args.type,args.type1)
   
@@ -932,9 +911,13 @@ function(args)
 
   local input
 
-  local optType, optRate = args.type:optimize( args.rate )
+  local optType, optRate
 
-  print("Schedulable",args.type,args.rate,optType,optRate)
+  if args.unoptimized~=true then
+    optType, optRate = args.type:optimize( args.rate )
+  else
+    optType, optRate = args.type, args.rate
+  end
   
   local RVMode
 
@@ -1019,7 +1002,7 @@ function(args)
     local tmp = C.identity( args.type:deInterface(), "ReshapeArray" )
 
     local IT = types.rv(args.type:deInterface())
-    print(tmp.inputType,IT)
+
     assert( tmp.inputType:lower()==IT:lower() )
     tmp.inputType = IT
     local OT = types.rv( types.Array2d(args.T, args.size, 0, 0) )

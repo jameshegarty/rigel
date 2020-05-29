@@ -58,13 +58,15 @@ terra main()
         for i=0,16 do
           if y+j<H and x+i<W then
             var v = (f0_data[S*SC.DESC_SIZE+2+(j*16)+i]-featureMin)/(featureMax-featureMin)
-            out[(y+j)*W+(x+i)] = (v*255.f)
+            var ix = (y+j)*W+(x+i)
+            if ix>=0 and ix<W*H then out[ix] = (v*255.f) end
           end
         end
       end
     end
 
-    out[y*W+x] = 255
+    var idx = y*W+x
+    if idx>=0 and idx<W*H then out[idx] = 255 end
         
   end
 

@@ -435,6 +435,12 @@ function functionGeneratorFunctions:specializeToType( ty, rate )
     return nil
   end
 
+  for k,v in pairs(self.curriedArgs) do
+    assert(arglist[k]==nil)
+    arglist[k] = v
+  end
+  
+
   return self:complete( arglist )
 end
 
@@ -540,7 +546,6 @@ return fn
 
         if targetType:arrayOver()~=fnType:arrayOver() then
           local FT, TT = fnType.over, resStack[#resStack].outputType:deInterface():arrayOver()
-          print("RESHAPE RECURSE, FuncType:",FT,"target:",TT)
           table.insert( resStack, RM.mapSeq(reshape( FT, TT ), fnType.size[1], fnType.size[2]) )
         end
 
@@ -549,7 +554,6 @@ return fn
         else
           res = C.linearPipeline(resStack,"ConvertInterface_Ser_stack")
         end
-        print("ChangeRateRowMajor",fnType,targetType,res.inputType,res.outputType)
       elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
         -- recurse
         if fnType.V:eq(0,0) then
