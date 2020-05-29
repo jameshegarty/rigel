@@ -216,6 +216,8 @@ function harris.harrisWithStencil(t)
   -- left branch: make the dxdy int8 stencils
   local left = R.selectStream("d0",dxdyBroad,0)
 
+  local sift = require "sift_core_hw"
+
   if GRAD_INT then
     left = R.apply("lower", RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)), left)
     dxdyType = GRAD_TYPE

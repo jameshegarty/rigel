@@ -22,6 +22,7 @@ ZU9VIVADOSOCBITS_SIG20 += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.tx
 # too slow
 SRCS_VERILATOR_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua, $(SRCS_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_VERILATOR_SOC))
+SRCS_VERILATOR_SOC := $(filter-out soc_sift.lua, $(SRCS_VERILATOR_SOC))
 
 # broken in circleci for some reason?
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua, $(SRCS_VERILATOR_SOC))
@@ -37,6 +38,7 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$
 SRCS_YOSYS_SOC := $(filter-out soc_convgenTaps_8_8.lua soc_convgenTaps_8_4.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_1.lua soc_convgenTaps_8_8.lua  soc_convgenTaps_8_16.lua  soc_convgenTaps_8_32.lua, $(SRCS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_YOSYS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_24.lua soc_lk_12_48.lua, $(SRCS_YOSYS_SOC))
+SRCS_YOSYS_SOC := $(filter-out soc_sift.lua, $(SRCS_YOSYS_SOC))
 
 YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_YOSYS_SOC))
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.cellscorrect.txt,$(SRCS_YOSYS_SOC))

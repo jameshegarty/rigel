@@ -2746,11 +2746,14 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
 
       res.outputType = ot
     else
-      err( indexMode==false, "NYI - cropSeq, framed, indexMode with V>0 not implemented")
+      err( indexMode==false or V==1, "NYI - cropSeq, framed, indexMode with V>1 not implemented. V=",V)
       local it = types.rv(types.ParSeq(res.inputType:deInterface(),W_orig,H))
       assert( it:lower()==res.inputType:lower() )
       res.inputType = it
       local ot =  types.rvV(types.ParSeq(res.outputType:deInterface().list[1],W_orig-L-R_orig,H-B-Top))
+      if indexMode then
+        ot = types.rvV(res.outputType:deInterface().list[1]:arrayOver())
+      end
       assert( ot:lower()==res.outputType:lower() )
       res.outputType = ot
     end

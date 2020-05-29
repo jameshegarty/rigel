@@ -189,6 +189,28 @@ C.flatten2 = memoize(function(T,N)
   return docast
 end)
 
+-- flatten nested arrays: take A[V;N}{M} to A[V;N*M}
+-- outer array must be fully sequential
+C.flatten = memoize(function( innerT, innerSize, innerV, outerSize, X )
+  assert( types.isType(innerT ) )
+  assert( R.isSize(innerSize))
+  assert( R.isSize(innerV))
+  assert( R.isSize(outerSize))
+  assert( X==nil )
+  
+  local G = require "generators.core"
+    
+  local res = G.Function{"Flatten_"..tostring(innerT).."_w"..tostring(innerSize[1]).."_h"..tostring(innerSize[2]).."_VW"..tostring(innerV[1]).."_VH"..tostring(innerV[2]).."_W"..tostring(outerSize[1]).."_H"..tostring(outerSize[2]), types.RV(types.Array2d( types.Array2d(innerT,innerSize,innerV),outerSize,0,0)),SDF{1,1},function(inp) return inp end}
+
+  assert(R.isPlainFunction(res))
+  local W,H = outerSize[1]*innerSize[1], outerSize[2]*innerSize[2]
+  local newType = types.RV(types.Array2d( innerT, W, H, innerV ))
+  assert(res.outputType:lower()==newType:lower())
+  res.outputType = newType
+
+  return res
+end)
+
 -- converts {A,A,A...} to A[W,H] (input should be tuple of W*H A's)
 C.tupleToArray = memoize(function(A,W,H,X)
   err(types.isType(A),"tupleToArray: A should be type")

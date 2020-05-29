@@ -81,8 +81,6 @@ function(args)
 end,
 T.Array2d( P.ScheduleType("S"),P.SizeValue("InSize"),R.Size(0,0),true) )
 
-
-
 -- bits to unsigned
 generators.BtoU = R.FunctionGenerator("core.BtoU",{},{},
 function(args)
@@ -206,12 +204,22 @@ function(args)
     -- a non-parallel array
     J.err( ty.size:eq(ty.V) or ty.V:eq(0,0) or ty.V[2]==1 ,"ValueToTrigger: NYI, vector can only be 1D, but is: ",ty.V ) -- NYI
 
-    local g = generators.Map{generators.ValueToTrigger}:complete({type=T.RV(args.type:deInterface()),rate=args.rate})
-    assert( R.isPlainFunction(g) )
+    local pipe={}
+    table.insert( pipe, generators.Map{generators.ValueToTrigger}:complete({type=T.RV(args.type:deInterface()),rate=args.rate}) )
+    assert( R.isPlainFunction(pipe[#pipe]) )
 
-    local f = RM.liftHandshake(RM.liftDecimate(RM.cropSeq( T.Trigger, ty.size[1], ty.size[2], ty.V[1], 0, ty.size[1]-math.max(ty.V[1],1), 0, ty.size[2]-math.max(ty.V[2],1), true, true )) )
+    local crpX = ty.size[1]-math.max(ty.V[1],1)
+    if ty.V[1]~=0 then crpX = J.upToNearest( ty.V[1], crpX ) end
+    local crpY = ty.size[2]-math.max(ty.V[2],1)
+    if ty.V[1]~=0 then crpY = J.upToNearest( ty.V[1], crpY ) end
+    
+    table.insert( pipe, RM.liftHandshake(RM.liftDecimate(RM.cropSeq( T.Trigger, ty.size[1], ty.size[2], ty.V[1], 0, crpX, 0, crpY, true, ty.V[1]==0 )) ) )
 
-    return C.compose(J.verilogSanitize("ValueToTriggerParseq_"..tostring(args.type:deInterface())),f,g)
+    if ty.V[1]~=0 then
+      table.insert( pipe, RM.makeHandshake(C.valueToTrigger( T.Array2d(T.Trigger,ty.V[1])) ) )
+    end
+    
+    return C.linearPipeline(pipe,J.verilogSanitize("ValueToTriggerParseq_"..tostring(args.type:deInterface())))
   else
     J.err(false,"NYI - ValueToTrigger on input type: ",args.type)
   end
@@ -629,16 +637,7 @@ T.Array2d( T.Trigger, P.SizeValue("size"), P.SizeValue("V") ) )
 generators.Flatten = R.FunctionGenerator("core.Flatten",{"type","rate"},{},
 function(args)
   J.err( args.outerV:eq(0,0), "Flatten NYI - outer array must be fully sequential, but outer V was:",args.outerV," and input type was: ", args.type)
-
-  local res = generators.Function{"Flatten_VW"..tostring(args.innerV[1]).."_VH"..tostring(args.innerV[2]).."_W"..tostring(args.outerSize[1]).."_H"..tostring(args.outerSize[2]), T.RV(T.Array2d( T.Array2d(args.innerT,args.innerSize,args.innerV),args.outerSize,args.outerV)),SDF{1,1},function(inp) return inp end}
-
-  assert(R.isPlainFunction(res))
-  local W,H = args.outerSize[1]*args.innerSize[1], args.outerSize[2]*args.innerSize[2]
-  local newType = T.RV(T.Array2d( args.innerT, W, H, args.innerV ))
-  assert(res.outputType:lower()==newType:lower())
-  res.outputType = newType
-
-  return res
+  return C.flatten( args.innerT, args.innerSize, args.innerV, args.outerSize )
 end,
 T.Array2d( T.Array2d(P.DataType("innerT"),P.SizeValue("innerSize"),P.SizeValue("innerV")), P.SizeValue("outerSize"), P.SizeValue("outerV") )  )
 
@@ -999,7 +998,7 @@ function(args)
   J.err( args.size[1]*args.size[2]==args.insize[1]*args.insize[2], "ReshapeArray: total number of items must not change. Input size: ",args.insize," requested reshape: ",args.size )
 
   if args.V:eq(0,0) then
-    local tmp = C.identity( args.type:deInterface(), "ReshapeArray" )
+    local tmp = C.identity( args.type:deInterface(), "ReshapeArray_"..tostring(args.type:deInterface()) )
 
     local IT = types.rv(args.type:deInterface())
 
