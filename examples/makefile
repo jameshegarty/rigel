@@ -13,7 +13,7 @@ SRCS_SOC += soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_1_2.lua
 SIG20 := soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_4.lua soc_lk_12_3.lua soc_lk_12_2.lua soc_lk_12_1.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_6_6.lua soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua soc_lk_4_8.lua
 SIG20 += soc_convgenTaps_8_1.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_4.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_8_16.lua soc_convgenTaps_8_32.lua soc_convgenTaps_8_64.lua
 SIG20 += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua
-SIG20 += soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_1_2.lua
+SIG20 += soc_sift_4_1.lua soc_sift_4_1_1080p.lua soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_4_4.lua soc_sift_4_4_1080p.lua soc_sift_1_2.lua
 
 ZU9VIVADOSOCBITS_SIG20 := $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.bit,$(SIG20))
 ZU9VIVADOSOCBITS_SIG20 += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SIG20))
@@ -22,7 +22,7 @@ ZU9VIVADOSOCBITS_SIG20 += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.tx
 # too slow
 SRCS_VERILATOR_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua, $(SRCS_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_VERILATOR_SOC))
-SRCS_VERILATOR_SOC := $(filter-out soc_sift_4_2.lua soc_sift_4_2_1080p.lua, $(SRCS_VERILATOR_SOC))
+SRCS_VERILATOR_SOC := $(filter-out soc_sift_4_1.lua soc_sift_4_1_1080p.lua soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_4_4.lua soc_sift_4_4_1080p.lua, $(SRCS_VERILATOR_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_convgenTaps_8_64.lua, $(SRCS_VERILATOR_SOC))
 
 # broken in circleci for some reason?
@@ -118,6 +118,7 @@ SRCS_TERRA += $(SRCS_SOC)
 
 # too slow
 SRCS_TERRA := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_TERRA))
+SRCS_TERRA := $(filter-out soc_sift_4_1_1080p.lua soc_sift_4_2_1080p.lua soc_sift_4_4_1080p.lua, $(SRCS_TERRA))
 
 TERRAOUT := $(patsubst %.lua,$(BUILDDIR)/%.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.bmp,$(SRCS_TERRA))
