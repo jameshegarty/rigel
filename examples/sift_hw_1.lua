@@ -36,7 +36,7 @@ function doit( full, TILES )
   local outfile = "sift_hw_"..tostring(TILES)..J.sel(full,"_1080p","")
   harness{ outFile=outfile, fn=siftFn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={(TILES*TILES*8+2)*4,OUTPUT_COUNT}, outP=8 }
 
-  io.output("out/"..outfile..".design.txt"); io.write("SIFT "..J.sel(full,"1080p","")); io.close()
+  io.output("out/"..outfile..".design.txt"); io.write("SIFT "..TILES..J.sel(full," 1080p","")); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write( 0.5 ); io.close()
   io.output("out/"..outfile..".dataset.txt"); io.write("SIG16_zu9"); io.close()
 end

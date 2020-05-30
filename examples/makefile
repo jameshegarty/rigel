@@ -4,14 +4,14 @@ SHELL = /bin/bash
 BUILDDIR ?= out
 
 SRCS_SOC = soc_simple.lua soc_simple_uniform.lua soc_2in.lua soc_convgen.lua soc_convgen_0.lua soc_convgenTaps.lua soc_flip.lua soc_15x15.lua soc_15x15x15.lua soc_flipWrite.lua soc_regin.lua soc_regout.lua soc_convtest.lua soc_read.lua soc_redu1024.lua soc_redu2048.lua soc_redu4096.lua soc_redu8192.lua soc_redu16384.lua soc_redu32768.lua soc_sort.lua soc_filterseq.lua soc_filterseq8.lua soc_unaligned.lua soc_underflow.lua soc_parread.lua soc_tokencounter.lua soc_arbiter.lua soc_readlen.lua soc_readarrays_1.lua soc_readarrays_8.lua
-SRCS_SOC += soc_convgenTaps_4_2.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_4_8.lua soc_convgenTaps_4_16.lua  soc_convgenTaps_4_16.lua soc_convgenTaps_8_4.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_1.lua soc_convgenTaps_4_4.lua  soc_convgenTaps_8_16.lua  soc_convgenTaps_8_32.lua
+SRCS_SOC += soc_convgenTaps_4_2.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_4_8.lua soc_convgenTaps_4_16.lua  soc_convgenTaps_4_16.lua soc_convgenTaps_8_4.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_1.lua soc_convgenTaps_4_4.lua  soc_convgenTaps_8_16.lua  soc_convgenTaps_8_32.lua soc_convgenTaps_8_64.lua
 
 SRCS_SOC += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua
 SRCS_SOC += soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua soc_lk_4_8.lua soc_lk_6_6.lua soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua
 SRCS_SOC += soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_1_2.lua
 
 SIG20 := soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_4.lua soc_lk_12_3.lua soc_lk_12_2.lua soc_lk_12_1.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_6_6.lua soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua soc_lk_4_8.lua
-SIG20 += soc_convgenTaps_8_1.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_4.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_8_16.lua soc_convgenTaps_8_32.lua
+SIG20 += soc_convgenTaps_8_1.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_4.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_8_16.lua soc_convgenTaps_8_32.lua soc_convgenTaps_8_64.lua
 SIG20 += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua
 SIG20 += soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_1_2.lua
 
@@ -23,6 +23,7 @@ ZU9VIVADOSOCBITS_SIG20 += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.tx
 SRCS_VERILATOR_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua, $(SRCS_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_VERILATOR_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_sift_4_2.lua soc_sift_4_2_1080p.lua, $(SRCS_VERILATOR_SOC))
+SRCS_VERILATOR_SOC := $(filter-out soc_convgenTaps_8_64.lua, $(SRCS_VERILATOR_SOC))
 
 # broken in circleci for some reason?
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua, $(SRCS_VERILATOR_SOC))
@@ -35,7 +36,7 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.regcorrect.txt,$(SR
 VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$(SRCS_VERILATOR_SOC))
 
 # too slow
-SRCS_YOSYS_SOC := $(filter-out soc_convgenTaps_8_8.lua soc_convgenTaps_8_4.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_1.lua soc_convgenTaps_8_8.lua  soc_convgenTaps_8_16.lua  soc_convgenTaps_8_32.lua, $(SRCS_SOC))
+SRCS_YOSYS_SOC := $(filter-out soc_convgenTaps_8_8.lua soc_convgenTaps_8_4.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_1.lua soc_convgenTaps_8_8.lua  soc_convgenTaps_8_16.lua  soc_convgenTaps_8_32.lua soc_convgenTaps_8_64.lua, $(SRCS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_YOSYS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_24.lua soc_lk_12_48.lua, $(SRCS_YOSYS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_sift_4_2.lua soc_sift_4_2_1080p.lua, $(SRCS_YOSYS_SOC))

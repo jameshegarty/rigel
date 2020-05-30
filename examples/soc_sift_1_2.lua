@@ -79,6 +79,12 @@ local invV = (TILES_X*TILES_Y*TILE_W*TILE_H)/V
 local cycles = W*H*invV
 print("CYCLES",cycles,"invV",invV)
 
+local outfile = "soc_sift_"..tostring(TILES).."_"..tostring(V)..J.sel(size1080p,"_1080p","")
+
+io.output("out/"..outfile..".design.txt"); io.write("SIFT "..TILES..J.sel(size1080p," 1080p","")); io.close()
+io.output("out/"..outfile..".designT.txt"); io.write(1/invV); io.close()
+io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
+
 local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")
@@ -441,7 +447,7 @@ function(i)
   local readStream = G.AXIReadBurst{ J.sel(size1080p,"boxanim0000.raw","boxanim_256.raw"), {W,H}, T.u(8), 8, noc.read }(i)
   local offset = SiftTop(readStream)
   print("SIFTOUT",offset.type)
-  return G.AXIWriteBurst{"out/soc_sift_"..tostring(TILES).."_"..tostring(V)..J.sel(size1080p,"_1080p",""),noc.write}(offset)
+  return G.AXIWriteBurst{"out/"..outfile,noc.write}(offset)
 end}
 
 harness({regs.start, TopModule, regs.done},nil,{regs})
