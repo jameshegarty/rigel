@@ -3578,14 +3578,14 @@ C.SqrtF = J.memoize(function( exp, sig, doDiv, X )
 
   if doDiv==nil then doDiv = false end
   
-  --local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
   local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
   --local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
   local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
   local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v", HardFloat_consts)
   --local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v", HardFloat_specialize, HardFloat_consts )
   local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
-  local divSqrtRecFN_small = C.VerilogFile("generators/hardfloat/source/divSqrtRecFN_small.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN )
+  local divSqrtRecFN_small = C.VerilogFile("generators/hardfloat/source/divSqrtRecFN_small.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN, HardFloat_localFuncs )
 
   local inst = {}
   local sqrt = divSqrtRecFN_small:instantiate("sqrt")
