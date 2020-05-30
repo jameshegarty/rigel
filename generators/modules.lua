@@ -510,7 +510,7 @@ local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
     local out = inner[fnname]( inner, S.index(sinp,0), runable )
 
     local RST = S.parameter(prefix.."reset",types.bool())
-    if systolicModule:lookupFunction(prefix.."reset"):isPure() then RST=S.constant(false,types.bool()) end
+--    if systolicModule:lookupFunction(prefix.."reset"):isPure() then RST=S.constant(false,types.bool()) end
 
     local pipelines = {}
     -- Actually, it's ok for (ready==false and valid(inp)==true) to be true. We do not have to read when ready==false, we can just ignore it.
@@ -1141,7 +1141,7 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, allo
   
   if fn.inputType:isRV() or fn.outputType:isRV() then
     -- special case
-    err( Vw:toNumber()==1 and Vh:toNumber()==1,"mapParSeq: if RV, vector width must be 1!")
+    err( Vw:toNumber()==1 and Vh:toNumber()==1,"mapParSeq: if RV, vector width must be 1! but was Vw:",Vw_orig," Vh:",Vh_orig," fn:",fn.name)
 
     assert( fn.inputType:deInterface():isData() )
     local ty = fn.inputType:extractData()
@@ -1195,6 +1195,8 @@ modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
   err( rigel.isPlainFunction(fn), "mapSeq: first argument to map must be Rigel module, but is ",fn )
   err( fn.inputType.kind=="Interface", "mapSeq: fn input should be interface, but is: ",fn.inputType )
   err( fn.outputType.kind=="Interface", "mapSeq: fn '",fn.name,"' output should be interface, but is: ",fn.outputType )
+  err( type(W_orig)=="number" or Uniform.isUniform(W_orig),"mapSeq: W must be number or uniform")
+  err( type(H_orig)=="number" or Uniform.isUniform(H_orig),"mapSeq: H must be number or uniform")
        
   local G = require "generators.core"
     

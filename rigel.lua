@@ -513,37 +513,24 @@ return fn
   local function reshape( fnType, targetType )
     err( fnType:isSchedule(), "reshape: input should be schedule type, but is: ",fnType )
     assert( targetType:isSchedule() )
-
+    
     local res
     
     if fnType:isArray() then
       -- if not an array, nothing we can do!
-      if fnType.V:eq(0,0) and targetType.V:eq(1,1) then
-        -- trivial conversion from V=1 to V=0
-        res = RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size ))
-      elseif fnType.V:eq(1,1) and targetType.V:eq(0,0) then
-        -- trivial conversion from V=0 to V=1
-        res = G.Function{ "Promote_Seq_to_ParSeq_"..tostring(targetType:extractData()), types.rv(targetType:extractData()), SDF{1,1},
-          function(inp)
-            return C.broadcast( targetType:extractData(), 1, 1 )(inp)
-          end}
-
-        assert( darkroom.isPlainFunction(res) )
-        assert( res.inputType:extractData() == targetType:extractData() )
-        assert( res.outputType:extractData() == fnType:extractData() )
-
-        res.inputType = types.rv(targetType)
-        res.outputType = types.rv(fnType)
-        
-        res = RM.makeHandshake(res)
-      elseif fnType.V[1]*fnType.V[2] ~= targetType.V[1]*targetType.V[2] then
+      if fnType.V[1]*fnType.V[2] ~= targetType.V[1]*targetType.V[2] then
         -- we need to serialize
 
         local resStack = {}
-        table.insert( resStack, C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
+
+        if fnType:columnMajor() then
+          err( false,"NYI - convertInterface to a column major array converting:",targetType," to:",fnType," for:",fn,loc)
+        else
+          table.insert( resStack, C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
                                         fnType.V[1]*fnType.V[2],
                                         targetType.size[1], targetType.size[2] ) )
-
+        end
+        
         if targetType:arrayOver()~=fnType:arrayOver() then
           local FT, TT = fnType.over, resStack[#resStack].outputType:deInterface():arrayOver()
           table.insert( resStack, RM.mapSeq(reshape( FT, TT ), fnType.size[1], fnType.size[2]) )

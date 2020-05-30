@@ -11,24 +11,26 @@ local C = require "generators.examplescommon"
 local J = require "common"
 local P = require "params"
 local harness = require "generators.harnessSOC"
+local Uniform = require "uniform"
 
 local SIFT_OLD = require "sift_core_hw"
 -- this is just lua code, so just use old code
 local calcGaussian = SIFT_OLD.calcGaussian
 SIFT_OLD=nil
 
-local function tileGaussian(G,W,H,T)
+local function tileGaussian(G,W,H,Tw,Th)
   assert(type(G)=="table")
   assert(type(W)=="number")
-  assert(type(T)=="number")
+  assert(type(Tw)=="number")
+  assert(type(Th)=="number")
 
   local GG = {}
-  for ty=0,(H/T)-1 do
-    for tx=0,(W/T)-1 do
+  for ty=0,(H/Th)-1 do
+    for tx=0,(W/Tw)-1 do
       local tmp = {}
-      for y=0,T-1 do
-        for x=0,T-1 do
-          table.insert(tmp,G[(ty*T+y)*W+(tx*T+x)])
+      for y=0,Th-1 do
+        for x=0,Tw-1 do
+          table.insert(tmp,G[(ty*Th+y)*W+(tx*Tw+x)])
         end
       end
       table.insert(GG,tmp)
@@ -49,25 +51,38 @@ local GRAD_TYPE = types.int(8)
 
 local GAUSS_SIGMA = 5
 
+local first,flen = string.find(arg[0],"%d+")
+local TILES = tonumber(string.sub(arg[0],first,flen))
+local V = tonumber(string.sub(arg[0], string.find(arg[0],"%d+",flen+1)))
+
+local size1080p = (string.find(arg[0],"1080p")~=nil)
+
 local W = 256
 local H = 256
 
-local cycles = W*H*128
-print("CYCLES",cycles)
+local FILTER_FIFO = 512
+local OUTPUT_COUNT = 614
+
+if size1080p then
+  W,H = 1920, 1080
+  OUTPUT_COUNT = 3599
+end
+
+local FILTER_RATE = {OUTPUT_COUNT,W*H}
+
+local TILES_X = TILES
+local TILES_Y = TILES
+local TILE_W = 4
+local TILE_H = 4
+
+local invV = (TILES_X*TILES_Y*TILE_W*TILE_H)/V
+local cycles = W*H*invV
+print("CYCLES",cycles,"invV",invV)
 
 local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")
 noc.extern=true
-
-local FILTER_FIFO = 512
-local OUTPUT_COUNT = 614
-local FILTER_RATE = {OUTPUT_COUNT,W*H}
-
-local TILES_X = 4
-local TILES_Y = 4
-local TILE_W = 4
-local TILE_H = 4
 
 local GAUSS  = {14 , 62 , 104 , 62 , 14}
 
@@ -224,7 +239,7 @@ function(inp)
 end}
 
 local GAUSS = calcGaussian(GAUSS_SIGMA,TILES_X*TILE_W,TILES_Y*TILE_H) -- sigma was 5
-GAUSS = tileGaussian( GAUSS, TILES_X*TILE_W, TILES_Y*TILE_H, 4)
+GAUSS = tileGaussian( GAUSS, TILES_X*TILE_W, TILES_Y*TILE_H, TILE_W, TILE_H)
 
 local SiftDescriptor = G.SchedulableFunction{"SiftDescriptor",
 T.Array2d(T.Array2d(T.Tuple{T.I8,T.I8},TILE_W,TILE_H),TILES_X,TILES_Y),
@@ -277,7 +292,7 @@ function(i)
 end}
 
 local SiftKernel = G.SchedulableFunction{"SiftKernel",
-T.Tuple{T.Array2d(T.Tuple{T.I8,T.I8},TILES_X*4,TILES_Y*4), T.Tuple{T.U16,T.U16} },
+T.Tuple{T.Array2d(T.Tuple{T.I8,T.I8},TILES_X*TILE_W,TILES_Y*TILE_H), T.Tuple{T.U16,T.U16} },
 --T.Tuple{T.Array2d(T.Tuple{T.I8,T.I8},TILES_X*4,TILES_Y*4), T.Array2d(T.U16,2) },
 function(i)
   local dxdyType = types.I8
@@ -297,7 +312,7 @@ function(i)
 
   local dxdy = inp[1][0]
 
-  local dxdyTiles = G.Tile{{4,4}}(dxdy)
+  local dxdyTiles = G.Tile{{TILE_W,TILE_H}}(dxdy)
 
   local desc = SiftDescriptor(dxdyTiles)
   local desc = G.Map{G.Reduce{BucketReduce}}(desc)
@@ -335,27 +350,28 @@ function(i)
   desc = G.Map{G.Zip}(desc)
   desc = G.Map{G.Map{G.DivF}}(desc)
   desc = G.Flatten(desc)
-  desc = G.ReshapeArray{{128,1}}(desc)
+  desc = G.ReshapeArray{{TILES_X*TILES_Y*8,1}}(desc)
 
   -- HACK:FIX: work around bug in interface conversion
-  desc = G.Deser{128}(desc)
+  desc = G.Deser{TILES_X*TILES_Y*8}(desc)
   
   local desc_cc = R.concat{desc,posX,posY}
 
-  desc = G.FanIn{R.Unoptimized}(desc_cc)
+  desc = G.FanIn(desc_cc)
   desc = G.Fmap{AddDescriptorPos}(desc)
 
   return desc
 end}
 
-local AddImagePos = G.SchedulableFunction{"AddImagePos",T.Array2d(P.DataType("D"),P.SizeValue("size")),
+local IT = T.Array2d(T.Tuple{T.I8,T.I8},TILES_X*TILE_W,TILES_Y*TILE_H)
+local AddImagePos = G.Function{"AddImagePos",T.rv(T.Array2d(IT,Uniform(W+15),H+15,0,0)),
 function(i)
-  local trig = G.Map{G.ValueToTrigger{R.Unoptimized},R.Unoptimized}(i)
+  local trig = G.Map{G.ValueToTrigger}(i)
   local pos = G.PosCounter{true}(trig)
-  pos = G.Map{G.TupleToArray{R.Unoptimized},R.Unoptimized}(pos)
-  pos = G.Map{G.Map{G.Sub{15,R.Unoptimized},R.Unoptimized},R.Unoptimized}(pos)
-  pos = G.Map{G.ArrayToTuple{R.Unoptimized},R.Unoptimized}(pos)
-  local res =  G.Zip{R.Unoptimized}(G.FanIn{R.Unoptimized}(i,pos))
+  pos = G.Map{G.TupleToArray}(pos)
+  pos = G.Map{G.Map{G.Sub{15}}}(pos)
+  pos = G.Map{G.ArrayToTuple}(pos)
+  local res =  G.Zip(G.FanIn(i,pos))
   return res
 end}
                                           
@@ -394,12 +410,13 @@ function(inp)
 
   left = G.FIFO{2048/(types.tuple{GRAD_TYPE,GRAD_TYPE}:verilogBits())}(left)
 
-  left = G.Stencil{{-TILES_X*4+1,0,-TILES_Y*4+1,0}}(left)
-  left = AddImagePos{R.Unoptimized}(left)
+  left = G.Stencil{{-TILES_X*TILE_W+1,0,-TILES_Y*TILE_H+1,0}}(left)
+
+  left = G.Fmap{AddImagePos}(left)
   -------------------------------
 
   -- merge left/right
-  local out = G.Zip{R.Unoptimized}(left,right)
+  local out = G.Zip(left,right)
   out = G.Crop{{15,0,15,0}}(out)
   out = G.Filter{{FILTER_RATE[1],FILTER_RATE[2]}}(out)
   out = G.FIFO{FILTER_FIFO}(out)
@@ -414,16 +431,17 @@ function(inp)
   out = G.Map{G.Float}(out)
   out = G.Map{G.Bitcast{types.Array2d(types.Uint(8),4)}}(out)
   out = G.Flatten(out)
-  out = G.Reshape{{130*4,OUTPUT_COUNT}}(out)
+  out = G.Reshape{{(TILES_X*TILES_Y*8+2)*4,OUTPUT_COUNT}}(out)
   
   return out
 end}
 
 local TopModule = G.SchedulableFunction{ "TopModule", T.Trigger,
 function(i)
-  local readStream = G.AXIReadBurst{ "boxanim_256.raw", {W,H}, T.u(8), 8, noc.read }(i)
+  local readStream = G.AXIReadBurst{ J.sel(size1080p,"boxanim0000.raw","boxanim_256.raw"), {W,H}, T.u(8), 8, noc.read }(i)
   local offset = SiftTop(readStream)
-  return G.AXIWriteBurst{"out/soc_sift",noc.write}(offset)
+  print("SIFTOUT",offset.type)
+  return G.AXIWriteBurst{"out/soc_sift_"..tostring(TILES).."_"..tostring(V)..J.sel(size1080p,"_1080p",""),noc.write}(offset)
 end}
 
 harness({regs.start, TopModule, regs.done},nil,{regs})

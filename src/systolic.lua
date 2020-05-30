@@ -265,7 +265,7 @@ function systolic.lambda( name, inputParameter, output, outputName, pipelines, v
   err( systolicAST.isSystolicAST(inputParameter), "inputParameter must be a systolic AST, but is '",inputParameter,"'" )
   err( systolicAST.isSystolicAST(output) or output==nil, "output must be a systolic AST or nil" )
   err( systolicAST.isSystolicAST(validParameter) or validParameter==nil, "valid parameter must be a systolic AST or nil" )
-  if validParameter~=nil then err(validParameter.kind=="parameter","valid parameter must be parameter") end
+  if validParameter~=nil then err(validParameter.kind=="parameter","valid parameter must be parameter, but was: ",validParameter) end
   err( inputParameter.kind=="parameter", "input must be a parameter" )
   err( output==nil or (output~=nil and output.type==types.null()) or type(outputName)=="string", "output name must be a string if output is given, but is "..type(outputName))
   err( CEParameter==nil or (systolicAST.isSystolicAST(CEParameter) and CEParameter.kind=="parameter" and CEParameter.type==types.bool(true)), "CE Parameter must be nil or parameter")

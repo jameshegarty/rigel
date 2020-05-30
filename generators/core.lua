@@ -202,22 +202,30 @@ function(args)
   elseif args.type:deInterface():isArray() then
     local ty = args.type:deInterface()
     -- a non-parallel array
-    J.err( ty.size:eq(ty.V) or ty.V:eq(0,0) or ty.V[2]==1 ,"ValueToTrigger: NYI, vector can only be 1D, but is: ",ty.V ) -- NYI
+--    J.err( ty.size:eq(ty.V) or ty.V:eq(0,0) or ty.V[2]==1 ,"ValueToTrigger: NYI, vector can only be 1D, but is: ",ty.V ) -- NYI
 
     local pipe={}
     table.insert( pipe, generators.Map{generators.ValueToTrigger}:complete({type=T.RV(args.type:deInterface()),rate=args.rate}) )
     assert( R.isPlainFunction(pipe[#pipe]) )
 
-    local crpX = ty.size[1]-math.max(ty.V[1],1)
-    if ty.V[1]~=0 then crpX = J.upToNearest( ty.V[1], crpX ) end
-    local crpY = ty.size[2]-math.max(ty.V[2],1)
-    if ty.V[1]~=0 then crpY = J.upToNearest( ty.V[1], crpY ) end
-    
-    table.insert( pipe, RM.liftHandshake(RM.liftDecimate(RM.cropSeq( T.Trigger, ty.size[1], ty.size[2], ty.V[1], 0, crpX, 0, crpY, true, ty.V[1]==0 )) ) )
 
     if ty.V[1]~=0 then
-      table.insert( pipe, RM.makeHandshake(C.valueToTrigger( T.Array2d(T.Trigger,ty.V[1])) ) )
+      -- we don't care that we are passed a tile of triggers - we just want to get the first trigger
+      table.insert( pipe, RM.makeHandshake(RM.flatmap(C.valueToTrigger( T.Array2d(T.Trigger,ty.V[1],ty.V[2]) ), ty.V[1], ty.V[2], ty.size[1], ty.size[2], 0, 0, ty.size[1]/ty.V[1], ty.size[2]/ty.V[2])) )
     end
+
+    local crpX, crpY
+    if ty.V[1]~=0 then
+      crpX, crpY = (ty.size[1]/ty.V[1])-1, (ty.size[2]/ty.V[2])-1
+    else
+      crpX, crpY = ty.size[1]-1, ty.size[2]-1
+    end
+    
+    table.insert( pipe, RM.liftHandshake(RM.liftDecimate(RM.cropSeq( T.Trigger, ty.size[1]/math.max(ty.V[1],1), ty.size[2]/math.max(ty.V[2],1), 0, 0, crpX, 0, crpY, true, true )) ) )
+
+--    if ty.V[1]~=0 then
+--      table.insert( pipe, RM.makeHandshake(C.valueToTrigger( T.Array2d(T.Trigger,ty.V[1])) ) )
+--    end
     
     return C.linearPipeline(pipe,J.verilogSanitize("ValueToTriggerParseq_"..tostring(args.type:deInterface())))
   else
@@ -261,20 +269,38 @@ end)
 
 generators.FanIn = R.FunctionGenerator("core.FanIn",{"type","rate"},{"bool"},
 function(args)
-  if args.type:isrv() then
-    -- trivial case: do nothing!
-    return C.identity( args.type:deInterface() )
-  else
-    if args.type:isTuple() then
-      local fn =  RM.packTuple( args.type.list, args.bool )
-      return fn
-    elseif args.type:isArray() then
-      return RM.packTuple( args.type, args.bool, args.type.size )
-    else
-      J.err(false, "FanIn: expected handshaked tuple or array input, but is: "..tostring(args.type))
+
+  local ty, rate = args.type:optimize( args.rate )
+
+  -- every stream going into packtuple needs to have the same rate! (rates have to match)
+  -- So: we need to find the lowest rate from the optimized type, and make sure everything matches this
+  -- (we can always serialize streams to DECREASE rate, but we can't necessarily increase rate)
+
+  local lowestRate
+  for k,v in ipairs(rate) do
+    if lowestRate==nil or Uniform(v[1]):toNumber()/Uniform(v[2]):toNumber() < Uniform(lowestRate[1]):toNumber()/Uniform(lowestRate[2]):toNumber() then
+      lowestRate = v
     end
   end
-end)
+
+  local targetRate = args.rate*SDF{lowestRate[2],lowestRate[1]}
+
+  ty, rate = args.type:optimize( targetRate )
+  
+  if ty:isrv() then
+    -- trivial case: do nothing!
+    return C.identity( ty:deInterface() )
+  else
+    if ty:isTuple() then
+      local fn =  RM.packTuple( ty.list, args.bool )
+      return fn
+    elseif ty:isArray() then
+      return RM.packTuple( ty, args.bool, ty.size )
+    else
+      J.err(false, "FanIn: expected handshaked tuple or array input, but is: "..tostring(ty))
+    end
+  end
+end,nil,false)
 
 -- bool: nostall
 generators.FIFO = R.FunctionGenerator("core.FIFO",{"number","type"},{"bool","string"},

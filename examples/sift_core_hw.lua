@@ -645,7 +645,7 @@ function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
   out = G.Fmap{C.bitcast(types.array2d(types.Float32,2),types.Array2d(types.uint(8),8))}(out)
   
   table.insert( statements, 1, out )
-  local fn = RM.lambda( "harris", inpraw, R.statements(statements), fifos )
+  local fn = RM.lambda( "SiftTop", inpraw, R.statements(statements), fifos )
 
   return fn, descType
 end

@@ -1482,8 +1482,6 @@ function types.expectV( A, er ) if types.isV(A)==false then error(er or "type sh
 function types.expectRV( A, er ) if types.isRV(A)==false then error(er or "type should be RV") end end
 function types.expectHandshake( A, er ) if types.isHandshake(A)==false then error(er or "type should be handshake") end end
 
--- targetRate: (optional) instead of trying to optimize for the highest rate
--- optimize for this target instead
 function TypeFunctions:optimize( rates )
   local SDF = require "sdf"
 
@@ -1595,7 +1593,10 @@ function TypeFunctions:optimize( rates )
   return self, rates
 end
 
-function TypeFunctions:columnMajor() return self:isArray() and self.V[2]>self.V[1] end
+function TypeFunctions:columnMajor()
+  local res =  self:isArray() and self.V[2]>self.V[1] and (self.V[1]~=self.size[1] or self.V[2]~=self.size[2])
+  return res
+end
 
 function TypeFunctions:lower() return types.lower(self) end
 

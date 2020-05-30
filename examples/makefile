@@ -8,12 +8,12 @@ SRCS_SOC += soc_convgenTaps_4_2.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_4_8
 
 SRCS_SOC += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua
 SRCS_SOC += soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua soc_lk_4_8.lua soc_lk_6_6.lua soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua
-SRCS_SOC += soc_sift.lua
+SRCS_SOC += soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_1_2.lua
 
 SIG20 := soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_4.lua soc_lk_12_3.lua soc_lk_12_2.lua soc_lk_12_1.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_6_6.lua soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua soc_lk_4_8.lua
 SIG20 += soc_convgenTaps_8_1.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_4.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_8_16.lua soc_convgenTaps_8_32.lua
 SIG20 += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua
-SIG20 += soc_sift.lua
+SIG20 += soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_1_2.lua
 
 ZU9VIVADOSOCBITS_SIG20 := $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.bit,$(SIG20))
 ZU9VIVADOSOCBITS_SIG20 += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.txt,$(SIG20))
@@ -22,7 +22,7 @@ ZU9VIVADOSOCBITS_SIG20 += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.tx
 # too slow
 SRCS_VERILATOR_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_24.lua soc_lk_12_48.lua soc_lk_12_6.lua, $(SRCS_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_VERILATOR_SOC))
-SRCS_VERILATOR_SOC := $(filter-out soc_sift.lua, $(SRCS_VERILATOR_SOC))
+SRCS_VERILATOR_SOC := $(filter-out soc_sift_4_2.lua soc_sift_4_2_1080p.lua, $(SRCS_VERILATOR_SOC))
 
 # broken in circleci for some reason?
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua, $(SRCS_VERILATOR_SOC))
@@ -38,7 +38,7 @@ VERILATOR_SOC += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.cyclescorrect.txt,$
 SRCS_YOSYS_SOC := $(filter-out soc_convgenTaps_8_8.lua soc_convgenTaps_8_4.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_1.lua soc_convgenTaps_8_8.lua  soc_convgenTaps_8_16.lua  soc_convgenTaps_8_32.lua, $(SRCS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_YOSYS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_24.lua soc_lk_12_48.lua, $(SRCS_YOSYS_SOC))
-SRCS_YOSYS_SOC := $(filter-out soc_sift.lua, $(SRCS_YOSYS_SOC))
+SRCS_YOSYS_SOC := $(filter-out soc_sift_4_2.lua soc_sift_4_2_1080p.lua, $(SRCS_YOSYS_SOC))
 
 YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_YOSYS_SOC))
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.cellscorrect.txt,$(SRCS_YOSYS_SOC))
@@ -129,7 +129,7 @@ SRCS_VERILATOR := $(filter-out featuredescriptor.lua lk_wide_handshake_12_1_floa
 SRCS_VERILATOR := $(filter-out sift_float.lua sift_desc.lua sift_desc_2_1.lua, $(SRCS_VERILATOR))
 
 # too slow
-SRCS_VERILATOR := $(filter-out sift_hw_1080p.lua sift_desc_hw.lua, $(SRCS_VERILATOR))
+SRCS_VERILATOR := $(filter-out sift_hw_4_1080p.lua sift_desc_hw.lua, $(SRCS_VERILATOR))
 
 # uses Xilinx huge mult blocks - no support for prims
 SRCS_VERILATOR := $(filter-out lk_tr_handshake_6_3_axi.lua lk_tr_handshake_6_6_axi.lua  lk_tr_handshake_6_2_axi.lua  lk_tr_handshake_6_1_axi.lua lk_tr_handshake_4_4_axi.lua lk_tr_handshake_4_1_axi.lua lk_tr_handshake_12_12_axi.lua  lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua  lk_wide_handshake_6_4_axi.lua lk_wide_handshake_6_1_axi.lua lk_wide_handshake_4_4_axi.lua lk_wide_handshake_4_1_axi.lua, $(SRCS_VERILATOR))
@@ -295,7 +295,7 @@ COVERAGE = $(patsubst %.lua,$(BUILDDIR)/%.coverage.txt,$(COVERAGE_SRCS))
 SIG16 := convpadcrop_wide_handshake_8_8_1080p.lua convpadcrop_wide_handshake_8_4_1080p.lua convpadcrop_wide_handshake_8_2_1080p.lua conv_tr_handshake_8_1_1080p.lua conv_tr_handshake_8_2_1080p.lua conv_tr_handshake_8_4_1080p.lua conv_tr_handshake_8_8_1080p.lua
 SIG16 += stereo_wide_handshake_full.lua stereo_tr_full_4.lua stereo_tr_full_8.lua stereo_tr_full_16.lua stereo_wide_handshake_tiny.lua stereo_tr_tiny_1.lua stereo_tr_tiny_2.lua stereo_tr_tiny_4.lua
 SIG16 += lk_wide_handshake_12_1.lua lk_tr_handshake_12_1.lua lk_tr_handshake_12_2.lua lk_tr_handshake_12_3.lua lk_tr_handshake_12_4.lua lk_tr_handshake_12_6.lua lk_tr_handshake_12_12.lua sift_hw_1080p.lua
-SIG16 += sift_hw.lua sift_hw_1080p.lua sift_desc_hw.lua
+SIG16 += sift_hw_4.lua sift_hw_1.lua sift_hw_4_1080p.lua sift_desc_hw.lua
 
 # add some extra slow tests
 SIG16_EXT := $(SIG16)
