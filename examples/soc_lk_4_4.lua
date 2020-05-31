@@ -53,6 +53,13 @@ if V>1 then
 end
 
 local cycles = ((W+PadRadiusAligned*2)*(H+PadRadius*2+1))/V
+
+if CONVWIDTH==4 and V==(1/4) then
+--  cycles = cycles - 1
+elseif CONVWIDTH==12 and V==(3/12) then
+--  cycles = cycles - 1
+end
+
 print("CYCLES",cycles)
 
 local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
@@ -136,7 +143,7 @@ local CalcA = G.SchedulableFunction{"CalcA",
   types.tuple{ types.array2d( P.NumberType("ty"), P.SizeValue("sz")),
                types.array2d( P.NumberType("ty"), P.SizeValue("sz")) },
   function(inp)
-    print("CALCA",inp.type)
+    print("CALCA",inp.type,inp.rate)
     local inpFO = G.FanOut{2}(inp)
     
     local Fdx = inpFO[0][0]
@@ -178,7 +185,7 @@ local CalcB = G.SchedulableFunction{"CalcB",
            T.Array2d(P.NumberType("ty"),P.SizeValue("w")),
            T.Array2d(P.NumberType("ty"),P.SizeValue("w")) },
   function(i)                              
-    print("CALCB",i.type)
+    print("CALCB",i.type,i.rate)
     local iFO = G.FanOut{4}(i)
     local frame0 = iFO[0][0]
     local frame1 = iFO[1][1]
@@ -267,54 +274,68 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(T.Tuple{types.uint(8),types.
       local inpFO = G.FanOut{2}(inp)
       
       local frame0 = G.Map{G.Index{0}}(inpFO[0])
+      local frame0FO = G.FanOut{2}(frame0)
+      
       local frame1 = G.Map{G.Index{1}}(inpFO[1])
   
-      local lb0 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame0)
-      local lb0FO = G.FanOut{3}(lb0)
+      local lb0 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(G.FIFO{128}(frame0FO[0]))
+      --local lb0FO = G.FanOut{3}(lb0)
+
+      local lb0_fd = G.Stencil{{-2, 0, -2, 0}}(G.FIFO{128}(frame0FO[1]))
+      local lb0_fd_FO = G.FanOut{2}(lb0_fd)
+      local lb0_fd_0 = G.FIFO{128}(lb0_fd_FO[0])
+      local lb0_fd_1 = G.FIFO{128}(lb0_fd_FO[1])
+
       local lb1 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame1)
 
-      local fdx = G.Map{G.Slice{{CONVWIDTH-2, CONVWIDTH, CONVWIDTH-1, CONVWIDTH-1}}}(lb0FO[0])
+      local fdx = G.Map{G.Slice{{0,2,1,1}}}(lb0_fd_0)
+      fdx = G.FIFO{128}(fdx)
 
       fdx = G.Map{Dx}(fdx)
-
+      
       print("FDX",fdx.type,fdx.rate,fdx.scheduleConstraints)
       local fdx_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdx)
       print("FDX_ST",fdx_stencil.type,fdx_stencil.rate,fdx_stencil.scheduleConstraints)
       
-      local fdx_stencilFO = G.FanOut{2,R.Unoptimized}(fdx_stencil)
+      local fdx_stencilFO = G.FanOut{2}(fdx_stencil)
       
-      local fdy = G.Map{G.Slice{{CONVWIDTH-1, CONVWIDTH-1, CONVWIDTH-2, CONVWIDTH}}}(lb0FO[1])
-
+      local fdy = G.Map{G.Slice{{1,1,0,2}}}(lb0_fd_1)
+      fdy = G.FIFO{128}(fdy)
+      
       local fdy = G.Map{Dy}(fdy)
+      
       local fdy_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdy)
-      local fdy_stencilFO = G.FanOut{2,R.Unoptimized}(fdy_stencil)
+      local fdy_stencilFO = G.FanOut{2}(fdy_stencil)
       
       local Ainpinp = R.concat{ G.RVFIFO{128}(fdx_stencilFO[0]), G.RVFIFO{128}(fdy_stencilFO[0]) }
       print("AINPINP",Ainpinp.type,Ainpinp.rate)
-      local Ainp = G.Zip{R.Unoptimized}( Ainpinp  )
+      local Ainp = G.Zip( Ainpinp  )
       local A = G.Map{CalcA}(Ainp)
-
+      
       local Ainv = G.Map{Invert2x2}(A)
 
-      local f0_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb0FO[2])
+--      local lb0FO2 = lb0FO[2]
+--      print("F0SLICEINP",lb0FO2.type,lb0FO2.rate)
+      local f0_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb0)
+      print("F0SLICE",f0_slice.type,f0_slice.rate)
       f0_slice = G.Map{G.ToColumns}(f0_slice)
       print("F0",f0_slice.type,f0_slice.rate)
       local f1_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb1)
       f1_slice = G.Map{G.ToColumns}(f1_slice)
 
       print("F)",f0_slice.type,f0_slice.scheduleConstraints)
-      local binp = R.concat{G.RVFIFO{128,R.Unoptimized}(f0_slice), G.RVFIFO{128,R.Unoptimized}(f1_slice), G.RVFIFO{128,R.Unoptimized}(fdx_stencilFO[1]), G.RVFIFO{128,R.Unoptimized}(fdy_stencilFO[1])}
+      local binp = R.concat{G.RVFIFO{128}(f0_slice), G.RVFIFO{128}(f1_slice), G.RVFIFO{128}(fdx_stencilFO[1]), G.RVFIFO{128}(fdy_stencilFO[1])}
       print("BINP0",binp.type,binp.rate,binp.scheduleConstraints)
       local binp = G.FanIn(binp  )
       print("BINP",binp.type,binp.rate,binp.scheduleConstraints)
-      local binp = G.Zip{R.Unoptimized}( binp  )
+      local binp = G.Zip( binp  )
       print("BIN2P",binp.type,binp.rate)
       local b = G.Map{CalcB}(binp)
-
+      
       print("BDONE",b.type)
       local zipcc = R.concat{Ainv,b}
-      zipcc = G.FanIn{R.Unoptimized}(zipcc)
-      local sinp = G.Zip{R.Unoptimized}(zipcc)
+      zipcc = G.FanIn(zipcc)
+      local sinp = G.Zip(zipcc)
       local vectorField = G.Map{Solve}(sinp)
 
       local out = G.Map{Display}(vectorField)
