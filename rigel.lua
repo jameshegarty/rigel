@@ -435,6 +435,12 @@ function functionGeneratorFunctions:specializeToType( ty, rate )
     return nil
   end
 
+  for k,v in pairs(self.curriedArgs) do
+    assert(arglist[k]==nil)
+    arglist[k] = v
+  end
+  
+
   return self:complete( arglist )
 end
 
@@ -507,37 +513,42 @@ return fn
   local function reshape( fnType, targetType )
     err( fnType:isSchedule(), "reshape: input should be schedule type, but is: ",fnType )
     assert( targetType:isSchedule() )
-
+    
     local res
     
     if fnType:isArray() then
       -- if not an array, nothing we can do!
-      if fnType.V:eq(0,0) and targetType.V:eq(1,1) then
-        res = RM.liftHandshake( C.SerToWidthArrayToScalar( targetType:arrayOver(), targetType.size ))
-      elseif fnType.V:eq(1,1) and targetType.V:eq(0,0) then
-        res = G.Function{ "Promote_Seq_to_ParSeq_"..tostring(targetType:extractData()), types.rv(targetType:extractData()), SDF{1,1},
-          function(inp)
-            return C.broadcast( targetType:extractData(), 1, 1 )(inp)
-          end}
-
-        assert( darkroom.isPlainFunction(res) )
-        assert( res.inputType:extractData() == targetType:extractData() )
-        assert( res.outputType:extractData() == fnType:extractData() )
-
-        res.inputType = types.rv(targetType)
-        res.outputType = types.rv(fnType)
-        
-        res = RM.makeHandshake(res)
-      elseif fnType.V[1]*fnType.V[2] ~= targetType.V[1]*targetType.V[2] then
+      if fnType.V[1]*fnType.V[2] ~= targetType.V[1]*targetType.V[2] then
         -- we need to serialize
-        res = C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
-                                        fnType.V[1]*fnType.V[2],
-                                        targetType.size[1], targetType.size[2] )
 
+        local resStack = {}
+
+        if fnType:columnMajor() then
+          err( false,"NYI - convertInterface to a column major array converting:",targetType," to:",fnType," for:",fn,loc)
+        else
+          table.insert( resStack, C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
+                                        fnType.V[1]*fnType.V[2],
+                                        targetType.size[1], targetType.size[2] ) )
+        end
+        
+        if targetType:arrayOver()~=fnType:arrayOver() then
+          local FT, TT = fnType.over, resStack[#resStack].outputType:deInterface():arrayOver()
+          table.insert( resStack, RM.mapSeq(reshape( FT, TT ), fnType.size[1], fnType.size[2]) )
+        end
+
+        if #resStack==1 then
+          res = resStack[1]
+        else
+          res = C.linearPipeline(resStack,"ConvertInterface_Ser_stack")
+        end
       elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
         -- recurse
         if fnType.V:eq(0,0) then
-          res = RM.mapSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
+          if fnType.var then
+            res = RM.mapVarSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
+          else
+            res = RM.mapSeq( reshape( fnType.over, targetType.over ), fnType.size[1], fnType.size[2] )
+          end
         else
           print("NYI - ", targetType, " to ", fnType )
           assert(false)
@@ -583,7 +594,7 @@ return fn
 
     if res~=nil then
       err( res.inputType==types.RV(targetType), "convertInterface: conversion function input type should have been: ",types.RV(targetType)," but was: ",res.inputType )
-      err( res.outputType==types.RV(fnType), "convertInterface: conversion function output type should have been: ",types.RV(fnType)," but was: ",res.outputType )
+      err( res.outputType==types.RV(fnType), "convertInterface: conversion function output type should have been: ",types.RV(fnType)," but was: ",res.outputType,". input type should be: ",types.RV(targetType),", and was correct." )
     else
       err( targetType==fnType, "convertInterface: conversion function returned noop, but should have been conversion from ",targetType," to ",fnType )
     end
@@ -2806,6 +2817,11 @@ function darkroom.selectStream( name, input, i, j, X )
   err( darkroom.isIR(input), "input must be IR")
   err(X==nil,"selectStream: too many arguments")
 
+  if input.scheduleConstraints~=nil and input.scheduleConstraints.RV then
+    -- early out hack: if schedule pass is done (RV is known, just skip this)
+    return input
+  end
+  
   r.i=i
   r.j=j
   r.loc = getloc()

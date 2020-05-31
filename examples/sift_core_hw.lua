@@ -13,9 +13,9 @@ local G = require "generators.core"
 local siftTerra
 if terralib~=nil then siftTerra = require("sift_core_hw_terra") end
 
-GAUSS_SIGMA = 5 --5
+local GAUSS_SIGMA = 5 --5
 
-sift = {}
+local sift = {}
 
 local Clamp = G.Function{"Clampint8",types.rv(types.FloatRec32),
   function(i)
@@ -49,7 +49,7 @@ sift.lowerPair = J.memoize(function( FROM, TO, scale, X )
 end)
   
 ----------------
-local function calcGaussian(sig,GAUSS_WIDTH_inp,GAUSS_HEIGHT_inp)
+function sift.calcGaussian(sig,GAUSS_WIDTH_inp,GAUSS_HEIGHT_inp)
   assert(type(GAUSS_WIDTH_inp)=="number")
 
   local GAUSS_WIDTH = GAUSS_WIDTH_inp/2
@@ -91,9 +91,10 @@ local function calcGaussian(sig,GAUSS_WIDTH_inp,GAUSS_HEIGHT_inp)
 
   return GG
 end
+local calcGaussian = sift.calcGaussian
 
 -- T: tile size
-local function tileGaussian(G,W,H,T)
+function sift.tileGaussian(G,W,H,T)
   assert(type(G)=="table")
   assert(type(W)=="number")
   assert(type(T)=="number")
@@ -111,6 +112,7 @@ local function tileGaussian(G,W,H,T)
 
   return GG
 end
+local tileGaussian = sift.tileGaussian
 ----------------
 --[=[
 local function siftBucket(dxdyType,magtype)
@@ -454,7 +456,7 @@ function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
 end
 
 ----------------
-function posSub(x,y)
+local function posSub(x,y)
   local A = types.uint(16)
   local ITYPE = types.tuple {A,A}
 
@@ -643,7 +645,7 @@ function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
   out = G.Fmap{C.bitcast(types.array2d(types.Float32,2),types.Array2d(types.uint(8),8))}(out)
   
   table.insert( statements, 1, out )
-  local fn = RM.lambda( "harris", inpraw, R.statements(statements), fifos )
+  local fn = RM.lambda( "SiftTop", inpraw, R.statements(statements), fifos )
 
   return fn, descType
 end

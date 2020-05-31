@@ -15,7 +15,7 @@ GRAD_TYPE = types.int(8)
 
 local sift = require "sift_core_hw"
 
-function doit(full)
+function doit( full, TILES )
   local W = 256
   local H = 256
 
@@ -30,15 +30,18 @@ function doit(full)
   local FILTER_RATE = {OUTPUT_COUNT,W*H}
 
   local ITYPE = types.array2d(types.uint(8),T)
-  local siftFn, siftType = sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, 4, 4 )
+  local siftFn, siftType = sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES, TILES )
   local OTYPE = types.array2d(siftType,2)
 
-  local outfile = "sift_hw"..J.sel(full,"_1080p","")
-  harness{ outFile=outfile, fn=siftFn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={130*4,OUTPUT_COUNT}, outP=8 }
+  local outfile = "sift_hw_"..tostring(TILES)..J.sel(full,"_1080p","")
+  harness{ outFile=outfile, fn=siftFn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={(TILES*TILES*8+2)*4,OUTPUT_COUNT}, outP=8 }
 
-  io.output("out/"..outfile..".design.txt"); io.write("SIFT "..J.sel(full,"1080p","")); io.close()
+  io.output("out/"..outfile..".design.txt"); io.write("SIFT "..TILES..J.sel(full," 1080p","")); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write( 0.5 ); io.close()
   io.output("out/"..outfile..".dataset.txt"); io.write("SIG16_zu9"); io.close()
 end
 
-doit(string.find(arg[0],"1080p")~=nil)
+local first,flen = string.find(arg[0],"%d+")
+local TILES = tonumber(string.sub(arg[0],first,flen))
+
+doit( string.find(arg[0],"1080p")~=nil, TILES )

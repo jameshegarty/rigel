@@ -189,6 +189,28 @@ C.flatten2 = memoize(function(T,N)
   return docast
 end)
 
+-- flatten nested arrays: take A[V;N}{M} to A[V;N*M}
+-- outer array must be fully sequential
+C.flatten = memoize(function( innerT, innerSize, innerV, outerSize, X )
+  assert( types.isType(innerT ) )
+  assert( R.isSize(innerSize))
+  assert( R.isSize(innerV))
+  assert( R.isSize(outerSize))
+  assert( X==nil )
+  
+  local G = require "generators.core"
+    
+  local res = G.Function{"Flatten_"..tostring(innerT).."_w"..tostring(innerSize[1]).."_h"..tostring(innerSize[2]).."_VW"..tostring(innerV[1]).."_VH"..tostring(innerV[2]).."_W"..tostring(outerSize[1]).."_H"..tostring(outerSize[2]), types.RV(types.Array2d( types.Array2d(innerT,innerSize,innerV),outerSize,0,0)),SDF{1,1},function(inp) return inp end}
+
+  assert(R.isPlainFunction(res))
+  local W,H = outerSize[1]*innerSize[1], outerSize[2]*innerSize[2]
+  local newType = types.RV(types.Array2d( innerT, W, H, innerV ))
+  assert(res.outputType:lower()==newType:lower())
+  res.outputType = newType
+
+  return res
+end)
+
 -- converts {A,A,A...} to A[W,H] (input should be tuple of W*H A's)
 C.tupleToArray = memoize(function(A,W,H,X)
   err(types.isType(A),"tupleToArray: A should be type")
@@ -214,7 +236,8 @@ C.ArrayToTuple = memoize(function(T,W,H,X)
   if H==nil then H=1 end
   err(type(H)=="number","ArrayToTuple: H must be number")
   err( X==nil,"ArrayToTuple: too many arguments")
-
+  err( W*H>0, "ArrayToTuple: W*H must be >0, but is W:",W," H:",H)
+  
   local G = require "generators.core"
   return G.Function{"ArrayToTuple_"..tostring(T).."_W"..tostring(W).."_H"..tostring(H), types.rv(types.Par(types.array2d(T,W,H))),
     function(inp)
@@ -447,6 +470,36 @@ C.sub = memoize(function( A, B, outputType, async )
     "C.sub")
 
   return partial
+end)
+
+C.subConst = memoize(function( ty, value_orig, async, outputType )
+  err(types.isType(ty),"subConst: first argument should be type, but is: ",ty)
+
+  if async==nil then async=false end
+  assert( type(async)=="boolean" )
+
+  if outputType==nil then outputType = ty end
+  assert( types.isType(outputType) )
+
+  assert( ty.exp==outputType.exp )
+
+  local value = Uniform(value_orig)
+  err( value:isNumber(),"subConst expected numeric input")
+  value = value * math.pow(2,math.max(-ty.exp,0))  -- rescale by exp, to be in right scale
+
+  print("VALUE",value_orig,value)
+  
+  local instanceMap = value:getInstances()
+  
+  local plus100mod = RM.lift( J.sanitize("sub_"..tostring(ty).."_"..tostring(value)), ty, outputType , J.sel(async==true,0,1) ,
+    function(plus100inp)
+      local res = S.cast(plus100inp,outputType) - S.cast(value:toSystolic(ty),outputType)
+      if async==true then res = res:disablePipelining() end
+      return res
+    end,
+    function() return CT.subConsttfn( ty, value, outputType ) end, nil,nil, instanceMap )
+
+  return plus100mod
 end)
 
 -----------------------------
@@ -3525,14 +3578,14 @@ C.SqrtF = J.memoize(function( exp, sig, doDiv, X )
 
   if doDiv==nil then doDiv = false end
   
-  --local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
+  local HardFloat_localFuncs = C.VerilogFile("generators/hardfloat/source/HardFloat_localFuncs.vi")
   local HardFloat_consts = C.VerilogFile("generators/hardfloat/source/HardFloat_consts.vi")
   --local HardFloat_primitives = C.VerilogFile("generators/hardfloat/source/HardFloat_primitives.v")
   local HardFloat_specialize = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.vi")
   local HardFloat_specializev = C.VerilogFile("generators/hardfloat/source/8086-SSE/HardFloat_specialize.v", HardFloat_consts)
   --local HardFloat_rawFN = C.VerilogFile("generators/hardfloat/source/HardFloat_rawFN.v", HardFloat_specialize, HardFloat_consts )
   local isSigNaNRecFN = C.VerilogFile("generators/hardfloat/source/isSigNaNRecFN.v", HardFloat_specialize)
-  local divSqrtRecFN_small = C.VerilogFile("generators/hardfloat/source/divSqrtRecFN_small.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN )
+  local divSqrtRecFN_small = C.VerilogFile("generators/hardfloat/source/divSqrtRecFN_small.v", HardFloat_consts, HardFloat_specialize, HardFloat_specializev, isSigNaNRecFN, HardFloat_localFuncs )
 
   local inst = {}
   local sqrt = divSqrtRecFN_small:instantiate("sqrt")
@@ -3733,6 +3786,43 @@ C.ApplyTo = J.memoize(function( ty, fn, stream )
         end
         return R.concat(out)
     end}
+end)
+
+C.Tile = J.memoize(function( A, W, H, TileW, TileH, X )
+  assert(type(W)=="number")
+  assert(type(H)=="number")
+  assert(type(TileW)=="number")
+  assert(type(TileH)=="number")
+  assert(W%TileW==0)
+  assert(H%TileH==0)
+
+  local ITYPE = types.array2d(A,W,H)
+  local inp = R.input(types.rv(types.Par(ITYPE)))
+
+  local tab = {}
+  for y=0,H-1 do
+    tab[y] = {}
+    for x=0,W-1 do
+      tab[y][x] = R.apply("idx_"..y.."_"..x, C.index( ITYPE, x, y ), inp)
+    end
+  end
+
+  local outarr = {}
+  for ty=0,(H/TileH)-1 do
+    for tx=0,(W/TileW)-1 do
+      local out = {}
+      for y=0,TileH-1 do
+        for x=0,TileW-1 do
+          table.insert(out, tab[ty*TileH+y][tx*TileW+x])
+        end
+      end
+      table.insert(outarr, R.concatArray2d("AR_"..ty.."_"..tx,out,TileW,TileH) )
+    end
+  end
+
+  local fin = R.concatArray2d("fin",outarr,(W/TileW),(H/TileH))
+
+  return RM.lambda("tile", inp, fin )
 end)
 
 return C

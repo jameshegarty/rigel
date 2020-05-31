@@ -21,7 +21,6 @@ generators.Broadcast = R.FunctionGenerator("core.Broadcast",{"type","rate","size
 function(args)
   local V = J.canonicalV( args.rate, args.size )
 
-  --print("BROADCAST",args.type,args.rate,args.size,V)
   local inputType = args.type:deSchedule()
   
   if V==args.size then
@@ -33,11 +32,6 @@ function(args)
     assert( type(seq)=="number")
     assert( type(V[2])=="number" and V[2]==1 ) -- NYI
 
-    print("BROADCASTSEQ",args.type,args.rate,args.size)
-    print("BROADCASTSEQ",V,seq)
-    -- C.broadcast = memoize(function( A, W, H, X )
-    
-    --local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.upsampleXSeq(inputType,V[1],seq),RM.makeHandshake(C.broadcast(inputType,V[1],1)))
     local res = C.compose(J.verilogSanitize("Generators_Broadcast_Parseq_"..tostring(args.size)),RM.makeHandshake(C.broadcast(inputType,V[1],1)), RM.upsampleXSeq(inputType,0,seq) )
     
     -- hackity hack
@@ -76,18 +70,16 @@ end)
 -- Hack! clamp a variable sized array to a particular size
 generators.ClampToSize = R.FunctionGenerator("core.ClampToSize",{"size"},{},
 function(args)
-  local res = generators.Function{"ClampToSize_W"..tostring(args.size[1]).."_H"..tostring(args.size[2]),T.RV(T.VarSeq(T.Par(args.T),args.InSize[1],args.InSize[2])),SDF{1,1},function(inp) return inp end}
+  local res = generators.Function{"ClampToSize_W"..tostring(args.size[1]).."_H"..tostring(args.size[2]), T.RV(T.Array2d(args.S,args.InSize[1],args.InSize[2],0,0,true)),SDF{1,1},function(inp) return inp end}
 
   assert(R.isPlainFunction(res))
-  local newType = T.RV(T.Seq(T.Par(args.T),args.size[1],args.size[2]))
+  local newType = T.RV(T.Array2d(args.S,args.size[1],args.size[2],0,0))
   assert(res.outputType:lower()==newType:lower())
   res.outputType = newType
   
   return res
 end,
-T.VarSeq(T.Par(P.DataType("T")),P.SizeValue("InSize")) )
-
-
+T.Array2d( P.ScheduleType("S"),P.SizeValue("InSize"),R.Size(0,0),true) )
 
 -- bits to unsigned
 generators.BtoU = R.FunctionGenerator("core.BtoU",{},{},
@@ -204,17 +196,38 @@ end)
 
 generators.ValueToTrigger = R.FunctionGenerator("core.ValueToTrigger",{"type","rate"},{},
 function(args)
+
   if args.type:deInterface():isData() then
     return C.valueToTrigger(args.type:deInterface())
   elseif args.type:deInterface():isArray() then
     local ty = args.type:deInterface()
     -- a non-parallel array
-    J.err( ty.size:eq(ty.V) or ty.V:eq(0,0) or ty.V[2]==1 ,"ValueToTrigger: NYI, vector can only be 1D, but is: ",ty.V ) -- NYI
-    print("ITY",args.type)
-    local f = RM.liftHandshake(RM.liftDecimate(RM.cropSeq( ty:arrayOver(), ty.size[1], ty.size[2], ty.V[1], 0, ty.size[1]-math.max(ty.V[1],1), 0, ty.size[2]-math.max(ty.V[2],1), true )))
+--    J.err( ty.size:eq(ty.V) or ty.V:eq(0,0) or ty.V[2]==1 ,"ValueToTrigger: NYI, vector can only be 1D, but is: ",ty.V ) -- NYI
 
-    local g = generators.Fmap{C.valueToTrigger( f.outputType:deSchedule() )}
-    return C.compose(J.verilogSanitize("ValueToTriggerParseq"),g,f)
+    local pipe={}
+    table.insert( pipe, generators.Map{generators.ValueToTrigger}:complete({type=T.RV(args.type:deInterface()),rate=args.rate}) )
+    assert( R.isPlainFunction(pipe[#pipe]) )
+
+
+    if ty.V[1]~=0 then
+      -- we don't care that we are passed a tile of triggers - we just want to get the first trigger
+      table.insert( pipe, RM.makeHandshake(RM.flatmap(C.valueToTrigger( T.Array2d(T.Trigger,ty.V[1],ty.V[2]) ), ty.V[1], ty.V[2], ty.size[1], ty.size[2], 0, 0, ty.size[1]/ty.V[1], ty.size[2]/ty.V[2])) )
+    end
+
+    local crpX, crpY
+    if ty.V[1]~=0 then
+      crpX, crpY = (ty.size[1]/ty.V[1])-1, (ty.size[2]/ty.V[2])-1
+    else
+      crpX, crpY = ty.size[1]-1, ty.size[2]-1
+    end
+    
+    table.insert( pipe, RM.liftHandshake(RM.liftDecimate(RM.cropSeq( T.Trigger, ty.size[1]/math.max(ty.V[1],1), ty.size[2]/math.max(ty.V[2],1), 0, 0, crpX, 0, crpY, true, true )) ) )
+
+--    if ty.V[1]~=0 then
+--      table.insert( pipe, RM.makeHandshake(C.valueToTrigger( T.Array2d(T.Trigger,ty.V[1])) ) )
+--    end
+    
+    return C.linearPipeline(pipe,J.verilogSanitize("ValueToTriggerParseq_"..tostring(args.type:deInterface())))
   else
     J.err(false,"NYI - ValueToTrigger on input type: ",args.type)
   end
@@ -256,21 +269,40 @@ end)
 
 generators.FanIn = R.FunctionGenerator("core.FanIn",{"type","rate"},{"bool"},
 function(args)
-  if args.type:isrv() then
-    -- trivial case: do nothing!
-    return C.identity( args.type:deInterface() )
-  else
-    if args.type:isTuple() then
-      local fn =  RM.packTuple( args.type.list, args.bool )
-      return fn
-    elseif args.type:isArray() then
-      return RM.packTuple( args.type, args.bool, args.type.size )
-    else
-      J.err(false, "FanIn: expected handshaked tuple or array input, but is: "..tostring(args.type))
+
+  local ty, rate = args.type:optimize( args.rate )
+
+  -- every stream going into packtuple needs to have the same rate! (rates have to match)
+  -- So: we need to find the lowest rate from the optimized type, and make sure everything matches this
+  -- (we can always serialize streams to DECREASE rate, but we can't necessarily increase rate)
+
+  local lowestRate
+  for k,v in ipairs(rate) do
+    if lowestRate==nil or Uniform(v[1]):toNumber()/Uniform(v[2]):toNumber() < Uniform(lowestRate[1]):toNumber()/Uniform(lowestRate[2]):toNumber() then
+      lowestRate = v
     end
   end
-end)
 
+  local targetRate = args.rate*SDF{lowestRate[2],lowestRate[1]}
+
+  ty, rate = args.type:optimize( targetRate )
+  
+  if ty:isrv() then
+    -- trivial case: do nothing!
+    return C.identity( ty:deInterface() )
+  else
+    if ty:isTuple() then
+      local fn =  RM.packTuple( ty.list, args.bool )
+      return fn
+    elseif ty:isArray() then
+      return RM.packTuple( ty, args.bool, ty.size )
+    else
+      J.err(false, "FanIn: expected handshaked tuple or array input, but is: "..tostring(ty))
+    end
+  end
+end,nil,false)
+
+-- bool: nostall
 generators.FIFO = R.FunctionGenerator("core.FIFO",{"number","type"},{"bool","string"},
 function(args)
   return C.fifo( args.type:deInterface(), args.number, args.bool, nil, nil, nil, args.string )
@@ -288,7 +320,6 @@ end )
 
 generators.NE = R.FunctionGenerator("core.NE",{},{"async","number"},
 function(args)
-  local res = {}
   if args.number~=nil then
     -- add a const (unary op)
     return R.FunctionGenerator( "core.NE", {}, {}, function(a) return C.NEConst(a.T,args.number) end, T.rv(T.Par(P.DataType("T"))), T.rv(T.Par(types.bool()) ) )
@@ -299,8 +330,6 @@ end)
 
 generators.Add = R.FunctionGenerator("core.Add",{"type","rate"},{"async","number"},
 function(args)
-  
-  local res = {}
   if args.number~=nil then
     -- add a const (unary op)
     return R.FunctionGenerator( "core.AddConst", {}, {"async","number"}, function(a) return C.plusConst( a.T, args.number ) end, P.NumberType("T") ):complete(args)
@@ -347,11 +376,18 @@ generators.Neg = R.FunctionGenerator("core.Neg", {}, {"async"},
 function(a) return C.neg( a.T.precision, a.T.exp ) end,
 P.IntType("T") )
 
-generators.Sub = R.FunctionGenerator("core.Sub",{},{"async"},
+generators.Sub = R.FunctionGenerator("core.Sub",{"type","rate"},{"async","number"},
 function(args)
-  return C.sub( args.T, args.T, args.T, args.async )
-end,
-T.tuple{P.NumberType("T"),P.NumberType("T")} )
+  if args.number~=nil then
+    -- add a const (unary op)
+    return R.FunctionGenerator( "core.SubConst", {}, {"async","number"}, function(a) return C.subConst( a.T, args.number ) end, P.NumberType("T") ):complete(args)
+  else
+    return R.FunctionGenerator("core.SubNonconst", {}, {"async","number"}, function(a) return C.sub( a.T, a.T, a.T, args.async ) end, T.tuple{P.NumberType("T"),P.NumberType("T")} ):complete(args)
+  end
+
+--  return C.sub( args.T, args.T, args.T, args.async )
+end) --,
+--T.tuple{P.NumberType("T"),P.NumberType("T")} )
 
 -- extend out bitwidth
 generators.SubE = R.FunctionGenerator("core.SubE",{},{"async"},
@@ -457,7 +493,7 @@ local function zipfn(asArray)
 
     if args.V:eq(0,0) then
       assert(asArray==false) -- NYI
-      return RM.ZipSeq( false, typelist, args.size[1], args.size[2] )
+      return RM.ZipSeq( false, args.size[1], args.size[2], unpack(typelist) )
     else
       return RM.SoAtoAoS( args.V[1], args.V[2], typelist, asArray, args.size[1], args.size[2] )
     end
@@ -492,27 +528,22 @@ function(args)
   return mod
 end)
 
-generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate"},{},
+generators.Stencil = R.FunctionGenerator("core.Stencil",{"bounds","rate","type"},{},
 function(a)
-  J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
+  J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Stencil: NYI, vector can only be 1D, but is: ",a.V," inputType:",a.type ) -- NYI
 
   local STW = a.bounds[2]-a.bounds[1]+1
   local V = J.canonicalV( a.rate, R.Size(STW,1) )
-  assert(V[2]==1)
-
-  print("STENCIL",STW,a.rate,V)
+  J.err( V[2]==1 or V[2]==0, "Stencil NYI: input array with tiled vector. inputType:",a.type)
   
-  if STW~=V[1]*V[2] then
+  if STW~=V[1]*V[2] and V[2]==1 then
     assert(a.V:eq(0,0))
-    assert( V[2]==1 )
-    --local outT = math.floor(Uniform(a.rate[1][2]):toNumber()/Uniform(a.rate[1][1]):toNumber())
-    --print("STENCIL LN OUTT",outT,a.rate)
     return C.stencilLinebufferPartial( a.T, a.size[1], a.size[2], STW/V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
   else
     return C.stencilLinebuffer( a.T, a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], true )
   end
 end,
-types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("size")) )
+types.array2d( P.DataType("T"),P.SizeValue("size"),P.SizeValue("V")) )
 
 -- make a stencil with its interior filled with stencils
 -- "bounds" is for the outer stencil, "size" is for the inner stencil.
@@ -584,7 +615,6 @@ T.array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")) )
 generators.Downsample = R.FunctionGenerator("core.Downsample",{"size"},{},
 function(a)
   J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Downsample: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
-  print("DOWNSAMPLE",a.T,a.V,a.imsize)
   return C.downsampleSeq( a.T, a.imsize[1], a.imsize[2], a.V[1], a.size[1], a.size[2], true )
 end,
 T.ParSeq(T.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("imsize")) )
@@ -618,30 +648,24 @@ function(args)
 end,
 T.Trigger )
 
-
 -- unlike Pos above, this expects a trigger for every pixel
-generators.PosCounter = R.FunctionGenerator("core.PosCounter",{},{},
+-- this means we don't have to explicitly give the image dimensions
+-- bool: if true, return as tuple instead of array
+generators.PosCounter = R.FunctionGenerator("core.PosCounter",{},{"bool"},
 function(args)
-  local V = 0
-  if args.opt==0 then assert(args.V[2]==1);V=args.V[1] end
-  return RM.posSeq(args.size[1],args.size[2],V,nil,true,true)
+  J.err(args.V[2]==1 or args.V[2]==0,"PosCounter: V")
+  print("POSCOUNTER",args.bool)
+  return RM.posSeq(args.size[1],args.size[2],args.V[1],nil,true,args.bool~=true)
 end,
-P.SumType("opt",{types.rv(T.ParSeq(T.Array2d(T.Trigger,P.SizeValue("V")),P.SizeValue("size"))),
-                 types.rv(T.Seq(T.Par(T.Trigger),P.SizeValue("size")))}) )
+T.Array2d( T.Trigger, P.SizeValue("size"), P.SizeValue("V") ) )
 
 -- this takes an Seq of arrays, and flattens it into a parseq
-generators.Flatten = R.FunctionGenerator("core.Flatten",{},{},
+generators.Flatten = R.FunctionGenerator("core.Flatten",{"type","rate"},{},
 function(args)
-  local res = generators.Function{"Flatten_VW"..tostring(args.inner[1]).."_VH"..tostring(args.inner[2]).."_W"..tostring(args.outer[1]).."_H"..tostring(args.outer[2]),T.RV(T.Seq(T.Par(T.Array2d(args.D,args.inner)),args.outer)),SDF{1,1},function(inp) return inp end}
-
-  assert(R.isPlainFunction(res))
-  local newType = T.RV(T.ParSeq(T.Array2d(args.D,args.inner),args.outer[1]*args.inner[1],args.outer[2]*args.inner[2]))
-  assert(res.outputType:lower()==newType:lower())
-  res.outputType = newType
-
-  return res
+  J.err( args.outerV:eq(0,0), "Flatten NYI - outer array must be fully sequential, but outer V was:",args.outerV," and input type was: ", args.type)
+  return C.flatten( args.innerT, args.innerSize, args.innerV, args.outerSize )
 end,
-T.Seq(T.Par(T.Array2d(P.DataType("D"),P.SizeValue("inner"))),P.SizeValue("outer"))  )
+T.Array2d( T.Array2d(P.DataType("innerT"),P.SizeValue("innerSize"),P.SizeValue("innerV")), P.SizeValue("outerSize"), P.SizeValue("outerV") )  )
 
 generators.Fmap = R.FunctionGenerator("core.Fmap",{"rigelFunction","type","rate"},{},
 function(args)
@@ -654,7 +678,55 @@ function(args)
 end,nil,false)
 
 -- bool: allow stateful
-generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool"},
+generators.Map = R.FunctionGenerator("core.Map",{"rigelFunction","type","rate"},{"bool","unoptimized"},
+function(args)
+
+  J.err( args.type:deInterface():isArray(),"Error, Map must operate on an array! but input type was: ",args.type)
+
+  -- NOTE: we send the fn we are mapping over the original (non-optimized) type, b/c it may not
+  -- want to optimize the type!
+  local S = args.type:deInterface():arrayOver()
+
+  --print( "MAP:SPECIALIZE TO TYPE", args.rigelFunction.name,types.rv(S))
+  local fn = args.rigelFunction:specializeToType( types.rv(S), args.rate )
+  J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
+
+  if fn.inputType:isrv()==false or fn.outputType:isrv()==false then
+    -- NYI - we basically only support rv or RV, so if it can't be rv, ask for RV
+    fn = args.rigelFunction:specializeToType( types.RV(S), args.rate )
+    J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
+  end
+
+  local ty, rate
+  if args.unoptimized==true then
+    ty,rate = args.type,args.rate
+  else
+     ty,rate = args.type:optimize(args.rate)
+  end
+  local S, size, V, var = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V, ty:deInterface().var
+
+  if var then
+    if V:eq(R.Size(0,0)) then
+      return RM.mapVarSeq(fn, size[1], size[2] )
+    else
+      assert(false)
+    end
+  else
+    if size==V then
+      return RM.map( fn, size[1], size[2], args.bool )
+    elseif V:eq(R.Size(0,0)) then
+      return RM.mapSeq( fn, size[1], size[2] )
+    else -- parseq
+      return RM.mapParSeq( fn, V[1], V[2], size[1], size[2], args.bool )
+    end
+  end
+  
+  assert(false)
+end,
+nil,false)
+
+-- This only works if the array size doesn't change!!
+generators.Flatmap = R.FunctionGenerator("core.Flatmap",{"rigelFunction","type","rate"},{},
 function(args)
 
   local ty,rate
@@ -665,42 +737,23 @@ function(args)
     ty, rate = args.type:optimize(args.rate)
   end
 
-  J.err( ty:deInterface():isArray(),"Error, Map must operate on an array! but input type was: ",args.type)
+  J.err( ty:deInterface():isArray(),"Error, Flatmap must operate on an array! but input type was: ",args.type)
   local S, size, V = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V
-  
-  --print("MAP:SPECIALIZE TO TYPE",args.rigelFunction.name,types.rv(S))
+
   local fn = args.rigelFunction:specializeToType( types.rv(S), rate )
-  J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
+  J.err( fn~=nil, "Flatmap: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
 
-  if fn.inputType:isrv()==false or fn.outputType:isrv()==false then
-    -- NYI - we basically only support rv or RV, so if it can't be rv, ask for RV
-    fn = args.rigelFunction:specializeToType( types.RV(S), rate )
-    J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
-  end
-  
-  if size==V then
-    return RM.map( fn, size[1], size[2], args.bool )
-  elseif V:eq(R.Size(0,0)) then
-    return RM.mapSeq( fn, size[1], size[2] )
-  else -- parseq
-    return RM.mapParSeq( fn, V[1], V[2], size[1], size[2], args.bool )
-  end
-
-  assert(false)
+  return RM.flatmap( fn, args.V[1], args.V[2], args.size[1], args.size[2], args.V[1], args.V[2], args.size[1], args.size[2] )
 end,
-nil,false)
---T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V"))
-
--- This only works if the array size doesn't change!!
-generators.Flatmap = R.FunctionGenerator("core.Flatmap",{"rigelFunction","type","rate"},{},
-function(args)
-  return RM.flatmap( args.rigelFunction, args.V[1], args.V[2], args.size[1], args.size[2], args.V[1], args.V[2], args.size[1], args.size[2] )
-end,
-T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")) )
+T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")), false )
 
 generators.Reduce = R.FunctionGenerator("core.Reduce",{"rigelFunction"},{},
 function(args)
-  local fn = args.rigelFunction:specializeToType( T.rv(types.Tuple{args.T,args.T}), SDF{1,1} )
+
+  -- we don't support non-parallel reduction functions: so just coerce it into a parallel type
+  local tyOver = args.S:deSchedule()
+  
+  local fn = args.rigelFunction:specializeToType( T.rv(types.Tuple{tyOver,tyOver}), SDF{1,1} )
 
   J.err( fn.inputType:isrv() and fn.outputType:isrv(),"Reduce: error, reduce can only operator over rv functions, but fn had type: ",fn.inputType,"->",fn.outputType)
   
@@ -712,7 +765,7 @@ function(args)
     return RM.reduce( fn, args.size[1],args.size[2])
   end
 end,
-T.Array2d(P.DataType("T"),P.SizeValue("size"),P.SizeValue("V")))
+T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")))
 
 generators.ReduceSeq = R.FunctionGenerator("core.ReduceSeq",{"type","rigelFunction","number","rate"},{},
 function(args)
@@ -752,7 +805,6 @@ function(args)
       -- special case of taking [1,1;w,h} to {w,h} (not really a changerate)
       return SerToWidthArrayToScalar( a.T, a.size )
     else
-      print("CR1",a.V,a.size)
       return RM.changeRate( a.T, a.V[2], a.V[1], args.number, true, a.size[1], a.size[2] )
     end
   else
@@ -766,9 +818,6 @@ end)
 -- explicit reshape to column-wise
 generators.ToColumns = R.FunctionGenerator("core.ToColumns",{"type","rate"},{},
 function(args)
-  --J.err( args.size[1]%args.number==0,"G.SerSeq: number of cycles must divide array size. size:",args.size," cycles:",args.number)
-  --local outW = math.floor(args.size[1]*(Uniform(args.rate[1][1]):toNumber()/Uniform(args.rate[1][2]):toNumber()))
-  print("ToColumns",args.rate,args.size,args.type)
   local V = J.canonicalV( args.rate, args.size, true)
   
   if args.size[1] == V[1] then
@@ -873,7 +922,7 @@ end,nil,false)
 
 -- string is name
 -- bool: force rv no matter what
-generators.SchedulableFunction = R.FunctionGenerator("core.SchedulableFunction",{"luaFunction","type","type1"},{"string","rate","bool"},
+generators.SchedulableFunction = R.FunctionGenerator("core.SchedulableFunction",{"luaFunction","type","type1"},{"string","rate","bool","unoptimized"},
 function(args)
   --print("Schecule SchedulableFunction ",args.string,args.type,args.type1)
   
@@ -887,9 +936,13 @@ function(args)
 
   local input
 
-  local optType, optRate = args.type:optimize( args.rate )
+  local optType, optRate
 
-  print("Schedulable",args.type,args.rate,optType,optRate)
+  if args.unoptimized~=true then
+    optType, optRate = args.type:optimize( args.rate )
+  else
+    optType, optRate = args.type, args.rate
+  end
   
   local RVMode
 
@@ -966,12 +1019,29 @@ end,
 types.array2d( P.ScheduleType("T"), P.SizeValue("size"), P.SizeValue("V") ) )
 
 -- change dims of array
-generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size"},{},
+generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size","type"},{},
 function(args)
   J.err( args.size[1]*args.size[2]==args.insize[1]*args.insize[2], "ReshapeArray: total number of items must not change. Input size: ",args.insize," requested reshape: ",args.size )
-  return C.cast( T.Array2d(args.T,args.insize), T.Array2d(args.T,args.size) )
+
+  if args.V:eq(0,0) then
+    local tmp = C.identity( args.type:deInterface(), "ReshapeArray_"..tostring(args.type:deInterface()) )
+
+    local IT = types.rv(args.type:deInterface())
+
+    assert( tmp.inputType:lower()==IT:lower() )
+    tmp.inputType = IT
+    local OT = types.rv( types.Array2d(args.T, args.size, 0, 0) )
+    assert( tmp.outputType:lower()==OT:lower() )
+    tmp.outputType = OT
+    
+    return tmp
+  else
+    return C.cast( T.Array2d(args.T,args.insize), T.Array2d(args.T,args.size) )
+  end
 end,
-types.array2d(P.DataType("T"),P.SizeValue("insize")) )
+types.array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V")) )
+
+generators.Reshape = generators.ReshapeArray
 
 generators.Sort = R.FunctionGenerator("core.Sort",{"rigelFunction"},{},
 function(args)
@@ -982,7 +1052,7 @@ types.array2d(P.DataType("T"),P.SizeValue("size")) )
 
 generators.Identity = R.FunctionGenerator("core.Identity",{},{},
 function(args) return C.identity(args.T) end,
-P.DataType("T") )
+P.ScheduleType("T") )
 
 generators.Sel = R.FunctionGenerator("core.Sel",{},{},
 function(args)
@@ -1017,12 +1087,14 @@ function(a)
 end,
 P.TupleType("T") )
 
-generators.ArrayToTuple = R.FunctionGenerator("core.ArrayToTuple",{},{},
+generators.ArrayToTuple = R.FunctionGenerator("core.ArrayToTuple",{"type"},{},
 function(a)
+  J.err( a.V==a.size,"ArrayToTuple: NYI - non fully parallel array: ",a.type)
+  
   local C = require "generators.examplescommon"
   return C.ArrayToTuple( a.D, a.size[1], a.size[2] )
 end,
-T.Array2d(P.DataType("D"),P.SizeValue("size")) )
+T.Array2d(P.DataType("D"),P.SizeValue("size"),P.SizeValue("V")) )
 
 generators.Filter = R.FunctionGenerator("core.Filter",{"size"},{},
 function(args)
@@ -1048,6 +1120,7 @@ generators.Const = R.FunctionGenerator("core.Const",{"type1"},{"number","value"}
 function(args)
   local value = args.value
   if args.number~=nil then value = args.number end
+  args.type1:checkLuaValue(value)
   return C.triggerToConstant(args.type1, value )
 end,
 T.Trigger )
@@ -1251,6 +1324,16 @@ end)
 generators.NegF = R.FunctionGenerator("core.NegF",{"type","rate"},{},
 function(args) return C.NegF() end,
 T.FloatRec32 )
+
+-- size: size of each tile (NOT the number of tiles)
+generators.Tile = R.FunctionGenerator("core.Tile",{"type","rate","size"},{},
+function(args)
+  if args.V~=args.insize then
+    print("Warning: NYI - Tile on non-fully parallel array: ",args.type)
+  end
+  return C.Tile( args.T, args.insize[1], args.insize[2], args.size[1], args.size[2] )
+end,
+T.Array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V") ) )
 
 function generators.export(t)
   if t==nil then t=_G end

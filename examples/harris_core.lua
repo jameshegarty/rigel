@@ -9,9 +9,9 @@ local G = require "generators.core"
 
 local GAUSS  = {14 , 62 , 104 , 62 , 14}
 
-harris = {}
+local harris = {}
 
-floatMult = J.memoize(function(Atype)
+local floatMult = J.memoize(function(Atype)
   local inp = f.parameter("fm",types.tuple{Atype,Atype})
   local A,B = inp:index(0), inp:index(1)
   if f.isFixedType(Atype)==false then
@@ -23,7 +23,7 @@ floatMult = J.memoize(function(Atype)
   return {out:toRigelModule("floatMult_"..tostring(Atype):gsub('%W','_')), out.type}
 end)
 
-floatSum = J.memoize(function(A)
+local floatSum = J.memoize(function(A)
   assert(types.isType(A))
   local inp = f.parameter("fm",types.tuple{A,A})
   local out = (inp:index(0))+(inp:index(1))
@@ -31,7 +31,7 @@ floatSum = J.memoize(function(A)
   return {out:toRigelModule("floatSum"), out.type}
 end)
 
-floatShift = J.memoize(function(A,amount)
+local floatShift = J.memoize(function(A,amount)
   assert(types.isType(A))
   assert(type(amount)=="number")
   local inp = f.parameter("fm",A)
@@ -40,7 +40,7 @@ floatShift = J.memoize(function(A,amount)
   return {out:toRigelModule("floatShift"), out.type}
 end)
 
-function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
+local function convolveFloat( A, ConvWidth, ConvHeight, tab, shift, X )
   assert(type(ConvWidth)=="number")
   assert(type(ConvHeight)=="number")
   assert(type(tab)=="table")
@@ -215,6 +215,8 @@ function harris.harrisWithStencil(t)
   -------------------------------
   -- left branch: make the dxdy int8 stencils
   local left = R.selectStream("d0",dxdyBroad,0)
+
+  local sift = require "sift_core_hw"
 
   if GRAD_INT then
     left = R.apply("lower", RM.makeHandshake(sift.lowerPair(dxdyType,GRAD_TYPE,GRAD_SCALE)), left)

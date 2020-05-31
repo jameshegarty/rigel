@@ -904,7 +904,7 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
   local Tf = math.max(T,1)
   
   terra PadSeq:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-    var interior : bool = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H))
+    var interior : bool = (self.posX>=L and self.posX<(L+[W:toTerra()]) and self.posY>=B and self.posY<(B+H))
 
 --    cstdio.printf("PADPOS %d %d, %d %d %d %d, %d %d\n",self.posX,self.posY,L,R,B,Top,W,H)
     valid(out) = true
@@ -929,7 +929,7 @@ function MT.padSeq( res, A, W, H, T, L, R, B, Top, Value )
     end
 --    cstdio.printf("PAD x %d y %d inner %d\n",self.posX,self.posY,inner)
   end
-  terra PadSeq:calculateReady()  self.ready = (self.posX>=L and self.posX<(L+W) and self.posY>=B and self.posY<(B+H)) end
+  terra PadSeq:calculateReady()  self.ready = (self.posX>=L and self.posX<(L+[W:toTerra()]) and self.posY>=B and self.posY<(B+H)) end
 
   return MT.new( PadSeq, res )
 end

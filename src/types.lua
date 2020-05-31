@@ -215,6 +215,8 @@ local function parsePolyArgs( args, i )
   elseif P.isParamValue(args[i]) then
     err( args[i].kind=="SizeValue", "array2d parametric argument must be size, but is: "..tostring(args[i]))
     return args[i], i+1
+  elseif type(args[i])=="boolean" then
+    return args[i], i+1
   else
     err( type(args[i])=="number" or Uniform.isUniform(args[i]), "types.array2d: second argument must be numeric width or uniform but is ",args[i],",",type(args[i]) )
     err( type(args[i+1])=="number" or args[i+1]==nil or Uniform.isUniform(args[i+1]), "array2d h must be nil or number or Uniform, but is:",args[i+1],",",type(args[i+1]) )
@@ -236,6 +238,9 @@ end
 -- if size and V are passed as numbers: both dimensions must be given
 -- however, in the end, we store size and V as a rigel.Size
 -- last argument, var:bool, indicates that this is variable sized
+-- ex:
+-- array2d(ty,W,H)
+-- array2d(ty,W,H,Vw,Vh)
 function types.array2d( _type, ... )
   local Uniform = require "uniform"
   err( types.isType(_type) or P.isParamType(_type), "first argument to array2d must be Rigel type, but is: ",_type )
@@ -255,7 +260,9 @@ function types.array2d( _type, ... )
     --err( args[nexti]==nil, "types.array2d: too many arguments" )
   end
 
-  if R.isSize(size) and R.isSize(V) then
+  if type(V)=="boolean" then
+    err(false,"types.Array2d: NYI - fully parallel variable sized array!")
+  elseif R.isSize(size) and R.isSize(V) then
     err( (Uniform(size[1])*Uniform(size[2])):ge(Uniform(V[1])*Uniform(V[2])):assertAlwaysTrue(),"types.array2d: Vector size must be smaller than array size! size:",size," V:",V)
 
     local veq0 = (Uniform(V[1]):eq(0)):And(Uniform(V[2]):eq(0))
@@ -1009,7 +1016,7 @@ function TypeFunctions:checkLuaValue(v)
     err( #v==#self.list, "incorrect number of channels, is "..(#v).." but should be "..#self.list )
     J.map( v, function(n,k) self.list[k]:checkLuaValue(n) end )
   elseif self:isFloat() or self:isFloatRec() then
-    err( type(v)=="number", "float must be number")
+    err( type(v)=="number", "checkLuaValue: ",self," type expects lua value to be a number, but is: ",v)
   elseif self:isInt() then
     err( type(v)=="number", "int must be number")
     err( v==math.floor(v), "integer systolic constant must be integer")
@@ -1475,8 +1482,6 @@ function types.expectV( A, er ) if types.isV(A)==false then error(er or "type sh
 function types.expectRV( A, er ) if types.isRV(A)==false then error(er or "type should be RV") end end
 function types.expectHandshake( A, er ) if types.isHandshake(A)==false then error(er or "type should be handshake") end end
 
--- targetRate: (optional) instead of trying to optimize for the highest rate
--- optimize for this target instead
 function TypeFunctions:optimize( rates )
   local SDF = require "sdf"
 
@@ -1588,7 +1593,10 @@ function TypeFunctions:optimize( rates )
   return self, rates
 end
 
-function TypeFunctions:columnMajor() return self:isArray() and self.V[2]>self.V[1] end
+function TypeFunctions:columnMajor()
+  local res =  self:isArray() and self.V[2]>self.V[1] and (self.V[1]~=self.size[1] or self.V[2]~=self.size[2])
+  return res
+end
 
 function TypeFunctions:lower() return types.lower(self) end
 
@@ -1857,6 +1865,8 @@ if terralib~=nil then require("typesTerra") end
 for i=1,64 do
   types["u"..tostring(i)] = types.uint(i)
   types["U"..tostring(i)] = types.uint(i)
+  types["i"..tostring(i)] = types.int(i)
+  types["I"..tostring(i)] = types.int(i)
 end
 
 function types.export(t)
