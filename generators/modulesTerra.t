@@ -495,10 +495,17 @@ function MT.downsampleYSeqFn(innerInputType,outputType,scale)
   end
 end
 
-function MT.downsampleXSeqFn( innerInputType, outputType, scale )
+function MT.downsampleXSeqFn( innerInputType, outputType, scale, inputT, outputT )
   return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
     var x = (inp._0)[0]._0
-    data(out) = array(inp._1[0])
+    escape if inputT>0 and outputT>0 then
+      emit quote data(out) = array(inp._1[0]) end
+    elseif inputT==0 and outputT==0 then
+      emit quote data(out) = inp._1 end
+    else
+      assert(false)
+    end end
+
     valid(out) = (x%scale==0)
   end
 end

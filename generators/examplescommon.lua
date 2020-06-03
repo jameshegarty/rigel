@@ -1793,7 +1793,7 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
   err( types.isType(A) and A:isData(), "C.downsampleSeq: A must be data type")
 
   err( type(T)=="number", "C.downsampleSeq: T must be number")
-  err( T>0, "C.downsampleSeq: T must be >0")
+  err( T>=0, "C.downsampleSeq: T must be >=0")
   err( type(scaleX)=="number", "C.downsampleSeq: scaleX must be number")
   err( type(scaleY)=="number", "C.downsampleSeq: scaleY must be number")
   err( scaleX>=1, "C.downsampleSeq: scaleX must be >=1")
@@ -1810,7 +1810,13 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
     return C.identity(A)
   end
 
-  local inp = rigel.input( types.RV(types.Par(types.array2d(A,T))) )
+  local inp
+  if T==0 then
+    inp = rigel.input( types.RV(A) )
+  else
+    inp = rigel.input( types.RV(types.Par(types.array2d(A,T))) )
+  end
+  
   local out = inp
   if scaleY>1 then
     out = rigel.apply("downsampleSeq_Y", modules.liftHandshake(modules.liftDecimate(modules.downsampleYSeq( A, W_orig, H_orig, T, scaleY ))), out)
@@ -1819,11 +1825,11 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
     local mod = modules.liftHandshake(modules.liftDecimate(modules.downsampleXSeq( A, W_orig, H_orig, T, scaleX )))
 
     out = rigel.apply("downsampleSeq_X", mod, out)
-    local downsampleT = math.max(T/scaleX,1)
-    if downsampleT<T then
+    local downsampleT = math.max(math.max(T,1)/scaleX,1)
+    if downsampleT<math.max(T,1) then
       -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
       out = rigel.apply("downsampleSeq_incrate", modules.liftHandshake(modules.changeRate(A,1,downsampleT,T)), out )
-    elseif downsampleT>T then
+    elseif downsampleT>math.max(T,1) then
       assert(false)
     end
   end
@@ -1833,8 +1839,8 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
   if framed then
     print("FRAMED",A,T,res.inputType,res.outputType)
     local W,H = Uniform(W_orig):toNumber(), Uniform(H_orig):toNumber()
-    local itype = types.RV(types.Array2d(A,W_orig,H_orig,T,1))
-    local otype = types.RV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,1 ))
+    local itype = types.RV(types.Array2d(A,W_orig,H_orig,T,J.sel(T==0,0,1)))
+    local otype = types.RV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,J.sel(T==0,0,1) ))
 
     err( itype:lower()==res.inputType:lower(), "internal error, downsampleSeq framed. Module input type:",res.inputType, " lowered: ",res.inputType:lower()," framed type:",itype, " lowered:",itype:lower() )
     err( otype:lower()==res.outputType:lower() )

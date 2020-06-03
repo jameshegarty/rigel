@@ -1538,7 +1538,9 @@ function TypeFunctions:optimize( rates )
           local recTy, recRates = self.over:optimize( rates )
           return self:replaceVar( "over", recTy ), recRates
         elseif self.V:eq(self.size) and rates:allGT1() then
-          assert(false)
+          --assert(false)
+          -- nothing we can do about this? This basically means the type is fundamentally oversubscribed...
+          return self, rates
         else
           J.err( #rates==1,"NYI - optimize with multiple rates!, type:",self," rates:",rates)
                     

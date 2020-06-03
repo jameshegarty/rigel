@@ -712,8 +712,9 @@ function(args)
   if args.unoptimized==true then
     ty,rate = args.type,args.rate
   else
-     ty,rate = args.type:optimize(args.rate)
+    ty,rate = args.type:optimize(args.rate)
   end
+  
   local S, size, V, var = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V, ty:deInterface().var
 
   if var then

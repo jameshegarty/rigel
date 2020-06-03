@@ -11,7 +11,7 @@ local RM = require "generators.modules"
 local Uniform = require "uniform"
 types.export()
 
-local regs = SOC.axiRegs({{"readAddress",RM.reg(u(32),0x30008000)},{"writeAddress",RM.reg(u(32),0x30008000+(128*64))}},SDF{1,128*64}):instantiate("regs")
+local regs = SOC.axiRegs({{"readAddress",RM.reg(u(32),0x30008000)},{"writeAddress",RM.reg(u(32),0x30008000+(128*64))}},SDF{1,1024}):instantiate("regs")
 
 local readAddress = Uniform(regs.readAddress)
 readAddress:addProperty(readAddress:ge(0x30008000))
@@ -24,7 +24,7 @@ writeAddress:addProperty(writeAddress:le(0x30008000+(128*64)))
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
-OffsetModule = G.Function{ "OffsetModule", R.HandshakeTrigger,
+OffsetModule = G.Function{ "OffsetModule", R.HandshakeTrigger, SDF{1,1024},
   function(i)
     local readStream = SOC.readBurst("frame_128.raw",128,64,u8,8,true,readAddress,noc.read)(i)
     local offset = G.Map{G.Add{200}}(readStream)

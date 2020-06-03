@@ -1575,15 +1575,16 @@ modules.downsampleYSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   err( type(T)=="number", "downsampleYSeq: T must be number" )
   err( type(scale)=="number", "downsampleYSeq: scale must be number" )
   err( scale>=1, "downsampleYSeq: scale must be >=1" )
-  err( (Uniform(W_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "downsampleYSeq, W%T~=0")
+  err( T==0 or (Uniform(W_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "downsampleYSeq, W%T~=0")
   err( J.isPowerOf2(scale), "scale must be power of 2")
   err( X==nil, "downsampleYSeq: too many arguments" )
 
   local sbits = math.log(scale)/math.log(2)
 
-  local inputType = types.array2d(A,T)
+  local inputType = A
+  if T>0 then inputType = types.array2d(A,T) end
   local outputType = types.lower(types.rvV(types.Par(inputType)))
-  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
+  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},math.max(T,1))
   local innerInputType = types.tuple{xyType, inputType}
 
   local modname = J.sanitize("DownsampleYSeq_W"..tostring(W_orig).."_H"..tostring(H_orig).."_scale"..tostring(scale).."_"..tostring(A).."_T"..tostring(T))
@@ -1599,7 +1600,7 @@ modules.downsampleYSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
       return MT.downsampleYSeqFn(innerInputType,outputType,scale)
     end, nil, {{1,scale}})
 
-  local res = modules.liftXYSeq( modname, "rigel.downsampleYSeq", f, W_orig, H_orig, T )
+  local res = modules.liftXYSeq( modname, "rigel.downsampleYSeq", f, W_orig, H_orig, math.max(1,T) )
 
   res.outputType = types.rvV(types.Par(inputType))
 
@@ -1635,7 +1636,7 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   err( type(T)=="number", "downsampleXSeq: T must be number" )
   err( type(scale)=="number", "downsampleXSeq: scale must be number" )
   err( scale>=1, "downsampleXSeq: scale must be >=1 ")
-  err( (Uniform(W_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "downsampleXSeq, W%T~=0")
+  err( T==0 or (Uniform(W_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "downsampleXSeq, W%T~=0")
   err( J.isPowerOf2(scale), "NYI - scale must be power of 2")
   err( X==nil, "downsampleXSeq: too many arguments" )
 
@@ -1646,13 +1647,15 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   local sbits = math.log(scale)/math.log(2)
 
   local outputT
-  if scale>T then outputT = 1
+  if scale>T then outputT = J.sel(T==0,0,1)
   elseif T%scale==0 then outputT = T/scale
   else err(false,"T%scale~=0 and scale<T") end
 
-  local inputType = types.array2d(A,T)
-  local outputType = types.lower(types.rvV(types.Par(types.array2d(A,outputT))))
-  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
+  local inputType = A
+  if T>0 then inputType = types.array2d(A,T) end
+  local outputType = types.lower(types.rvV(A))
+  if outputT>0 then outputType = types.lower(types.rvV(types.Par(types.array2d(A,outputT)))) end
+  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},math.max(T,1))
   local innerInputType = types.tuple{xyType, inputType}
 
   local tfn, sdfOverride
@@ -1663,9 +1666,9 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   
   if scale>T then -- A[T] to A[1]
     -- tricky: each token contains multiple pixels, any of of which can be valid
-    assert(scale%T==0)
-    sdfOverride = {{1,scale/T}}
-    if terralib~=nil then tfn = MT.downsampleXSeqFn( innerInputType, outputType, scale ) end
+    assert(scale%math.max(T,1)==0)
+    sdfOverride = {{1,scale/math.max(T,1)}}
+    if terralib~=nil then tfn = MT.downsampleXSeqFn( innerInputType, outputType, scale, T, outputT ) end
 
     local function downXSim()
       for y=0,H-1 do
@@ -1710,10 +1713,14 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
     function() return tfn end, nil,
     sdfOverride)
 
-  local res = modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W_orig, H_orig, T )
+  local res = modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W_orig, H_orig, math.max(T,1) )
 
   -- hack
-  local newType = types.rvV(types.Par(types.array2d(A,outputT)))
+  local newType = types.rvV(A)
+  if outputT>0 then
+    newType = types.rvV(types.array2d(A,outputT))
+  end
+  
   assert(res.outputType:lower()==newType:lower())
 
   res.outputType = newType
