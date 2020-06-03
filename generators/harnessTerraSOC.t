@@ -368,12 +368,12 @@ return function(top, options)
         if verbose then V.printMasterWrite(0,[MWRITE_SLAVEIN[0]],[MWRITE_SLAVEOUT[0]]); end
 
 
-        if V.masterWriteDataLatchFlops(verbose,memory,&slaveState0,0,round==1,[MWRITE_SLAVEIN[0]]) then
+        if V.masterWriteDataLatchFlops(verbose,memory,&slaveState0,0,round==1,[MWRITE_SLAVEIN[0]])~=0 then
           cstdlib.exit(1)
         end
         
 
-        [ (function() if MAX_WRITE_PORT>=1 then return quote V.masterWriteDataLatchFlops(verbose,memory,&slaveState1,1,round==1,[MWRITE_SLAVEIN[1]]) end else return quote end end end)() ];
+        [ (function() if MAX_WRITE_PORT>=1 then return quote if V.masterWriteDataLatchFlops(verbose,memory,&slaveState1,1,round==1,[MWRITE_SLAVEIN[1]])~=0 then cstdlib.exit(1) end end else return quote end end end)() ];
 
         [ (function() if MAX_READ_PORT>=0 then return quote V.masterReadReqLatchFlops(verbose,MEMBASE,MEMSIZE,0,[MREAD_SLAVEIN[0]]) end else return quote end end end)() ];
 

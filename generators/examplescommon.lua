@@ -539,15 +539,16 @@ C.rshift = memoize(function(A,B,X)
 end)
 
 -----------------------------
-C.addMSBs = memoize(function(A,bits)
+C.addMSBs = memoize(function( A, bits, X )
   err( types.isType(A),"C.addMSBs: type should be rigel type")
   err( type(bits)=="number","C.addMSBs: bits should be number or value")
-
+  assert( X==nil )
+  
   local otype
   if A:isUint() then
-    otype = types.uint(A.precision+bits)
+    otype = types.uint( A.precision+bits, A.exp )
   elseif A:isInt() then
-    otype = types.int(A.precision+bits)
+    otype = types.int( A.precision+bits, A.exp )
   else
     J.err( A:isUint() or A:isInt(), "generators.addMSBs: type should be int or uint, but is: "..tostring(A) )
   end
@@ -2247,6 +2248,8 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     
     return res
   elseif inputType:isArray() then
+    err( inputType:isData() ,"C.slice: array type must be data type, but is:"..tostring(inputType) )
+    
     local W = (inputType:arrayLength())[1]
     local H = (inputType:arrayLength())[2]
     err(idxLow<W,"slice: idxLow>=W, idxLow="..tostring(idxLow)..",W="..tostring(W)," inputType:",inputType)
@@ -3182,7 +3185,13 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig,
   J.err( type(H)=="number", "ChangeRateRowMajor: H should be number, but is: ",H)
   
   local generators = require "generators.core"
-    
+
+  local Vw_n = Uniform(Vw):toNumber()
+  local Vh_n = Uniform(Vh):toNumber()
+  local W_n = W:toNumber()
+  
+  J.err( (Vw_n==0 and Vh_n==0) or (Vh_n==1 and Vw_n<=W_n) or (Vh_n>1 and Vw_n==W_n), "ChangeRateRowMajor: input type must be row major ordered array, but V=",Vw,",",Vh," size=",W_orig,",",H)
+  
   local cr = RM.changeRate( ty, 1, Vw*Vh, outputItemsPerCyc )
 
   J.err( outputItemsPerCyc==0 or (Uniform(W):toNumber()*Uniform(H):toNumber())%outputItemsPerCyc==0, "ChangeRateRowMajor: outputItemsPerCyc does not divide array size? W=",W," H=",H," outputItemsPerCyc=",outputItemsPerCyc)

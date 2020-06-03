@@ -3106,7 +3106,8 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
       systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ready, "ready", {} ) )
       
     else -- inputRate <= outputRate. 4 to 8
-      assert(H==1) -- NYI
+      --assert(H==1) -- NYI
+
       
       local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), inputCount-1) ):CE(true):setReset(0):instantiate("phase_changerateup") )
       local printInst
@@ -3120,6 +3121,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
       
       local out
       if inputRate==0 then
+        assert(H==1)
         local delayedVals = J.map(J.range(inputCount-1,0), function(i) return pinp(i) end)
         out = S.cast( S.tuple(delayedVals), types.array2d(A,outputRate,H) )
       else
@@ -4687,8 +4689,22 @@ local function lambdaSDFNormalize( input, output, name, X )
     function(n,orig)
       if n.kind=="input" then
         err( n.id==input.id, "lambdaSDFNormalize: unexpected input node. input node is not the declared module input." )
+        local orig = n.rate
         n.rate = SDF(SDFRate.multiply(n.rate,scaleFactor[1],scaleFactor[2]))
         assert( SDFRate.isSDFRate(n.rate))
+
+        if n.rate:allLE1()==false then
+          -- this is kind of a hack? not all input rates will affect a module, so make sure we never
+          -- end up with an input rate >1
+
+          local tr = n.rate:largest()
+
+          n.rate = SDF(SDFRate.multiply(n.rate,tr[1][2],tr[1][1]))
+          assert( SDFRate.isSDFRate(n.rate))
+
+          --output:visitEach(function(n) print(n) end)
+          --J.err( n.rate:allLE1(), "Error? somehow lambda SDF normalize resulted in a function input with rate>1? rate:",n.rate," originalRate:",orig," maxRate:",sdfMaxRate[1],"/",sdfMaxRate[2])
+        end
         newInput = rigel.newIR(n)
         return newInput
       elseif n.kind=="apply" and #n.inputs==0 then
@@ -6026,7 +6042,8 @@ end)
 -- tokensX, tokensY: optional - what is the size of the transaction? enables extra debugging (terra checks for regressions on second run)
 -- 'filename' is used for Terra
 -- We don't modify filenames in any way!
-modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough, allowBadSizes, tokensX, tokensY, X )
+-- header: a string to append at the very start of the file
+modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough, allowBadSizes, tokensX, tokensY, header, X )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   rigel.expectBasic(ty)
@@ -6066,7 +6083,7 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
 
   res = rigel.newFunction(res)
 
-  if terralib~=nil then res.terraModule = MT.fwriteSeq( res, filename,ty,passthrough, allowBadSizes, tokensX, tokensY) end
+  if terralib~=nil then res.terraModule = MT.fwriteSeq( res, filename,ty,passthrough, allowBadSizes, tokensX, tokensY, header ) end
 
   return res
 end)

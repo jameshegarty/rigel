@@ -41,6 +41,30 @@ function SDFFunctions:allGE1()
   return true
 end
 
+function SDFFunctions:allGT1()
+  for _,v in ipairs(self) do
+    local res = v[1]:gt(v[2]):assertAlwaysTrue()
+
+    if res==false then
+      return false
+    end
+  end
+
+  return true
+end
+
+function SDFFunctions:allEQ1()
+  for _,v in ipairs(self) do
+    local res = v[1]:eq(v[2]):assertAlwaysTrue()
+
+    if res==false then
+      return false
+    end
+  end
+
+  return true
+end
+
 function SDFFunctions:nonzero()
   for _,v in ipairs(self) do
     local res = v[1]:gt(0):assertAlwaysTrue()
@@ -51,6 +75,19 @@ function SDFFunctions:nonzero()
   end
 
   return true
+end
+
+function SDFFunctions:largest()
+  local l
+  local Uniform = require "uniform"
+  for _,v in ipairs(self) do
+    print("LARGEST",v[1],v[2])
+    if l==nil or Uniform(v[1]):toNumber()/Uniform(v[2]):toNumber() > Uniform(l[1][1]):toNumber()/Uniform(l[1][2]):toNumber() then
+      l = sdf{v[1],v[2]}
+    end
+  end
+  assert( sdf.isSDF(l))
+  return l
 end
 
 function SDFFunctions:toNumber()

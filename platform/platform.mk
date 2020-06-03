@@ -40,6 +40,13 @@ $(BUILDDIR)/%.$(1).bmp: $(BUILDDIR)/%.$(1).raw
 	# keep copy for future reference
 	mkdir -p $(BUILDDIR)/$$*_$(1)
 	cp $(BUILDDIR)/$$*.$(1).bmp $(BUILDDIR)/$$*_$(1)
+
+$(BUILDDIR)/%.$(1).pgm: $(BUILDDIR)/%.$(1).raw
+	$(LUAJIT) $(MKPATH)/../misc/raw2pgm.lua $(BUILDDIR)/$$*.$(1).raw $(BUILDDIR)/$$*.$(1).pgm $(BUILDDIR)/$$*.metadata.lua
+	# keep copy for future reference
+	mkdir -p $(BUILDDIR)/$$*_$(1)
+	cp $(BUILDDIR)/$$*.$(1).pgm $(BUILDDIR)/$$*_$(1)
 endef
 
 $(foreach a,$(AA),$(eval $(call MyRule,$(a))))
+

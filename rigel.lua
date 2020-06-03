@@ -507,7 +507,7 @@ return fn
   
   local functionStack = {}
 
-  err( targetInputTypeOrig:deSchedule()==fn.inputType:deSchedule(), "convertInterface: unscheduled types don't even match! nothing we can do. Converting ",targetInputTypeOrig," to ",fn.inputType)
+  err( targetInputTypeOrig:deSchedule()==fn.inputType:deSchedule(), "convertInterface: unscheduled types don't even match! nothing we can do. Converting ",targetInputTypeOrig," to ",fn.inputType," unscheduled ",targetInputTypeOrig:deSchedule()," to ",fn.inputType:deSchedule())
   
   -- does this require a space-time conversion?
   local function reshape( fnType, targetType )
@@ -523,12 +523,17 @@ return fn
 
         local resStack = {}
 
-        if fnType:columnMajor() then
-          err( false,"NYI - convertInterface to a column major array converting:",targetType," to:",fnType," for:",fn,loc)
-        else
+        if fnType:rowMajor() and targetType:rowMajor() then
           table.insert( resStack, C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
                                         fnType.V[1]*fnType.V[2],
                                         targetType.size[1], targetType.size[2] ) )
+        elseif fnType:columnMajor() or targetType:columnMajor() then
+          --err( false,"NYI - convertInterface to a column major array converting:",targetType," to:",fnType," for:",fn,loc)
+          err( targetType.V[2]==fnType.V[2],"NYI - column major change rate with different array height. Converting ",targetType," to ",fnType)
+          table.insert( resStack, RM.liftHandshake(RM.changeRate( targetType:arrayOver(), fnType.V[2], targetType.V[1], fnType.V[1], true, fnType.size[1], fnType.size[2] )) )
+          print("COLMAJOR",targetType,fnType,resStack[#resStack])
+        else
+          J.err("converting between strange vector sizes! ",targetType," to ",fnType)
         end
         
         if targetType:arrayOver()~=fnType:arrayOver() then
@@ -557,8 +562,7 @@ return fn
         fnType:arrayOver()==targetType:arrayOver() then
           -- nothing to do!
       else
-        print("convertInterface NYI - convert ",fnType," to ",targetType," calling function:",fn.name,loc)
-        assert(false)
+        J.err(false,"convertInterface NYI - convert ",fnType," to ",targetType," calling function:",fn.name,loc)
       end
     elseif fnType:isTuple() then
       assert( targetType:isTuple() and #fnType.list==#targetType.list )
@@ -846,7 +850,7 @@ local function buildAndCheckSystolicModule( tab, isModule )
       end
 
       if rigelFn.outputType~=types.Interface() then
-        err( rigelFn.outputType==types.Interface() or expectedOutputReady==sm.functions[readyName].inputParameter.type, "module '"..tab.name.."' systolic ready '"..readyName.."' input type wrong. Systolic ready input type is '"..tostring(sm.functions[readyName].inputParameter.type).."', but should be '"..tostring(darkroom.extractReady(rigelFn.outputType)).."', because Rigel function output type is '"..tostring(rigelFn.outputType).."'.")
+        err( rigelFn.outputType==types.Interface() or expectedOutputReady==sm.functions[readyName].inputParameter.type, "module '",tab.name,"' systolic ready '",readyName,"' input type wrong. Systolic ready input type is '",sm.functions[readyName].inputParameter.type,"', but should be '",darkroom.extractReady(rigelFn.outputType),"', because Rigel function output type is '",rigelFn.outputType,"'.")
       end
       --elseif (rigelFn.inputType==types.Interface() and rigelFn.outputType==types.Interface())==false and rigelFn.outputType:isrv() then
     elseif rigelFn.inputType~=types.Interface() or rigelFn.outputType~=types.Interface() then
@@ -1985,7 +1989,7 @@ function darkroomIRFunctions:calcSDF( )
       err( self.inst.module.functions[self.fnname].sdfExact==true or types.isHandshakeAny(self.inst.module.functions[self.fnname].outputType)==false, "null input applyMethod '"..self.fnname.."' on module '"..self.inst.module.name.."' should have sdfExact==true")
       res = self.inst.module.functions[self.fnname].sdfOutput
     elseif self.inst.module.functions[self.fnname].sdfExact==true then
-      err( self.inst.module.functions[self.fnname].inputType==types.null() or self.inst.module.functions[self.fnname].sdfInput:equals(self.inputs[1].rate),"applyMethod: input rate ("..tostring(self.inputs[1].rate)..") does not match expected rate declared by the instance ("..tostring(self.inst.module.functions[self.fnname].sdfInput).."). Function '"..self.fnname.."' on instance '"..self.inst.name.."' of module '"..self.inst.module.name.."'.")
+      err( self.inst.module.functions[self.fnname].inputType==types.null() or self.inst.module.functions[self.fnname].sdfInput:equals(self.inputs[1].rate),"applyMethod: a function method was declared as requiring its input rate to match a given rate exactly (sdfExact), but the rate doesn't match! input rate ("..tostring(self.inputs[1].rate)..") does not match expected rate declared by the instance ("..tostring(self.inst.module.functions[self.fnname].sdfInput).."). Function '"..self.fnname.."' on instance '"..self.inst.name.."' of module '"..self.inst.module.name.."'.")
       res = self.inputs[1].rate
     elseif #self.inputs==1 then
       res =  self.inst.module.functions[self.fnname]:sdfTransfer(self.inputs[1].rate, self.loc)
@@ -2075,10 +2079,10 @@ darkroomIRFunctions.sdfExtremeRate = J.memoize(
     local highestRate -- this is a frac
     self:visitEach(
       function(n)
+        local Uniform = require "uniform"
+
         if n.kind=="apply" then
           local util = n:utilization()
-
-          local Uniform = require "uniform"
           
           if highestRate==nil then
             highestRate={util[1],util[2]}
@@ -2533,11 +2537,11 @@ function darkroomIRFunctions:codegenSystolic( module, rateMonitors, X )
         err( n.fn.systolicModule:lookupFunction("process"):getInput().type==darkroom.lower(n.fn.inputType), "Systolic input type doesn't match fn type, fn '",n.fn.name,"', is ",n.fn.systolicModule:lookupFunction("process"):getInput().type," but should be ",darkroom.lower(n.fn.inputType)," (Rigel type: ",n.fn.inputType,")" )
 
         if n.fn.outputType==types.null() then
-          err(n.fn.systolicModule.functions.process.output==nil or n.fn.systolicModule.functions.process.output.type==types.null(), "Systolic output type doesn't match fn type, fn '",n.fn.name,"', is ",n.fn.systolicModule.functions.process.output," but should be ",darkroom.lower(n.fn.outputType) )
+          err(n.fn.systolicModule.functions.process.output==nil or n.fn.systolicModule.functions.process.output.type==types.null(), "Systolic output type doesn't match fn type, fn '", n.fn.name, "', is ", n.fn.systolicModule.functions.process.output, " but should be ", darkroom.lower(n.fn.outputType) )
         else
           err( n.fn.systolicModule:lookupFunction("process").output~=nil, "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is (NONEXISTANT) but should be "..tostring(darkroom.lower(n.fn.outputType)) )
           
-          err( n.fn.systolicModule:lookupFunction("process").output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '"..n.fn.name.."', is "..tostring(n.fn.systolicModule:lookupFunction("process").output.type).." but should be "..tostring(darkroom.lower(n.fn.outputType)) )
+          err( n.fn.systolicModule:lookupFunction("process").output.type == darkroom.lower(n.fn.outputType), "Systolic output type doesn't match fn type, fn '",n.fn.name,"', is ",n.fn.systolicModule:lookupFunction("process").output.type, " but should be ",darkroom.lower(n.fn.outputType) )
         end
         
         err(type(n.fn.stateful)=="boolean", "Missing stateful annotation "..n.fn.name)

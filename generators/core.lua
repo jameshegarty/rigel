@@ -270,8 +270,12 @@ end)
 generators.FanIn = R.FunctionGenerator("core.FanIn",{"type","rate"},{"bool"},
 function(args)
 
+  --print("FANIN",args.type,args.rate)
+  
   local ty, rate = args.type:optimize( args.rate )
 
+  --print("FANINopt",ty,rate)
+  
   -- every stream going into packtuple needs to have the same rate! (rates have to match)
   -- So: we need to find the lowest rate from the optimized type, and make sure everything matches this
   -- (we can always serialize streams to DECREASE rate, but we can't necessarily increase rate)
@@ -283,9 +287,15 @@ function(args)
     end
   end
 
-  local targetRate = args.rate*SDF{lowestRate[2],lowestRate[1]}
+  --print("FAN IN LOWEST",lowestRate[1],lowestRate[2])
+  
+  local targetRate = rate*SDF{lowestRate[2],lowestRate[1]}
 
-  ty, rate = args.type:optimize( targetRate )
+  --print("FAN IN target",targetRate)
+  
+  ty, rate = ty:optimize( targetRate )
+
+  --print("FAN IN ROUND2 ",ty,rate)
   
   if ty:isrv() then
     -- trivial case: do nothing!
@@ -691,10 +701,11 @@ function(args)
   local fn = args.rigelFunction:specializeToType( types.rv(S), args.rate )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
 
-  if fn.inputType:isrv()==false or fn.outputType:isrv()==false then
-    -- NYI - we basically only support rv or RV, so if it can't be rv, ask for RV
+  if ((fn.inputType:isrv() and fn.outputType:isrv()) or (fn.inputType:isRV() and fn.outputType:isRV()))==false then
+    --print("Map: fn returned unsupported types",fn.inputType,fn.outputType," - trying again with RV...")
+    -- NYI - we basically only support rv or RV (ie no rvV etc), so if it can't be rv, ask for RV
     fn = args.rigelFunction:specializeToType( types.RV(S), args.rate )
-    J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
+    J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.RV(S))
   end
 
   local ty, rate
@@ -865,13 +876,24 @@ end,
 types.Array2d( P.DataType("T"), P.SizeValue("size"), P.SizeValue("V") ) )
 
 
-generators.Fwrite = R.FunctionGenerator("core.Fwrite",{"string"},{"filenameVerilog"},
+generators.Fwrite = R.FunctionGenerator("core.Fwrite",{"string"},{"filenameVerilog","header"},
 function(args)
   --return RS.modules.fwriteSeq({type=args.type,filename=args.string})
-  return RM.fwriteSeq( args.string, args.S, args.filenameVerilog, true )
+  return RM.fwriteSeq( args.string, args.S:deSchedule(), args.filenameVerilog, true, nil,nil,nil,args.header )
 end,
 P.ScheduleType("S") )
 
+-- convenience function to write PGM. expects an array
+generators.FwritePGM = R.FunctionGenerator("core.FwritePGM",{"string"},{},
+function(args)
+  print("WRITEPGM",args.size)
+  assert( args.S:deSchedule():verilogBits()%8 == 0)
+  assert( args.V:eq(0,0) )
+  local W = Uniform(args.size[1]):toNumber() * (args.S:deSchedule():verilogBits()/8)
+  local H = Uniform(args.size[2]):toNumber()
+  return generators.Map{generators.Fwrite{args.string,header="P5 "..W.." "..H.." 255 "}}:complete({type=args.type,rate=args.rate})
+end,
+types.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")) )
 
 generators.Fread = R.FunctionGenerator( "core.Fread",{"string","type","type1"},{"filenameVerilog"},
 function(args)
@@ -1063,11 +1085,14 @@ types.tuple{types.bool(),P.DataType("T"),P.DataType("T")} )
 
 generators.Slice = R.FunctionGenerator("core.Slice",{"type","rate"},{"bounds","size"},
 function(args)
+  --print("SLICE",args.type,args.rate,args.bounds[1],args.bounds[2],args.bounds[3],args.bounds[4])
   if args.type:deInterface():isArray() then
     local TY = args.type:deInterface():arrayOver()
     local arsize = args.type:deInterface().size
     if args.bounds~=nil then
-      return C.slice( types.array2d(TY,arsize), args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4] )
+      local res = C.slice( types.array2d(TY,arsize), args.bounds[1], args.bounds[2], args.bounds[3], args.bounds[4] )
+      --print("SLICERET",res.inputType,res.outputType)
+      return res
     else
       J.err( arsize[2]==1, "generators.Slice: NYI - only 1d arrays supported" )
       return C.slice( types.array2d(TY,arsize), args.size[1], args.size[2], 0, 0)

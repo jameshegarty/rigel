@@ -446,8 +446,8 @@ void masterWriteDataDriveOutputs(
   *BID = slaveState->BID;
 }
 
-// return error flag (true if error)
-bool masterWriteDataLatchFlops(
+// return error flag (0=no error, 1=warning, 2=critical)
+int masterWriteDataLatchFlops(
   bool verbose,
   unsigned char* memory,
   SlaveState* slaveState,
@@ -467,7 +467,7 @@ bool masterWriteDataLatchFlops(
     if(checkDataEqual && (*(unsigned long*)(&memory[t->addr]) != *WDATA) ){
       printf("Write Error in second round: Data is different than first round! pipeline behavior may have changed! addr %d/%#x orig: %#018lx new: %#018lx\n",t->addr,t->addr,*(unsigned long*)(&memory[t->addr]),*WDATA);
       *(unsigned long*)(&memory[t->addr]) = *WDATA;
-      return true;
+      return 1;
     }
     
     *(unsigned long*)(&memory[t->addr]) = *WDATA;
@@ -491,7 +491,7 @@ bool masterWriteDataLatchFlops(
 
       if(*BREADY==0){
         printf("MAXI NYI - BREADY is false\n");
-        return true;
+        return 2;
       }
       //    }else{
       //      slaveState->BVALID = false;
@@ -507,11 +507,11 @@ bool masterWriteDataLatchFlops(
     if( cyclesSinceWrite[port]>200000 && QSize(&writeQ[port])>0 ){
       Transaction* t = (Transaction*)QPeek(&writeQ[port]);
       printf("MAXI%d write port is stalled out? No data sent for %d cycles (%d outstanding write requests, top addr %d)\n",port,cyclesSinceWrite[port],QSize(&writeQ[port]),t->addr);
-      return true;
+      return 2;
     }
   }
 
-  return false;
+  return 0;
 }
 
 void masterWriteReqDriveOutputs(
