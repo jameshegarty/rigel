@@ -700,7 +700,7 @@ return fn
   if #functionStack==1 then
     return functionStack[1]
   else
-    local res = C.linearPipeline( functionStack, "convertInterface_"..tostring(fn.inputType).."_to_"..tostring(targetInputTypeOrig).."_"..fn.name )
+    local res = C.linearPipeline( functionStack, "convertInterface_"..tostring(targetInputTypeOrig).."_to_"..tostring(fn.inputType).."_"..fn.name, targetInputRateOrig )
     return res
   end
 end)
@@ -2075,8 +2075,9 @@ end
 -- (this will limit the speed of the whole pipe)
 -- In our implementaiton, the utilization of any node can't be >1, so if the highest utilization is >1, we need to scale the throughput of the whole pipe
 darkroomIRFunctions.sdfExtremeRate = J.memoize(
-  function(self, highest )
+  function(self, highest, returnHighestNode )
     local highestRate -- this is a frac
+    local highestNode
     self:visitEach(
       function(n)
         local Uniform = require "uniform"
@@ -2086,6 +2087,7 @@ darkroomIRFunctions.sdfExtremeRate = J.memoize(
           
           if highestRate==nil then
             highestRate={util[1],util[2]}
+            highestNode = n
           else
             local cond
             if highest then
@@ -2096,16 +2098,32 @@ darkroomIRFunctions.sdfExtremeRate = J.memoize(
             
             highestRate[1] = cond:sel(highestRate[1],util[1])
             highestRate[2] = cond:sel(highestRate[2],util[2])
+
+            if cond:isConst() then
+              if cond.value==false then
+                highestNode = n
+              end
+            else
+              highestNode = "unknown due to sdf cond" -- unknown
+            end
           end
         end
       end)
 
     if highestRate==nil then
       -- this can happen if we have no function calls (no other operators have utilization)
-      return {1,1}
+      if returnHighestNode then
+        return {{1,1},"unknown: no function calls!"}
+      else
+        return {1,1}
+      end
     end
-    
-    return highestRate
+
+    if returnHighestNode then
+      return {highestRate, highestNode}
+    else
+      return highestRate
+    end
   end)
 
 function darkroomIRFunctions:typecheck()
@@ -2634,6 +2652,8 @@ function darkroom.input( ty, sdfRate, schedulePass, X )
     sdfRate=J.broadcast({1,1}, math.max(1,darkroom.streamCount(ty)) )
   end
 
+  err( SDF(sdfRate):nonzero(),"input: error, input SDF rate must be >0! but is:", sdfRate )
+  
   err( darkroom.streamCount(ty)==0 or darkroom.streamCount(ty)==#sdfRate, "rigel.input: number of streams in type "..tostring(ty).." ("..tostring(darkroom.streamCount(ty))..") != number of SDF streams passed in ("..tostring(#sdfRate)..")" )
 
   local res = {kind="input", type = ty, name="input", id={}, inputs={}, rate=SDF(sdfRate), loc=getloc()}

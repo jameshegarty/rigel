@@ -121,6 +121,18 @@ function SDFFunctions:lt(other)
   return self:toNumber()<other:toNumber()
 end
 
+function SDFFunctions:le(other)
+  local Uniform = require "uniform"
+  J.err( sdf.isSDF(other), "SDF:le(), other table isn't an SDF" )
+  J.err( #self==#other )
+  for k,v in ipairs(self) do
+    if (Uniform(v[1])*Uniform(other[k][2])):le(Uniform(v[2])*Uniform(other[k][1])):assertAlwaysTrue()==false then
+      return false
+    end
+  end
+  return true
+end
+
 function SDFFunctions:ge(other)
   assert(#self==1)
   J.err( sdf.isSDF(other), "SDF:ge(), other table isn't an SDF" )

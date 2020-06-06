@@ -602,7 +602,7 @@ types.ParSeq(types.array2d(P.DataType("T"),P.SizeValue("V")),P.SizeValue("imsize
 generators.Pad = R.FunctionGenerator("core.Pad",{"bounds"},{},
 function(a)
   J.err( a.size:eq(a.V) or a.V:eq(0,0) or a.V[2]==1 ,"Pad: NYI, vector can only be 1D, but is: ",a.V ) -- NYI
-  return RM.padSeq( a.T:deSchedule(), a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], a.T:fakeValue(), true )
+  return RM.padSeq( a.T:deSchedule(), a.size[1], a.size[2], a.V[1], a.bounds[1], a.bounds[2], a.bounds[3], a.bounds[4], a.T:fakeValue(), true, true )
 end,
 T.array2d( P.ScheduleType("T"), P.SizeValue("size"), P.SizeValue("V") ) )
 
@@ -884,17 +884,29 @@ function(args)
 end,
 P.ScheduleType("S") )
 
--- convenience function to write PGM. expects an array
-generators.FwritePGM = R.FunctionGenerator("core.FwritePGM",{"string"},{},
+-- convenience function to write PGM
+-- If passed an array: treat this array as an image, and write it out (W/H are size of array)
+-- if passed a size: treat this size as the image size, and expect a stream of pixels
+--                   ie: we may be inside a mapped function
+generators.FwritePGM = R.FunctionGenerator("core.FwritePGM",{"string","type","rate"},{"size"},
 function(args)
-  print("WRITEPGM",args.size)
-  assert( args.S:deSchedule():verilogBits()%8 == 0)
-  assert( args.V:eq(0,0) )
-  local W = Uniform(args.size[1]):toNumber() * (args.S:deSchedule():verilogBits()/8)
-  local H = Uniform(args.size[2]):toNumber()
-  return generators.Map{generators.Fwrite{args.string,header="P5 "..W.." "..H.." 255 "}}:complete({type=args.type,rate=args.rate})
-end,
-types.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")) )
+
+  if args.size~=nil then
+    local W = args.size[1] * (args.type:deSchedule():verilogBits()/8)
+    local H = args.size[2]
+    return generators.Fwrite{args.string,header="P5 "..W.." "..H.." 255 "}:complete({type=args.type,rate=args.rate})
+  else
+    J.err( args.type:deInterface():isArray() )
+    local S, size, V = args.type:deInterface():arrayOver(), args.type:deInterface().size, args.type:deInterface().V
+    print("WRITEPGM",size)
+    assert( S:deSchedule():verilogBits()%8 == 0)
+    assert( V:eq(0,0) )
+    local W = Uniform(size[1]):toNumber() * (S:deSchedule():verilogBits()/8)
+    local H = Uniform(size[2]):toNumber()
+    return generators.Map{generators.Fwrite{args.string,header="P5 "..W.." "..H.." 255 "}}:complete({type=args.type,rate=args.rate})
+  end
+end)
+--types.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")) )
 
 generators.Fread = R.FunctionGenerator( "core.Fread",{"string","type","type1"},{"filenameVerilog"},
 function(args)

@@ -20,7 +20,7 @@ C.identity = memoize(function( A, name )
   err( A:isSchedule(),"C.identity: type should be schedule type, but is: "..tostring(A) )
 
   if name==nil then
-    name = "identity_"..J.verilogSanitize(tostring(A))
+    name = J.verilogSanitize("identity_"..tostring(A))
   end
   
   local identity = RM.lift( name, A:lower(), A:lower(), 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
@@ -2126,7 +2126,8 @@ C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
   assert(type(framed)=="boolean")
 
   -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
-  return C.compose( J.sanitize("stencilLinebufferPartial_A"..tostring(A).."_W"..tostring(w).."_H"..tostring(h).."_L"..tostring(xmin).."_R"..tostring(xmax).."_B"..tostring(ymin).."_Top"..tostring(ymax).."_framed"..tostring(framed)), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin,nil,nil,framed,w,h ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin, framed )), "C.stencilLinebufferPartial" )
+  local name = J.sanitize("stencilLinebufferPartial_A"..tostring(A).."_W"..tostring(w).."_H"..tostring(h).."_T"..tostring(T).."_L"..tostring(xmin).."_R"..tostring(xmax).."_B"..tostring(ymin).."_Top"..tostring(ymax).."_framed"..tostring(framed))
+  return C.compose( name, modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin,nil,nil,framed,w,h ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin, framed )), "C.stencilLinebufferPartial",nil,SDF{1,T} )
 end)
 
 
@@ -3184,6 +3185,8 @@ end)
 -- instead, do row major
 -- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
 C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig, H, X )
+  J.err( types.isType(ty) )
+  J.err( ty:isData() )
   J.err( type(outputItemsPerCyc)=="number", "ChangeRateRowMajor: outputItermsPerCyc should be number, but is: ",outputItemsPerCyc )
   J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
   --J.err( type(W)=="number", "ChangeRateRowMajor: W should be number, but is: ",W)
@@ -3218,8 +3221,10 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig,
   
   outputType = types.RV( types.Array2d( ty, W_orig, H, V2w, V2h ) )
 
-  local res = generators.Function{
-    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh).."_OIPC"..tostring(outputItemsPerCyc).."_W"..tostring(W_orig).."_H"..tostring(H), types.RV(inputType:extractData()),
+  local name =  "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh).."_OIPC"..tostring(outputItemsPerCyc).."_W"..tostring(W_orig).."_H"..tostring(H)
+  local rate = cr.sdfInput
+  
+  local res = generators.Function{ name, types.RV(inputType:extractData()), rate,
     function(inp)
       local inprs
       if Vw==0 and Vh==0 then

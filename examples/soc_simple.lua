@@ -9,8 +9,7 @@ types.export()
 local SDF = require "sdf"
 local Zynq = require "generators.zynq"
 
-R.MONITOR_FIFOS = true
-
+--R.MONITOR_FIFOS = true
 local regs = SOC.axiRegs({},SDF{1,1024}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")

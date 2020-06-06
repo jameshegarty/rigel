@@ -123,7 +123,7 @@ function SDFRate.fracMultiply(a,b)
   b={b1,b2}
 
   local Uniform = require "uniform"
-  
+
   local n,d = a[1]*b[1],a[2]*b[2]
   assert( Uniform(n):isUint() )
   assert( Uniform(d):isUint() )
