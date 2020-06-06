@@ -14,7 +14,7 @@ local regs = SOC.axiRegs({},SDF{1,8192}):instantiate("regs")
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
-ConvTop = G.Function{ "ConvTop", T.HandshakeTrigger, SDF{1,1},
+ConvTop = G.Function{ "ConvTop", T.HandshakeTrigger, SDF{1,128*64},
   function(i)
     local readStream = G.AXIReadBurst{"frame_128.raw",{128,64},u(8),1,noc.read}(i)
     local O = G.Stencil{{-2,0,-2,0}}(readStream)

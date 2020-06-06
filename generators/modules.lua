@@ -63,12 +63,16 @@ modules.compose = memoize(function( name, f, g, generatorStr, inputType, inputSD
 
   if inputType~=nil then
     err( types.isType(inputType), "compose: inputType should be type, but is: "..tostring(inputType) )
-    err( SDF.isSDF(inputSDF),"compose: inputSDF should be SDF")
   else
     inputType = g.inputType
+  end
+
+  if inputSDF~=nil then
+    err( SDF.isSDF(inputSDF),"compose: inputSDF should be SDF")
+  else
     inputSDF = g.sdfInput
   end
-  
+
   name = J.verilogSanitize(name)
 
   local inp = rigel.input( inputType, inputSDF )
@@ -296,7 +300,7 @@ modules.packTuple = memoize(function( typelist, disableFIFOCheck, arraySize, X )
   res.stateful = false
   res.sdfOutput = SDF{1,1}
   res.sdfInput = SDF(J.map(typelist, function(n)  return {1,1} end))
-  res.name = "packTuple_"..verilogSanitize(tostring(typelist))
+  res.name = J.sanitize("packTuple_"..tostring(typelist))
 
   res.delay = 0
 
@@ -381,7 +385,7 @@ modules.liftBasic = memoize(function(f)
   res.RVDelay = f.RVDelay
   res.delay = f.delay
   res.stateful = f.stateful
-  res.name = "LiftBasic_"..f.name
+  res.name = J.sanitize("LiftBasic_"..f.name)
 
   if terralib~=nil then res.terraModule = MT.liftBasic(res,f) end
 
@@ -488,7 +492,7 @@ local function runIffReadySystolic( systolicModule, fns, passthroughFns )
 end
 
 local function waitOnInputSystolic( systolicModule, fns, passthroughFns )
-  local res = Ssugar.moduleConstructor("WaitOnInput_"..systolicModule.name)
+  local res = Ssugar.moduleConstructor(J.sanitize("WaitOnInput_"..systolicModule.name))
   local inner = res:add( systolicModule:instantiate("WaitOnInput_inner") )
 
   for _,fnname in pairs(fns) do
@@ -589,7 +593,7 @@ modules.waitOnInput = memoize(function( f, X )
   res.stateful = f.stateful
   res.delay = f.delay
   res.RVDelay = f.RVDelay
-  res.name = "WaitOnInput_"..f.name
+  res.name = J.verilogSanitize("WaitOnInput_"..f.name)
   res.inputBurstiness = f.inputBurstiness
   res.outputBurstiness = f.outputBurstiness
     
@@ -610,7 +614,7 @@ local function liftDecimateSystolic( systolicModule, liftFns, passthroughFns, ha
   assert(type(handshakeTrigger)=="boolean")
   assert(type(includeCE)=="table")
   
-  local res = Ssugar.moduleConstructor("LiftDecimate_"..systolicModule.name)
+  local res = Ssugar.moduleConstructor( J.sanitize("LiftDecimate_"..systolicModule.name) )
   local inner = res:add( systolicModule:instantiate("LiftDecimate") )
 
   for k,fnname in pairs(liftFns) do
@@ -696,7 +700,7 @@ modules.liftDecimate = memoize(function(f, handshakeTrigger, X)
   err( f.inputType:isrv() or f.inputType==types.Interface(), "liftDecimate: fn '"..f.name.."' input type should be rv, but is: "..tostring(f.inputType) )
   err( f.outputType:isrvV(), "liftDecimate: fn '"..f.name.."' output type should be rvV, but is: "..tostring(f.outputType) )
 
-  res.name = "LiftDecimate_"..f.name
+  res.name = J.sanitize("LiftDecimate_"..f.name)
   res.inputType = types.rV(f.inputType.over)
   res.outputType = types.rRV(f.outputType.over)
 
@@ -781,8 +785,8 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
   assert(type(hasReset)=="boolean")
   assert(X==nil)
   
-  local res = Ssugar.moduleConstructor( "LiftHandshake_"..systolicModule.name ):onlyWire(true):parameters({INPUT_COUNT=0, OUTPUT_COUNT=0})
-  local inner = res:add(systolicModule:instantiate("inner_"..systolicModule.name))
+  local res = Ssugar.moduleConstructor( J.sanitize("LiftHandshake_"..systolicModule.name) ):onlyWire(true):parameters({INPUT_COUNT=0, OUTPUT_COUNT=0})
+  local inner = res:add(systolicModule:instantiate( J.sanitize("inner") ))
 
   if Ssugar.isModuleConstructor(systolicModule) then systolicModule:complete(); systolicModule=systolicModule.module end
 
@@ -840,7 +844,7 @@ local function liftHandshakeSystolic( systolicModule, liftFns, passthroughFns, h
 
     local SR, out
     if pout.type~=types.null() then
-      SR = res:add( fpgamodules.shiftRegister( types.bool(), systolicModule:getDelay(fnname), false, true ):instantiate(prefix.."validBitDelay_"..systolicModule.name) )
+      SR = res:add( fpgamodules.shiftRegister( types.bool(), systolicModule:getDelay(fnname), false, true ):instantiate( J.sanitize(prefix.."validBitDelay") ) )
     
       local srvalue = SR:process(S.constant(true,types.bool()), S.constant(true,types.bool()), CE )
       local outvalid
@@ -919,7 +923,7 @@ modules.liftHandshake = memoize(function( f, handshakeTrigger, X )
   res.inputBurstiness = f.inputBurstiness
   res.outputBurstiness = f.outputBurstiness
   
-  res.name = "LiftHandshake_"..f.name
+  res.name = J.sanitize("LiftHandshake_"..f.name)
 
   err( rigel.SDF==false or SDFRate.isSDFRate(f.sdfInput), "Missing SDF rate for fn "..f.kind)
   res.sdfInput, res.sdfOutput = f.sdfInput, f.sdfOutput
@@ -1200,7 +1204,7 @@ modules.mapSeq = memoize(function( fn, W_orig, H_orig, X )
        
   local G = require "generators.core"
     
-  local res = G.Function{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
+  local res = G.Function{"MapSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,fn.sdfInput,function(inp) return fn(inp) end}
 
   assert( rigel.isPlainFunction(res) )
   
@@ -1575,15 +1579,16 @@ modules.downsampleYSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   err( type(T)=="number", "downsampleYSeq: T must be number" )
   err( type(scale)=="number", "downsampleYSeq: scale must be number" )
   err( scale>=1, "downsampleYSeq: scale must be >=1" )
-  err( (Uniform(W_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "downsampleYSeq, W%T~=0")
+  err( T==0 or (Uniform(W_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "downsampleYSeq, W%T~=0")
   err( J.isPowerOf2(scale), "scale must be power of 2")
   err( X==nil, "downsampleYSeq: too many arguments" )
 
   local sbits = math.log(scale)/math.log(2)
 
-  local inputType = types.array2d(A,T)
+  local inputType = A
+  if T>0 then inputType = types.array2d(A,T) end
   local outputType = types.lower(types.rvV(types.Par(inputType)))
-  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
+  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},math.max(T,1))
   local innerInputType = types.tuple{xyType, inputType}
 
   local modname = J.sanitize("DownsampleYSeq_W"..tostring(W_orig).."_H"..tostring(H_orig).."_scale"..tostring(scale).."_"..tostring(A).."_T"..tostring(T))
@@ -1599,7 +1604,7 @@ modules.downsampleYSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
       return MT.downsampleYSeqFn(innerInputType,outputType,scale)
     end, nil, {{1,scale}})
 
-  local res = modules.liftXYSeq( modname, "rigel.downsampleYSeq", f, W_orig, H_orig, T )
+  local res = modules.liftXYSeq( modname, "rigel.downsampleYSeq", f, W_orig, H_orig, math.max(1,T) )
 
   res.outputType = types.rvV(types.Par(inputType))
 
@@ -1630,12 +1635,13 @@ end)
 -- This takes A[T] to A[T/scale], except in the case where scale>T. Then it goes from A[T] to A[1]. If you want to go from A[T] to A[T], use changeRate.
 modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   err( types.isType(A), "downsampleXSeq: type must be rigel type" )
+  err( A:isData(),"downsampleXSeq: input type must be data type")
   --err( type(W)=="number", "downsampleXSeq: W must be number" )
   --err( type(H)=="number", "downsampleXSeq: H must be number" )
   err( type(T)=="number", "downsampleXSeq: T must be number" )
   err( type(scale)=="number", "downsampleXSeq: scale must be number" )
   err( scale>=1, "downsampleXSeq: scale must be >=1 ")
-  err( (Uniform(W_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "downsampleXSeq, W%T~=0")
+  err( T==0 or (Uniform(W_orig)%Uniform(T)):eq(0):assertAlwaysTrue(), "downsampleXSeq, W%T~=0")
   err( J.isPowerOf2(scale), "NYI - scale must be power of 2")
   err( X==nil, "downsampleXSeq: too many arguments" )
 
@@ -1646,13 +1652,15 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   local sbits = math.log(scale)/math.log(2)
 
   local outputT
-  if scale>T then outputT = 1
+  if scale>T then outputT = J.sel(T==0,0,1)
   elseif T%scale==0 then outputT = T/scale
   else err(false,"T%scale~=0 and scale<T") end
 
-  local inputType = types.array2d(A,T)
-  local outputType = types.lower(types.rvV(types.Par(types.array2d(A,outputT))))
-  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},T)
+  local inputType = A
+  if T>0 then inputType = types.array2d(A,T) end
+  local outputType = types.lower(types.rvV(A))
+  if outputT>0 then outputType = types.lower(types.rvV(types.Par(types.array2d(A,outputT)))) end
+  local xyType = types.array2d(types.tuple{types.uint(16),types.uint(16)},math.max(T,1))
   local innerInputType = types.tuple{xyType, inputType}
 
   local tfn, sdfOverride
@@ -1663,9 +1671,9 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   
   if scale>T then -- A[T] to A[1]
     -- tricky: each token contains multiple pixels, any of of which can be valid
-    assert(scale%T==0)
-    sdfOverride = {{1,scale/T}}
-    if terralib~=nil then tfn = MT.downsampleXSeqFn( innerInputType, outputType, scale ) end
+    assert(scale%math.max(T,1)==0)
+    sdfOverride = {{1,scale/math.max(T,1)}}
+    if terralib~=nil then tfn = MT.downsampleXSeqFn( innerInputType, outputType, scale, T, outputT ) end
 
     local function downXSim()
       for y=0,H-1 do
@@ -1692,28 +1700,35 @@ modules.downsampleXSeq = memoize(function( A, W_orig, H_orig, T, scale, X )
   local f = modules.lift( modname, innerInputType, outputType, 0, 
     function(sinp)
       local svalid, sdata
-      local sy = S.index(S.index(S.index(sinp,0),0),0)
       if scale>T then -- A[T] to A[1]
-        svalid = S.eq(S.cast(S.bitSlice(sy,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
+        local sx = S.index(S.index(S.index(sinp,0),0),0)
+        svalid = S.eq(S.cast(S.bitSlice(sx,0,sbits-1),types.uint(sbits)),S.constant(0,types.uint(sbits)))
         sdata = S.index(sinp,1)
-        sdata = S.index(sdata,0)
-        sdata = S.cast(S.tuple{sdata},types.array2d(sdata.type,1))
+        if T>0 then
+          sdata = S.index(sdata,0)
+          sdata = S.cast(S.tuple{sdata},types.array2d(sdata.type,1))
+        end
       else
         svalid = S.constant(true,types.bool())
         local datavar = S.index(sinp,1)
         sdata = J.map(J.range(0,outputT-1), function(i) return S.index(datavar, i*scale) end)
         sdata = S.cast(S.tuple(sdata), types.array2d(A,outputT))
       end
+
       local res = S.tuple{sdata,svalid}
       return res
     end,
     function() return tfn end, nil,
     sdfOverride)
-
-  local res = modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W_orig, H_orig, T )
-
+  
+  local res = modules.liftXYSeq( modname, "rigel.downsampleXSeq", f, W_orig, H_orig, math.max(T,1) )
+  
   -- hack
-  local newType = types.rvV(types.Par(types.array2d(A,outputT)))
+  local newType = types.rvV(A)
+  if outputT>0 then
+    newType = types.rvV(types.array2d(A,outputT))
+  end
+  
   assert(res.outputType:lower()==newType:lower())
 
   res.outputType = newType
@@ -2827,7 +2842,8 @@ end)
 
 -- takes an image of size A[W,H] to size A[W+L+R,H+B+Top]. Fills the new pixels with value 'Value'
 -- sequentialized to throughput T
-modules.padSeq = memoize(function( A, W_orig, H, T, L, R_orig, B, Top, Value, framed, X )
+-- waitForFirstInput: don't start writing frames until we see at least one input!
+modules.padSeq = memoize(function( A, W_orig, H, T, L, R_orig, B, Top, Value, framed, waitForFirstInput, X )
   err( types.isType(A), "A must be a type")
   
   err( A~=nil, "padSeq A==nil" )
@@ -2841,6 +2857,8 @@ modules.padSeq = memoize(function( A, W_orig, H, T, L, R_orig, B, Top, Value, fr
   err( Value~=nil, "padSeq Value==nil" )
   if framed==nil then framed=false end
   err( type(framed)=="boolean","padSeq: framed should be boolean" )
+  if waitForFirstInput==nil then waitForFirstInput=false end
+  err( type(waitForFirstInput)=="boolean")
   err( X==nil, "padSeq: too many arguments" )
   
   J.map({H=H,T=T,L=L,B=B,Top=Top},function(n,k)
@@ -2944,14 +2962,30 @@ modules.padSeq = memoize(function( A, W_orig, H, T, L, R_orig, B, Top, Value, fr
       ycheck = S.__and(C3,C4)
     end
     
-    local isInside = S.__and(xcheck,ycheck)
-    local readybit = isInside:disablePipelining()
-    
+    local isInside = S.__and(xcheck,ycheck):disablePipelining()
+
     local pipelines={}
 
+    local readybit
+    local userinput
+    if waitForFirstInput then
+      local first = S.__and(S.eq( posX:get(), S.constant(0,types.uint(32)) ), S.eq( posY:get(), S.constant(0,types.uint(16)) ))
+      local last = S.__and(S.eq( posX:get(), Uniform(L+W-math.max(T,1)):toSystolic(types.U32) ), S.eq( posY:get(), S.constant(B+H-1,types.uint(16)) ))
+      readybit = S.__and(isInside,S.__not(last))
+      readybit = S.__or(readybit,first)
+      readybit = readybit:disablePipelining()
+
+      local databuf = systolicModule:add( S.module.reg( res.inputType:lower(), true ):instantiate("databuf") )
+      table.insert( pipelines, databuf:set(pinp,readybit) )
+      userinput = databuf:get()
+    else
+      readybit = isInside
+      userinput = pinp
+    end
+    
     local incY = S.eq( posX:get(), Uniform(W+L+R-Tf):toSystolic(types.uint(32))  ):disablePipelining()
-    pipelines[1] = posY:setBy( incY )
-    pipelines[2] = posX:setBy( S.constant(true,types.bool()) )
+    table.insert( pipelines, posY:setBy( incY ) )
+    table.insert( pipelines, posX:setBy( S.constant(true,types.bool()) ) )
 
     local ValueBroadcast
     if T==0 then
@@ -2962,7 +2996,7 @@ modules.padSeq = memoize(function( A, W_orig, H, T, L, R_orig, B, Top, Value, fr
     
     local ConstTrue = S.constant(true,types.bool())
 
-    local out = S.select( readybit, pinp, ValueBroadcast )
+    local out = S.select( isInside, userinput, ValueBroadcast )
     
     local CE = S.CE("CE")
     systolicModule:addFunction( S.lambda("process", pinp, S.tuple{out,ConstTrue}, "process_output", pipelines, pvalid, CE) )
@@ -3106,7 +3140,8 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
       systolicModule:addFunction( S.lambda("ready", S.parameter("readyinp",types.null()), ready, "ready", {} ) )
       
     else -- inputRate <= outputRate. 4 to 8
-      assert(H==1) -- NYI
+      --assert(H==1) -- NYI
+
       
       local sPhase = systolicModule:add( Ssugar.regByConstructor( types.uint(16), fpgamodules.incIfWrap( types.uint(16), inputCount-1) ):CE(true):setReset(0):instantiate("phase_changerateup") )
       local printInst
@@ -3120,6 +3155,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
       
       local out
       if inputRate==0 then
+        assert(H==1)
         local delayedVals = J.map(J.range(inputCount-1,0), function(i) return pinp(i) end)
         out = S.cast( S.tuple(delayedVals), types.array2d(A,outputRate,H) )
       else
@@ -3577,7 +3613,7 @@ end)
 -- if nilhandshake is false or nil, and f input type is nil, we produce type nil->Handshake(A)
 -- Handshake(nil) provides a ready bit but no data, vs nil, which provides nothing.
 -- (nilhandshake also applies the same way to the output type)
-modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
+modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, name, X )
   assert( rigel.isFunction(f) )
   if nilhandshake==nil then
     -- set nilhandshake=true by default if we are dealing with explicit trigger types
@@ -3643,8 +3679,14 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
   end
   
   res.stateful = (f.delay>0) or f.stateful -- for the shift register of valid bits
-  res.name = J.sanitize("MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name)
 
+  if name~=nil then
+    assert(type(name)=="string")
+    res.name = name
+  else
+    res.name = J.sanitize("MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name)
+  end
+  
   res.requires = {}
   for inst,fnmap in pairs(f.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
   res.provides = {}
@@ -3666,7 +3708,7 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
     if res.inputType==types.Interface() then srtype = rigel.extractValid(res.outputType) end
 
     local SRMod = fpgamodules.shiftRegister( srtype, f.systolicModule:getDelay("process"), SRdefault, true )
-    local SR = systolicModule:add( SRMod:instantiate( J.sanitize("makeHSvalidBitDelay_"..f.systolicModule.name) ) )
+    local SR = systolicModule:add( SRMod:instantiate( J.sanitize("makeHSvalidBitDelay") ) )
     local inner = systolicModule:add(f.systolicModule:instantiate("inner"))
 
     local pinp = S.parameter("process_input", rigel.lower(res.inputType) )
@@ -4025,9 +4067,39 @@ always @(posedge CLK) begin
 
   //$display("size %d reading %d writing %d readAddr %d readDat %x writeAddr %d writeDat %x",size,reading,writing,readAddr, ram_readOut, writeAddr, ram_writeAddrAndData[71:8]);
 end
-
 ]])
 
+        if true then
+          -- extra debug stuff
+table.insert(verilog,[[          
+reg [31:0] numRead = 32'd0;
+reg [31:0] numWritten = 32'd0;
+
+always @(posedge CLK) begin
+  if( reset) begin
+    if( numRead!=numWritten ) begin
+      $display("SEVERE WARNING: FIFO INPUTS/OUTPUTS DONT MATCH AT RESET. THIS MEANS SOME STATE WASNT FULLY CLEAR AT RESET TIME. CHECK PADSEQS. stored:%0d loaded:%0d ]]..J.verilogSanitizeInner(res.name)..[[",numWritten, numRead);
+    end
+
+    numRead <= 32'd0;
+    numWritten <= 32'd0;
+  end else begin
+    if(store_valid && store_ready) begin
+      numWritten <= numWritten + 32'd1;
+    end
+    if(load_valid && load_ready_downstream) begin
+      numRead <= numRead + 32'd1;
+    end
+
+    if(numRead>numWritten) begin
+      $display("ERROR: MORE OUTPUTS FROM FIFO THAN INPUTS!");
+    end
+  end
+end
+
+]])
+        end
+        
         table.insert(verilog,[[
 endmodule
 
@@ -4107,7 +4179,7 @@ modules.lut = memoize(function( inputType, outputType, values )
   local res = {kind="lut", inputType=inputType, outputType=outputType, values=values, stateful=false }
   res.sdfInput, res.sdfOutput = SDF{1,1},SDF{1,1}
   res.delay = 1
-  res.name = "LUT_"..verilogSanitize(tostring(inputType)).."_"..verilogSanitize(tostring(outputType)).."_"..verilogSanitize(tostring(values))
+  res.name = J.sanitize("LUT_"..tostring(inputType).."_"..(tostring(outputType)).."_"..(tostring(values)) )
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
@@ -4259,7 +4331,7 @@ modules.reduceSeq = memoize(function( f, Vw, Vh, framed, X )
   res.stateful = true
   err( f.delay==0, "reduceSeq, function must be asynchronous (0 cycle delay)")
   res.delay = 0
-  res.name = "ReduceSeq_"..f.name.."_Vw"..tostring(Vw).."_Vh"..tostring(Vh)
+  res.name = J.sanitize("ReduceSeq_"..f.name.."_Vw"..tostring(Vw).."_Vh"..tostring(Vh))
 
   if terralib~=nil then res.terraModule = MT.reduceSeq(res,f,Vw,Vh) end
 
@@ -4323,7 +4395,7 @@ modules.overflow = memoize(function( A, count )
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="overflow", A=A, inputType=types.rv(types.Par(A)), outputType=types.rvV(types.Par(A)), stateful=true, count=count, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, delay=0}
   if terralib~=nil then res.terraModule = MT.overflow(res,A,count) end
-  res.name = "Overflow_"..count.."_"..verilogSanitize(tostring(A))
+  res.name = J.sanitize("Overflow_"..count.."_"..tostring(A))
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
@@ -4677,7 +4749,14 @@ local function lambdaSDFNormalize( input, output, name, X )
     end
   end
 
-  local sdfMaxRate = output:sdfExtremeRate(true)
+  local extreme = output:sdfExtremeRate(true,true)
+  local sdfMaxRate, maxNode = extreme[1], extreme[2]
+  
+  if Uniform(sdfMaxRate[1]):eq(0):assertAlwaysTrue() then
+    output:visitEach(function(n) print(n) end)
+    J.err( false,"Error: max utilization of pipeline is 0! Something weird must have happened. Function:",name," due to node: ", maxNode)
+  end
+
   local scaleFactor = SDFRate.fracInvert(sdfMaxRate)
   
   --if DARKROOM_VERBOSE then print("NORMALIZE, sdfMaxRate", SDFRate.fracToNumber(sdfMaxRate),"outputBW", SDFRate.fracToNumber(outputBW), "scaleFactor", SDFRate.fracToNumber(scaleFactor)) end
@@ -4687,8 +4766,28 @@ local function lambdaSDFNormalize( input, output, name, X )
     function(n,orig)
       if n.kind=="input" then
         err( n.id==input.id, "lambdaSDFNormalize: unexpected input node. input node is not the declared module input." )
+        local orig = n.rate
+
         n.rate = SDF(SDFRate.multiply(n.rate,scaleFactor[1],scaleFactor[2]))
         assert( SDFRate.isSDFRate(n.rate))
+
+        if n.rate:allLE1()==false then
+          -- this is kind of a hack? not all input rates will affect a module, so make sure we never
+          -- end up with an input rate >1
+
+          local tr = n.rate:largest()
+
+          n.rate = SDF(SDFRate.multiply(n.rate,tr[1][2],tr[1][1]))
+          assert( SDFRate.isSDFRate(n.rate))
+
+          --output:visitEach(function(n) print(n) end)
+          --J.err( n.rate:allLE1(), "Error? somehow lambda SDF normalize resulted in a function input with rate>1? rate:",n.rate," originalRate:",orig," maxRate:",sdfMaxRate[1],"/",sdfMaxRate[2])
+        end
+
+        if orig:le(n.rate)==false then
+          print("Warning: Module rate ended up being less than what the user requested. Function ",name," requested:",orig," but solved rate was:", n.rate)
+        end
+        
         newInput = rigel.newIR(n)
         return newInput
       elseif n.kind=="apply" and #n.inputs==0 then
@@ -5063,7 +5162,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
           if n.fn.inputBurstiness>0 then
             local items = n.fn.inputBurstiness + FIFOSizeToDelay( n.fn.inputBurstiness )
             if items>16384/4 then
-              print("ERROR: FIFO allocation is too big! This should be an error! Truncating! INPUT SIDE")
+              print("warning: FIFO allocation is too big! Truncating! INPUT SIDE")
               print(n.fn)
               for i=1,30 do print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!") end
               items = 16384/4
@@ -5074,7 +5173,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
           if n.fn.outputBurstiness>0 then
             local items = n.fn.outputBurstiness + FIFOSizeToDelay( n.fn.outputBurstiness )
             if items>16384/4 then
-              print("ERROR: FIFO allocation is too big! This should be an error! Truncating! OUTPUT SIDE")
+              print("warning: FIFO allocation is too big! Truncating! OUTPUT SIDE")
               print(n.fn)
               for i=1,30 do print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!") end
               items = 16384/4
@@ -5170,20 +5269,19 @@ local function calculateDelaysZ3( output )
     function(n, inputs)
       local res
 
---      if n.kind~="statements" and n.kind~="selectStream" then -- these are noops
-      seenNames[n.name] = n
-      table.insert( statements, "(declare-const "..n.name.." Int)" )
---      end
+      local name = J.verilogSanitizeInner(n.name)
+      seenNames[name] = n
+      table.insert( statements, "(declare-const "..name.." Int)" )
       
       if n.kind=="input" or n.kind=="constant" then
-        table.insert( statements, "(assert (= "..n.name.." 0))" )
-        res = n.name
+        table.insert( statements, "(assert (= "..name.." 0))" )
+        res = name
       elseif n.kind=="concat" or n.kind=="concatArray2d" then
         for k,i in ipairs(inputs) do
-          table.insert( statements, "(assert (>= "..n.name.." "..i.."))" )
-          table.insert( ofTerms, "(* (- "..n.name.." "..i..") "..(n.inputs[k].type:extractData():verilogBits())..")" )
+          table.insert( statements, "(assert (>= "..name.." "..i.."))" )
+          table.insert( ofTerms, "(* (- "..name.." "..i..") "..(n.inputs[k].type:extractData():verilogBits())..")" )
         end
-        res = n.name
+        res = name
       elseif n.kind=="apply" or (n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module)) then
 
         local fn = n.fn
@@ -5198,38 +5296,38 @@ local function calculateDelaysZ3( output )
         
         if fn.inputType==types.Interface() or (fn.inputType:isrv() and fn.inputType:extractData():verilogBits()==0) then
           --res = fn.delay+extra
-          table.insert( statements, "(assert (= "..n.name.." "..(fn.delay+extra).."))" )
-          res = n.name
+          table.insert( statements, "(assert (= "..name.." "..(fn.delay+extra).."))" )
+          res = name
         else
           err(fn.delay~=nil,"Error: fn "..fn.name.." is missing delay? "..tostring(fn.inputType).." "..tostring(fn.outputType))
           --res = inputs[1] + fn.delay + extra
           --assert(false)
-          table.insert( statements, "(assert (>= "..n.name.." (+ "..inputs[1].." "..(fn.delay+extra)..")))" )
+          table.insert( statements, "(assert (>= "..name.." (+ "..inputs[1].." "..(fn.delay+extra)..")))" )
           local bts = n.inputs[1].type:extractData():verilogBits()
-          if bts>0 then table.insert( ofTerms, "(* (- "..n.name.." "..inputs[1]..") "..bts..")" ) end
-          res = n.name
+          if bts>0 then table.insert( ofTerms, "(* (- "..name.." "..inputs[1]..") "..bts..")" ) end
+          res = name
         end
       elseif n.kind=="applyMethod" then
         if n.inst.module.functions[n.fnname].inputType==types.null() or n.inst.module.functions[n.fnname].inputType:isInil() then
           --res = n.inst.module.functions[n.fnname].delay
           --          assert(false)
-          table.insert( statements, "(assert (= "..n.name.." 0))" )
-          res = n.name
+          table.insert( statements, "(assert (= "..name.." 0))" )
+          res = name
         else
-          table.insert( statements, "(assert (>= "..n.name.." (+ "..inputs[1].." "..n.inst.module.functions[n.fnname].delay..")))" )
+          table.insert( statements, "(assert (>= "..name.." (+ "..inputs[1].." "..n.inst.module.functions[n.fnname].delay..")))" )
           local bts = n.inputs[1].type:extractData():verilogBits()
-          if bts>0 then table.insert( ofTerms, "(* (- "..n.name.." "..inputs[1]..") "..bts..")" ) end
-          res = n.name
+          if bts>0 then table.insert( ofTerms, "(* (- "..name.." "..inputs[1]..") "..bts..")" ) end
+          res = name
           --res = inputs[1] + n.inst.module.functions[n.fnname].delay
           --assert(false)
         end
       elseif n.kind=="statements" then
-        table.insert( statements, "(assert (= "..n.name.." "..inputs[1].."))" )
-        res = n.name
+        table.insert( statements, "(assert (= "..name.." "..inputs[1].."))" )
+        res = name
       elseif n.kind=="selectStream" then
         -- for concat, we currently make all stream delays the same! So just look at index 1 always
-        table.insert( statements, "(assert (= "..n.name.." "..inputs[1].."))" )
-        res = n.name
+        table.insert( statements, "(assert (= "..name.." "..inputs[1].."))" )
+        res = name
       else
         print("delay NYI - ",n.kind,input.type,output.type)
         assert(false)
@@ -5262,14 +5360,17 @@ local function calculateDelaysZ3( output )
   local z3call = [[echo "]]..z3str..[[" | z3 -in -smt2]]
 
   local f = assert (io.popen (z3call))
-
+  
   local res = ""
   local curname
   local delayTable = {}
 
   local totalbits
   for line in f:lines() do
-    if string.match(line,"%|%->") then
+    if string.match(line,"error") then
+      J.err(false,"Z3 Error:", line, " from command: ",z3str)
+      
+    elseif string.match(line,"%|%->") then
       -- some versions of z3 write out the objective function
     elseif string.match(line,"define%-fun") then
       local nam = string.match(line,"define%-fun (%g+)")
@@ -5277,7 +5378,7 @@ local function calculateDelaysZ3( output )
     elseif string.match (line, "%d+") then
       local num = string.match (line, "%d+")
       num = tonumber(num)
-      err(type(curname)=="string","name not set?")
+      err(type(curname)=="string","name not set? is:",curname)
       if curname=="MINVAR" then
         totalbits = num
       else
@@ -5303,7 +5404,7 @@ local function calculateDelaysZ3( output )
     delayTableASTs[v] = delayTable[k]
   end
   
-  err( type(delayTable[output.name])=="number","delay for output missing? name: ",output.name," is: ",delayTable[output.name] )
+  err( type(delayTableASTs[output])=="number","delay for output missing? name: ",output.name," is: ",delayTableASTs[output] )
 --  print("RES",res)
   
 --  if string.match(res,"sat") then
@@ -5315,7 +5416,7 @@ local function calculateDelaysZ3( output )
 --    assert(false)
 --  end
 
-  return delayTable[output.name], delayTableASTs
+  return delayTableASTs[output], delayTableASTs
 end
 
 
@@ -6026,7 +6127,8 @@ end)
 -- tokensX, tokensY: optional - what is the size of the transaction? enables extra debugging (terra checks for regressions on second run)
 -- 'filename' is used for Terra
 -- We don't modify filenames in any way!
-modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough, allowBadSizes, tokensX, tokensY, X )
+-- header: a string to append at the very start of the file
+modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough, allowBadSizes, tokensX, tokensY, header, X )
   err( type(filename)=="string", "filename must be a string")
   err( types.isType(ty), "type must be a type")
   rigel.expectBasic(ty)
@@ -6043,7 +6145,7 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
 
-    local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true, passthrough, false ):instantiate("fwritefile") )
+    local sfile = systolicModule:add( S.module.file( filenameVerilog, ty, true, passthrough, false, true, nil, header ):instantiate("fwritefile") )
 
     local printInst
     if DARKROOM_VERBOSE then printInst = systolicModule:add( S.module.print( ty, "fwrite O %h", true):instantiate("printInst") ) end
@@ -6066,7 +6168,7 @@ modules.fwriteSeq = memoize(function( filename, ty, filenameVerilog, passthrough
 
   res = rigel.newFunction(res)
 
-  if terralib~=nil then res.terraModule = MT.fwriteSeq( res, filename,ty,passthrough, allowBadSizes, tokensX, tokensY) end
+  if terralib~=nil then res.terraModule = MT.fwriteSeq( res, filename,ty,passthrough, allowBadSizes, tokensX, tokensY, header ) end
 
   return res
 end)

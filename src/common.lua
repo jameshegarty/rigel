@@ -690,13 +690,23 @@ end
 
 -- hack: running only one round of sanitize may leave unsanitized stuff
 function common.verilogSanitize(s)
+
+  if s:sub(1,1)=="\\" and s:sub(#s,#s)==" " and s:sub(2,#s-1)==s:sub(2,#s-1):gsub("%s+","_") then
+    return s
+  end
+
+  local a = common.verilogSanitizeInner(s)
+  if a==s then return s end
+  
+  return "\\"..s:gsub("%s+","_").." "
+--[=[
   local a = common.verilogSanitizeInner(s)
 
   while(true) do
     local b = common.verilogSanitizeInner(a)
     if(a==b) then return b end
     a=b
-  end
+  end]=]
 end
 
 common.sanitize = common.verilogSanitize
@@ -796,7 +806,7 @@ function common.canonicalV( rate, size, columnMajor, X )
   local sizeW, sizeH = Uniform(size[1]):toNumber(), Uniform(size[2]):toNumber()
   local seq = rate[1][2]:toNumber()/rate[1][1]:toNumber()
   local V = (sizeW*sizeH)/seq
-  
+
   if V<1 then
     return R.Size(0,0)
   elseif V==1 then

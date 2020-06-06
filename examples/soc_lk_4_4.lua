@@ -52,13 +52,25 @@ if V>1 then
   PadRadiusAligned = J.upToNearest(V,CONVWIDTH/2)
 end
 
+local PadExtra = PadRadiusAligned - PadRadius
+
 local cycles = ((W+PadRadiusAligned*2)*(H+PadRadius*2+1))/V
+
+if CONVWIDTH==4 and V==(1/4) then
+--  cycles = cycles - 1
+elseif CONVWIDTH==12 and V==(3/12) then
+--  cycles = cycles - 1
+end
+
 print("CYCLES",cycles)
 
 local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
 
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}} ):instantiate("ZynqNOC")
 noc.extern=true
+
+local FIFOSIZE = 128
+      
 
 --local Fdenom = G.SchedulableFunction{"Fdenom", T.Array2d(P.NumberType("ty"),4),true,
 local Fdenom = G.Fmap{G.Function{"Fdenom", T.rv(T.Array2d(types.Int(20,-2),4)),
@@ -100,8 +112,14 @@ local Fout = G.Fmap{G.Function{"Fout", T.rv(T.tuple{T.array2d(T.Int(20,-2),4), T
 end}}
 
 --local Invert2x2 = G.SchedulableFunction{"Invert2x2", T.Array2d(P.NumberType("A"),4),
-local Invert2x2 = G.Fmap{G.Function{"Invert2x2", T.rv(T.Array2d(T.int(20,-2),4)),
+local Invert2x2 = G.Function{"Invert2x2", T.rv(T.Array2d(T.int(20,-2),4)),SDF{1,1},
   function(i)
+--    i = G.Map{G.AddMSBs{12}}(i)
+--    print("i",i.type,i.rate,i.type:deSchedule():verilogBits()/8)
+    --    i = G.FwritePGM{"out/"..outfile..".invert2x2.pgm",{134,135}}(i)
+--    i = RM.shiftRegister(i.type:deInterface(),1)(i)
+--    i = G.Map{G.RemoveMSBs{12}}(i)
+
     print("INV",i.type)
     local iFO = G.FanOut{2}(i)
     local denom = Fdenom( G.RVFIFO{128}(iFO[0]) )
@@ -109,7 +127,9 @@ local Invert2x2 = G.Fmap{G.Function{"Invert2x2", T.rv(T.Array2d(T.int(20,-2),4))
     local det = G.Fmap{C.lutinvert(denom.type:deInterface())}(denom)
     local res = Fout( G.RVFIFO{128}(iFO[1]), det )
     return res
-end}}
+end}
+
+print(Invert2x2)
 
 --local Dx = G.SchedulableFunction{"Dx",T.Array2d(T.Uint(8),3),
 local Dx = G.Fmap{G.Function{"Dx", T.rv(T.Array2d(T.Uint(8),3)),
@@ -136,31 +156,31 @@ local CalcA = G.SchedulableFunction{"CalcA",
   types.tuple{ types.array2d( P.NumberType("ty"), P.SizeValue("sz")),
                types.array2d( P.NumberType("ty"), P.SizeValue("sz")) },
   function(inp)
-    print("CALCA",inp.type)
+    print("CALCA",inp.type,inp.rate)
     local inpFO = G.FanOut{2}(inp)
     
-    local Fdx = inpFO[0][0]
+    local Fdx = G.RVFIFO{FIFOSIZE}(inpFO[0][0])
     local FdxFO = G.FanOut{3}(Fdx)
-    local Fdy = inpFO[1][1]
+    local Fdy = G.RVFIFO{FIFOSIZE}(inpFO[1][1])
     local FdyFO = G.FanOut{3}(Fdy)
 
-    local inp0 = G.Zip(G.RVFIFO{128}(FdxFO[0]),G.RVFIFO{128}(FdxFO[1]))
+    local inp0 = G.Zip(G.RVFIFO{FIFOSIZE}(FdxFO[0]),G.RVFIFO{FIFOSIZE}(FdxFO[1]))
     local out0 = G.Map{G.MulE}(inp0)
     
     out0 = G.Reduce{G.Add{R.Async}}(out0)
     
-    local inp1 = G.Zip(G.RVFIFO{128}(FdxFO[2]),G.RVFIFO{128}(FdyFO[0]))
+    local inp1 = G.Zip(G.RVFIFO{FIFOSIZE}(FdxFO[2]),G.RVFIFO{FIFOSIZE}(FdyFO[0]))
     local out1 = G.Map{G.MulE}(inp1)
     out1 = G.Reduce{G.Add{R.Async}}(out1)
     
     --local out2 = out1
     local out1FO = G.FanOut{2}(out1)
     
-    local inp3 = G.Zip(G.RVFIFO{128}(FdyFO[1]),G.RVFIFO{128}(FdyFO[2]))
+    local inp3 = G.Zip(G.RVFIFO{FIFOSIZE}(FdyFO[1]),G.RVFIFO{FIFOSIZE}(FdyFO[2]))
     local out3 = G.Map{G.MulE}(inp3)
     out3 = G.Reduce{G.Add{R.Async}}(out3)
     
-    local out = R.concat{out0,G.RVFIFO{128}(out1FO[0]),G.RVFIFO{128}(out1FO[1]),out3}
+    local out = R.concat{out0,G.RVFIFO{FIFOSIZE}(out1FO[0]),G.RVFIFO{FIFOSIZE}(out1FO[1]),out3}
     
     return G.TupleToArray(G.FanIn(out))
   end}
@@ -178,26 +198,26 @@ local CalcB = G.SchedulableFunction{"CalcB",
            T.Array2d(P.NumberType("ty"),P.SizeValue("w")),
            T.Array2d(P.NumberType("ty"),P.SizeValue("w")) },
   function(i)                              
-    print("CALCB",i.type)
+    print("CALCB",i.type,i.rate)
     local iFO = G.FanOut{4}(i)
-    local frame0 = iFO[0][0]
-    local frame1 = iFO[1][1]
-    local Fdx = iFO[2][2]
-    local Fdy = iFO[3][3]
+    local frame0 = G.RVFIFO{FIFOSIZE}(iFO[0][0])
+    local frame1 = G.RVFIFO{FIFOSIZE}(iFO[1][1])
+    local Fdx = G.RVFIFO{FIFOSIZE}(iFO[2][2])
+    local Fdy = G.RVFIFO{FIFOSIZE}(iFO[3][3])
 
     ---------
-    local gmf = R.concat("mfgmf",{G.RVFIFO{128}(frame1),G.RVFIFO{128}(frame0)})
+    local gmf = R.concat("mfgmf",{frame1,frame0})
     gmf = G.Zip(gmf)
     gmf = G.Map{Minus}(gmf)
     local gmfFO = G.FanOut{2}(gmf)
     ---------
 
-    local out_0 = R.concat("o0tup",{G.RVFIFO{128}(Fdx), G.RVFIFO{128}(gmfFO[0]) })
+    local out_0 = R.concat("o0tup",{Fdx, G.RVFIFO{FIFOSIZE}(gmfFO[0]) })
     out_0 = G.Zip(out_0)
     out_0 = G.Map{G.MulE}(out_0)
     out_0 = G.Reduce{G.Add{R.Async}}(out_0)
 
-    local out_1 = R.concat("o1tup",{G.RVFIFO{128}(Fdy), G.RVFIFO{128}(gmfFO[1]) })
+    local out_1 = R.concat("o1tup",{Fdy, G.RVFIFO{FIFOSIZE}(gmfFO[1]) })
     out_1 = G.Zip(out_1)
     out_1 = G.Map{G.MulE}(out_1)
     out_1 = G.Reduce{G.Add{R.Async}}(out_1)
@@ -263,62 +283,136 @@ end}}
 local LK = G.SchedulableFunction{"LK",types.Array2d(T.Tuple{types.uint(8),types.uint(8)},P.SizeValue("imsize")),
     function(inp)
 
+      --inp = G.Map{G.FwritePGM{"out/"..outfile..".inp.raw"},true}(inp)
+--      inp=G.FwritePGM{"out/"..outfile..".inp.pgm"}(inp)
+      
       print("LKINP",inp.type,inp.rate)
       local inpFO = G.FanOut{2}(inp)
       
-      local frame0 = G.Map{G.Index{0}}(inpFO[0])
-      local frame1 = G.Map{G.Index{1}}(inpFO[1])
-  
-      local lb0 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame0)
-      local lb0FO = G.FanOut{3}(lb0)
+      local frame0 = G.Map{G.Index{0}}(G.FIFO{FIFOSIZE}(inpFO[0]))
+      local frame0FO = G.FanOut{2}(frame0)
+      local frame0_0 = G.FIFO{FIFOSIZE}(frame0FO[0])
+      local frame0_1 = G.FIFO{FIFOSIZE}(frame0FO[1])
+
+      print("frame0_1",frame0_1.type,frame0_1.rate,frame0_1.scheduleConstraints, frame0_1.type:deSchedule():verilogBits()/8)
+--      frame0_1 = G.Map{G.Fwrite{"out/"..outfile..".frame0_1.data"},true}(frame0_1)
+      
+      local frame1 = G.Map{G.Index{1}}(G.FIFO{FIFOSIZE}(inpFO[1]))
+      frame1 = G.FIFO{FIFOSIZE}(frame1)
+      
+      local lb0 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame0_0)
+
+      local lb0_fd = G.Stencil{{-2, 0, -2, 0}}(frame0_1)
+
+--      print("FDX_st",lb0_fd.type,lb0_fd.rate,lb0_fd.type:deSchedule():verilogBits()/8)
+--      lb0_fd = G.FwritePGM{"out/"..outfile..".fdxst.pgm"}(lb0_fd)
+
+      --      print("lb0fd",lb0_fd.type,lb0_fd.rate,lb0_fd.scheduleConstraints)
+--      lb0_fd = G.Map{G.Fwrite{"out/"..outfile..".lb0fd.raw",R.Unoptimized},true,R.Unoptimized}(lb0_fd)
+
+      local lb0_fd_FO = G.FanOut{2}(lb0_fd)
+      local lb0_fd_0 = G.FIFO{FIFOSIZE}(lb0_fd_FO[0])
+      local lb0_fd_1 = G.FIFO{FIFOSIZE}(lb0_fd_FO[1])
+
+
       local lb1 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame1)
 
-      local fdx = G.Map{G.Slice{{CONVWIDTH-2, CONVWIDTH, CONVWIDTH-1, CONVWIDTH-1}}}(lb0FO[0])
+      
+--      print("FDXI",lb0_fd_0.type,lb0_fd_0.rate)
+      local fdx = G.Map{G.Slice{{0,2,1,1}}}(lb0_fd_0)
+      
+--      print("FDXINP",fdx.type,fdx.rate,fdx.type:deSchedule():verilogBits()/2)
+--      fdx = G.FwritePGM{"out/"..outfile..".fdxi.pgm"}(fdx)
+      
+      fdx = G.FIFO{FIFOSIZE}(fdx)
 
       fdx = G.Map{Dx}(fdx)
-
-      print("FDX",fdx.type,fdx.rate,fdx.scheduleConstraints)
+      
+--      fdx = G.Map{G.AddMSBs{6}}(fdx)
+--      print("FDX",fdx.type,fdx.rate,fdx.type:deSchedule():verilogBits()/8)
+--      fdx = G.FwritePGM{"out/"..outfile..".fdx.pgm"}(fdx)
+--      fdx = G.Map{G.RemoveMSBs{6}}(fdx)
+      
+--      print("FDX",fdx.type,fdx.rate,fdx.scheduleConstraints)
       local fdx_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdx)
-      print("FDX_ST",fdx_stencil.type,fdx_stencil.rate,fdx_stencil.scheduleConstraints)
+--      print("FDX_ST",fdx_stencil.type,fdx_stencil.rate,fdx_stencil.scheduleConstraints)
       
-      local fdx_stencilFO = G.FanOut{2,R.Unoptimized}(fdx_stencil)
+      local fdx_stencilFO = G.FanOut{2}(fdx_stencil)
       
-      local fdy = G.Map{G.Slice{{CONVWIDTH-1, CONVWIDTH-1, CONVWIDTH-2, CONVWIDTH}}}(lb0FO[1])
-
+      local fdy = G.Map{G.Slice{{1,1,0,2}}}(lb0_fd_1)
+      fdy = G.FIFO{FIFOSIZE}(fdy)
+      
       local fdy = G.Map{Dy}(fdy)
-      local fdy_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdy)
-      local fdy_stencilFO = G.FanOut{2,R.Unoptimized}(fdy_stencil)
       
-      local Ainpinp = R.concat{ G.RVFIFO{128}(fdx_stencilFO[0]), G.RVFIFO{128}(fdy_stencilFO[0]) }
+      local fdy_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdy)
+      local fdy_stencilFO = G.FanOut{2}(fdy_stencil)
+      
+      local Ainpinp = R.concat{ G.RVFIFO{FIFOSIZE}(fdx_stencilFO[0]), G.RVFIFO{FIFOSIZE}(fdy_stencilFO[0]) }
       print("AINPINP",Ainpinp.type,Ainpinp.rate)
-      local Ainp = G.Zip{R.Unoptimized}( Ainpinp  )
+      local Ainp = G.Zip( Ainpinp  )
       local A = G.Map{CalcA}(Ainp)
+      
+--      A = G.Map{G.Map{G.AddMSBs{12}}}(A)
+--      print("A",A.type,A.rate,A.type:deSchedule():verilogBits()/8)
+--      A = G.FwritePGM{"out/"..outfile..".A.pgm"}(A)
+--      A = G.Map{G.Map{G.RemoveMSBs{12}}}(A)
 
+      print("AINVINP",A.type,A.rate)
       local Ainv = G.Map{Invert2x2}(A)
-
-      local f0_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb0FO[2])
+      Ainv = G.FIFO{FIFOSIZE}(Ainv)
+      
+--      Ainv = G.Map{G.Map{G.AddMSBs{13}}}(Ainv)
+--      print("AINV",Ainv.type,Ainv.rate,Ainv.type:deSchedule():verilogBits()/8)
+--      Ainv = G.FwritePGM{"out/"..outfile..".Ainv.pgm"}(Ainv)
+--      Ainv = G.Map{G.Map{G.RemoveMSBs{13}}}(Ainv)
+      
+--      local lb0FO2 = lb0FO[2]
+--      print("F0SLICEINP",lb0FO2.type,lb0FO2.rate)
+      local f0_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb0)
+      print("F0SLICE",f0_slice.type,f0_slice.rate)
       f0_slice = G.Map{G.ToColumns}(f0_slice)
       print("F0",f0_slice.type,f0_slice.rate)
       local f1_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb1)
       f1_slice = G.Map{G.ToColumns}(f1_slice)
 
       print("F)",f0_slice.type,f0_slice.scheduleConstraints)
-      local binp = R.concat{G.RVFIFO{128,R.Unoptimized}(f0_slice), G.RVFIFO{128,R.Unoptimized}(f1_slice), G.RVFIFO{128,R.Unoptimized}(fdx_stencilFO[1]), G.RVFIFO{128,R.Unoptimized}(fdy_stencilFO[1])}
+      local binp = R.concat{G.RVFIFO{FIFOSIZE}(f0_slice), G.RVFIFO{FIFOSIZE}(f1_slice), G.RVFIFO{FIFOSIZE}(fdx_stencilFO[1]), G.RVFIFO{FIFOSIZE}(fdy_stencilFO[1])}
       print("BINP0",binp.type,binp.rate,binp.scheduleConstraints)
       local binp = G.FanIn(binp  )
       print("BINP",binp.type,binp.rate,binp.scheduleConstraints)
-      local binp = G.Zip{R.Unoptimized}( binp  )
+      local binp = G.Zip( binp  )
       print("BIN2P",binp.type,binp.rate)
       local b = G.Map{CalcB}(binp)
 
-      print("BDONE",b.type)
+--      b = G.FIFO{FIFOSIZE}(b)
+      
+--      b = G.Map{G.Map{G.AddMSBs{12}}}(b)
+--      print("BDONE",b.type,b.rate)
+--      b = G.FwritePGM{"out/"..outfile..".b.pgm"}(b)
+--      b = G.Map{G.Map{G.RemoveMSBs{12}}}(b)
+      
       local zipcc = R.concat{Ainv,b}
-      zipcc = G.FanIn{R.Unoptimized}(zipcc)
-      local sinp = G.Zip{R.Unoptimized}(zipcc)
+      print("ZIPCC",zipcc.type,zipcc.rate)
+      zipcc = G.FanIn(zipcc)
+      print("ZIPCC2",zipcc.type,zipcc.rate)
+      local sinp = G.Zip(zipcc)
+
+--      print("sinp",sinp.type,sinp.rate)
+--      sinp = G.Map{G.Fwrite{"out/"..outfile..".sinp.data"},true}(sinp)
+
       local vectorField = G.Map{Solve}(sinp)
 
-      local out = G.Map{Display}(vectorField)
+--      vectorField = G.Map{G.Map{G.AddMSBs{24}}}(vectorField)
+--      print("solve",vectorField.type,vectorField.rate)
+--      vectorField = G.FwritePGM{"out/"..outfile..".solve.pgm"}(vectorField)
+--      vectorField = G.Map{G.Map{G.RemoveMSBs{24}}}(vectorField)
       
+      local out = G.Map{Display}(vectorField)
+
+--      print("DISPLAY",out.type,out.rate)
+--      out = G.Map{G.Fwrite{"out/"..outfile..".display.data"},true}(out)
+      
+--      out = G.FIFO{FIFOSIZE}(out)
       return out
     end}
 
@@ -327,14 +421,15 @@ local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
     print("LKTOP",i.type,i.rate,i.scheduleConstraints)
     local readStream = G.AXIReadBurst{ inputFilename, {W,H}, T.Tuple{T.Uint(8),T.Uint(8)}, 4, noc.read }(i)
     print("RSTReAM",readStream.type,readStream.rate)
-    
-    local PadExtra = PadRadiusAligned - PadRadius
-
     local padded = G.Pad{{PadRadiusAligned, PadRadiusAligned, PadRadius+1, PadRadius}}(readStream)
-    print("PADDED",padded.type,padded.rate,PadRadiusAligned,PadRadius)
+--    padded = G.Map{G.Fwrite{"out/"..outfile..".padded.raw"},true}(padded)
+    
+    print("PADDED$",padded.type,padded.rate,PadRadiusAligned,PadRadius)
     local out = LK(padded)
     out = G.Crop{{PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0}}(out)
+    out = G.FIFO{FIFOSIZE}(out)
     return G.AXIWriteBurst{"out/soc_lk_"..CONVWIDTH.."_"..(V*CONVWIDTH),noc.write}(out)
   end}
 
+--local Top = C.linearPipeline({regs.start, LKTop, regs.done},"Top", SDF{1,cycles}, {regs} )
 harness({regs.start, LKTop, regs.done},nil,{regs})

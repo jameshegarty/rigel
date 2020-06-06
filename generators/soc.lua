@@ -646,7 +646,7 @@ SOC.axiBurstReadNInner = J.memoize(function(filename,Nbytes,address,readFn_orig,
   globalMetadata[readFn_orig.name.."_read_filename"] = filename
   globalMetadata[readFn_orig.name.."_read_address"] = address
 
-  local ModuleName = J.sanitize("DRAMReader_"..tostring(Nbytes).."_"..tostring(address))
+  local ModuleName = "DRAMReader_"..tostring(Nbytes).."_"..tostring(address)
 
   local readFnInst = readFn:instantiate("ReadFn")
   --local RPORT = readFn.instance.name.."_"..readFn.functionName
@@ -654,7 +654,7 @@ SOC.axiBurstReadNInner = J.memoize(function(filename,Nbytes,address,readFn_orig,
   --local ROUT = readFn.instance.name.."_"..readFn.functionName
   
   local function vstr(res)
-    return [=[module ]=]..ModuleName..[=[_inner(
+    return [=[module ]=]..J.sanitize(ModuleName.."_inner")..[=[(
     //AXI port
     input wire ACLK,
     input wire ARESETN,
@@ -749,7 +749,7 @@ assign CONFIG_READY = (r_state == IDLE) && (a_state == IDLE);
 
 endmodule // DRAMReaderInner
 
-module ]=]..ModuleName..[=[_ported(
+module ]=]..J.sanitize(ModuleName.."_ported")..[=[(
     //AXI port
     input wire CLK,
     input wire reset,
@@ -782,7 +782,7 @@ module ]=]..ModuleName..[=[_ported(
 parameter INSTANCE_NAME="inst";
 
 
-]=]..ModuleName..[=[_inner inner(
+]=]..J.sanitize(ModuleName.."_inner")..[=[ inner(
     //AXI port
     .ACLK(CLK),
     .ARESETN(~reset),
@@ -818,7 +818,7 @@ endmodule
 
 ]=]..res:vHeader()..readFnInst:toVerilog()..address:toVerilogInstance()..Nbytes:toVerilogInstance()..[=[
 
-  ]=]..ModuleName..[=[_ported inner(
+  ]=]..J.sanitize(ModuleName.."_ported")..[=[ inner(
     .CLK(CLK),
     .reset(reset),
     .process_input(process_input),
@@ -848,7 +848,7 @@ endmodule
   instanceMap = J.joinSet(instanceMap,address:getInstances())
   instanceMap = J.joinSet(instanceMap,Nbytes:getInstances())
   
-  local res = RM.liftVerilogTab{ name=ModuleName, inputType=R.HandshakeTrigger, outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,(Nbytes/8)}}, sdfOutput={{1,1}}, instanceMap=instanceMap, delay=10, inputBurstiness=2 }
+  local res = RM.liftVerilogTab{ name=J.sanitize(ModuleName), inputType=R.HandshakeTrigger, outputType=R.Handshake(types.bits(64)), vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,(Nbytes/8)}}, sdfOutput={{1,1}}, instanceMap=instanceMap, delay=10, inputBurstiness=2 }
 
   -- hack: have it throttle outputs
   res.outputBurstiness = 2
@@ -1049,11 +1049,11 @@ SOC.axiBurstWriteNInner = J.memoize(function( filename, Nbytes, address, writeFn
   globalMetadata[writeFn_orig.name.."_write_H"] = 1
   globalMetadata[writeFn_orig.name.."_write_bitsPerPixel"] = 8
 
-  local moduleNameSuffix=J.sanitize("_file"..tostring(filename).."_Nbytes"..tostring(Nbytes).."_address"..tostring(address))
+  local moduleNameSuffix="_file"..tostring(filename).."_Nbytes"..tostring(Nbytes).."_address"..tostring(address)
   
   local function vstr(res)
 
-    return [=[module DRAMWriterInner]=]..moduleNameSuffix..[=[(
+    return [=[module ]=]..J.sanitize([=[DRAMWriterInner]=]..moduleNameSuffix)..[=[(
     //AXI port
     input wire ACLK,
     input wire ARESETN,
@@ -1184,7 +1184,7 @@ assign M_AXI_WDATA = DATA;
 
 endmodule // DRAMWriter
 
-module DRAMWriter_ported]=]..moduleNameSuffix..[=[(
+module ]=]..J.sanitize("DRAMWriter_ported"..moduleNameSuffix)..[=[(
     //AXI port
     input wire CLK,
     input wire reset,
@@ -1251,7 +1251,7 @@ $display("FIRST BUFFER SET");
   end
 end
 
-DRAMWriterInner]=]..moduleNameSuffix..[=[ inner(
+]=]..J.sanitize("DRAMWriterInner"..moduleNameSuffix)..[=[ inner(
     //AXI port
     .ACLK(CLK),
     .ARESETN(~reset),
@@ -1297,7 +1297,7 @@ endmodule
 
 ]=]..res:vHeader()..writeFnInst:toVerilog()..address:toVerilogInstance()..Nbytes:toVerilogInstance()..[=[
 
-  DRAMWriter_ported]=]..moduleNameSuffix..[=[ ported(.CLK(CLK),
+  ]=]..J.sanitize("DRAMWriter_ported"..moduleNameSuffix)..[=[ ported(.CLK(CLK),
     .reset(reset),
     .process_input(process_input),
     .ready(ready),
@@ -1331,7 +1331,7 @@ endmodule
   instanceMap = J.joinSet(instanceMap,address:getInstances())
   instanceMap = J.joinSet(instanceMap,Nbytes:getInstances())
 
-  local res = RM.liftVerilogTab{ name="DRAMWriter"..moduleNameSuffix, inputType=R.Handshake(types.bits(64)), outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1}}, sdfOutput={{1,Nbytes/8}}, instanceMap=instanceMap, delay=(Nbytes:toNumber()/8)+8, inputBurstiness=8, outputBurstiness=1 }
+  local res = RM.liftVerilogTab{ name=J.sanitize("DRAMWriter"..moduleNameSuffix), inputType=R.Handshake(types.bits(64)), outputType=R.HandshakeTrigger, vstr=vstr, globalMetadata=globalMetadata, sdfInput={{1,1}}, sdfOutput={{1,Nbytes/8}}, instanceMap=instanceMap, delay=(Nbytes:toNumber()/8)+8, inputBurstiness=8, outputBurstiness=1 }
 
   if terralib~=nil then
     res.makeTerra = nil
@@ -1394,7 +1394,7 @@ SOC.readBurst = J.memoize(function( filename, W_orig, H_orig, ty, V, framed, add
   globalMetadata[readFn_orig.name.."_read_bitsPerPixel"] = ty:verilogBits()
   globalMetadata[readFn_orig.name.."_read_address"] = address
   
-  local inp = R.input(R.HandshakeTrigger)
+  local inp = R.input(R.HandshakeTrigger,SDF{math.max(V,1),W_orig*H_orig})
 
   local outputBits = ty:verilogBits()*math.max(V,1)
   local desiredTotalOutputBits = W*H*ty:verilogBits()

@@ -495,10 +495,17 @@ function MT.downsampleYSeqFn(innerInputType,outputType,scale)
   end
 end
 
-function MT.downsampleXSeqFn( innerInputType, outputType, scale )
+function MT.downsampleXSeqFn( innerInputType, outputType, scale, inputT, outputT )
   return terra( inp : &innerInputType:toTerraType(), out:&outputType:toTerraType() )
     var x = (inp._0)[0]._0
-    data(out) = array(inp._1[0])
+    escape if inputT>0 and outputT>0 then
+      emit quote data(out) = array(inp._1[0]) end
+    elseif inputT==0 and outputT==0 then
+      emit quote data(out) = inp._1 end
+    else
+      assert(false)
+    end end
+
     valid(out) = (x%scale==0)
   end
 end
@@ -982,11 +989,20 @@ function MT.changeRate( res, A, H, inputRate, outputRate, maxRate, outputCount, 
   else -- inputRate <= outputRate
     terra ChangeRate:reset() self.phase = 0; end
     terra ChangeRate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
-      [(function() if inputRate==0 then
-         return quote self.buffer[self.phase] = @inp end
-       else
-         return quote for i=0,inputRate do self.buffer[i+self.phase*inputRate] = (@(inp))[i] end end
-       end end)()]
+      escape
+        if inputRate==0 then
+          assert(H==1)
+          emit quote self.buffer[self.phase] = @inp end
+        else
+          emit quote 
+              for y=0,H do
+                for i=0,inputRate do
+                  self.buffer[i+self.phase*inputRate+y*outputRate] = (@(inp))[i+y*inputRate]
+                end
+              end
+            end
+        end 
+      end
 
       if self.phase >= inputCount-1 then
         valid(out) = true
@@ -1764,11 +1780,11 @@ end
 
 -- allowBadSizes: hack for legacy code - allow us to write sizes which will have different behavior between verilog & terra (BAD!)
 -- tokensX, tokensY: optional - what is the size of the transaction? enables extra debugging (terra checks for regressions on second run)
-function MT.fwriteSeq( res, filename, ty, passthrough, allowBadSizes, tokensX, tokensY, X )
+function MT.fwriteSeq( res, filename, ty, passthrough, allowBadSizes, tokensX, tokensY, header, X )
   assert( rigel.isPlainFunction(res) )
   local terraSize = terralib.sizeof(ty:toTerraType())*8
   assert(X==nil)
-  J.err( allowBadSizes==true or ty:verilogBits() == terraSize,"fwriteSeq: verilog size ("..ty:verilogBits()..") and terra size ("..terraSize..") don't match! This means terra and verilog representations don't match. Type: "..tostring(ty))
+  J.err( allowBadSizes==true or Uniform(ty:verilogBits()):toNumber() == terraSize,"fwriteSeq: verilog size (",ty:verilogBits(),") and terra size (",terraSize,") don't match! This means terra and verilog representations don't match. Type: ",tostring(ty))
 
   if tokensX==nil then tokensX=0 end
   if tokensY==nil then tokensY=0 end
@@ -1781,6 +1797,10 @@ function MT.fwriteSeq( res, filename, ty, passthrough, allowBadSizes, tokensX, t
     if tokensX*tokensY>0 then
       self.buf = [&ty:toTerraType()](cstdlib.malloc(tokensX*tokensY*[ty:sizeof()]))
     end
+    escape if header~=nil then
+      emit quote cstdio.fprintf(self.file,header) end
+    end end
+    
     self.tokensSeen=0
   end
 

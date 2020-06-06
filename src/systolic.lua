@@ -78,7 +78,8 @@ declareReg = systolic.declareReg
 function systolic.declareWire( ty, name, str, comment )
   assert( types.isType(ty) )
   assert(type(str)=="string" or str==nil)
-
+  J.err( name == J.sanitize(name), "declareWire: name must be sanitized! ",name," to ",J.sanitize(name) )
+  
   if comment==nil then comment="" end
 
   if str == nil or str=="" then
@@ -1547,7 +1548,7 @@ function userModuleFunctions:instanceToVerilogStart( instance, providesMap )
       if self.onlyWire and fn.implicitValid then
         -- when in onlyWire mode, it's ok to have an undriven valid bit
       else
-        local wirename = instance.name.."_"..fn.valid.name
+        local wirename = J.sanitize(instance.name.."_"..fn.valid.name)
         if doDecl then table.insert(wires, "  "..systolic.declareWire( types.bool(), wirename ).."\n" ) end
         table.insert( arglist, ", ."..fn.valid.name.."("..wirename..")") 
       end      
@@ -1555,20 +1556,20 @@ function userModuleFunctions:instanceToVerilogStart( instance, providesMap )
 
     -- CESeen: prevent listing the CE twice if it's used twice
     if fn.CE~=nil and CESeen[fn.CE.name]==nil then
-      local wirename = instance.name.."_"..fn.CE.name
+      local wirename = J.sanitize(instance.name.."_"..fn.CE.name)
       if doDecl then table.insert(wires, "  "..systolic.declareWire( types.bool(), wirename ).."\n" ) end
       table.insert( arglist, ", ."..fn.CE.name.."("..wirename..")") 
       CESeen[fn.CE.name] = 1
     end
     
     if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
-      local wirename = instance.name.."_"..fn.inputParameter.name
+      local wirename = J.sanitize(instance.name.."_"..fn.inputParameter.name)
       if doDecl then table.insert(wires, "  "..systolic.declareWire(fn.inputParameter.type, wirename ).."\n") end
       table.insert(arglist,", ."..fn.inputParameter.name.."("..wirename..")")
     end
 
     if fn.output~=nil and fn.output.type~=types.null() and fn.output.type:verilogBits()>0 then
-      local wirename = instance.name.."_"..fn.outputName
+      local wirename = J.sanitize(instance.name.."_"..fn.outputName)
       if doDecl then table.insert(wires, "  "..systolic.declareWire(fn.output.type, wirename ).."\n") end
       table.insert(arglist,", ."..fn.outputName.."("..wirename..")")
     end
@@ -1595,7 +1596,7 @@ function userModuleFunctions:instanceToVerilogStart( instance, providesMap )
     end
   end
 
-  return table.concat(wires).."  "..self.name..[[ #(.INSTANCE_NAME({INSTANCE_NAME,"_]]..instance.name..[["})]]..params..[[) ]]..instance.name.."(.CLK(CLK)"..table.concat(arglist)..");\n"
+  return table.concat(wires).."  "..self.name..[[ #(.INSTANCE_NAME({INSTANCE_NAME,"]]..J.verilogSanitizeInner(instance.name)..[["})]]..params..[[) ]]..instance.name.."(.CLK(CLK)"..table.concat(arglist)..");\n"
 
 end
 
@@ -1608,13 +1609,13 @@ function userModuleFunctions:instanceToVerilog( instance, fnname, datavar, valid
     err(false, "module was given a CE, but does not expect a CE. Function '"..fnname.."' on instance '"..instance.name.."' of module '"..instance.module.name.."' inside module '"..module.name.."' "..instance.loc)
   elseif fn.CE~=nil then
     err(type(cevar)=="string", "Module expected a CE, but was not given one. Function '"..fnname.."' on instance '"..instance.name.."' (of module "..instance.module.name..") ",instance.loc)
-    local wirename = instance.name.."_"..fn.CE.name
+    local wirename = J.sanitize(instance.name.."_"..fn.CE.name)
     table.insert(decl,"  assign "..wirename.." = "..cevar..";")
   end
 
   if fn.inputParameter.type~=types.null() and fn.inputParameter.type:verilogBits()>0  then
     assert( type(datavar)=="string" )
-    local wirename = instance.name.."_"..fn.inputParameter.name
+    local wirename = J.sanitize(instance.name.."_"..fn.inputParameter.name)
     table.insert(decl,"  assign "..wirename.." = "..datavar..";")
   end
 
@@ -1623,13 +1624,13 @@ function userModuleFunctions:instanceToVerilog( instance, fnname, datavar, valid
       -- when in onlyWire mode, it's ok to have an undriven valid bit
     else
       err( type(validvar)=="string", "function '"..fnname.."' on instance '"..instance.name.."' of module '"..self.name.."' is missing validvar? pure:"..tostring(fn:isPure()).." onlyWire:"..tostring(self.onlyWire).." implicitValid:"..tostring(fn.implicitValid).." is: "..tostring(validvar) )
-      local wirename = instance.name.."_"..fn.valid.name
+      local wirename = J.sanitize(instance.name.."_"..fn.valid.name)
       table.insert(decl,"  assign "..wirename.." = "..validvar..";")
     end      
   end
 
-  local outname = instance.name.."_NILOUTPUT"
-  if fn.output~=nil and fn.output.type~=types.null() then outname = instance.name.."_"..fn.outputName end
+  local outname = J.sanitize(instance.name.."_NILOUTPUT")
+  if fn.output~=nil and fn.output.type~=types.null() then outname = J.sanitize(instance.name.."_"..fn.outputName) end
   return outname, table.concat(decl,"\n"), true
 end
 
@@ -1956,7 +1957,7 @@ function regModuleFunctions:instanceToVerilogStart( instance )
 return nil
   end
   
-  local decl = declareReg(self.type, instance.name, self.initial)
+  local decl = "  "..declareReg(self.type, instance.name, self.initial, "\n")
   
   if self.resetValue~=nil then
     return decl.."  wire "..instance.name.."_RESET;\n"
@@ -2380,6 +2381,11 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
   local fmode = "wb"
   if self.hasWrite and self.hasRead then assert(false) end
   if self.hasWrite==false and self.hasRead then fmode="rb" end
+
+  local headerwrite = ""
+  if self.header~=nil then
+    headerwrite = [[$c("fwrite( \"]]..self.header..[[\",]]..(#self.header)..[[,1, (FILE*)",]]..instance.name..[[_file,");" );]]
+  end
   
   table.insert(res,[[  wire ]]..instance.name..[[_RESET;
   reg [63:0] ]]..instance.name..[[_file;
@@ -2397,7 +2403,7 @@ function fileModuleFunctions:instanceToVerilogStart( instance )
   always @(posedge CLK) begin
 ]])
   if FILEMODULE_VERILATOR then
-    table.insert(res, "if ("..instance.name..[[_RESET) begin $c("rewind( (FILE*)",]]..instance.name..[[_file,");"); end
+    table.insert(res, "if ("..instance.name..[[_RESET) begin $c("rewind( (FILE*)",]]..instance.name..[[_file,");"); ]]..headerwrite..[[ end
 ]])
   else
     table.insert(res, "if ("..instance.name..[[_RESET) begin r=$fseek(]]..instance.name..[[_file,0,0); end
@@ -2542,7 +2548,8 @@ function fileModuleFunctions:getDelay(fnname)
 end
 
 -- readAddressable: should read take a seek address?
-function systolic.module.file( filename, ty, hasCE, passthrough, hasRead, hasWrite, readAddressable, X)
+-- header: a string to dump at the very top of the file on file open
+function systolic.module.file( filename, ty, hasCE, passthrough, hasRead, hasWrite, readAddressable, header, X)
   J.err( type(hasRead)=="boolean", "systolic.module.file: hasRead must be bool, but is: ",hasRead )
   J.err( type(passthrough)=="boolean", "systolic.module.file: passthrough must be bool" )
   assert(X==nil)
@@ -2553,7 +2560,7 @@ function systolic.module.file( filename, ty, hasCE, passthrough, hasRead, hasWri
   
   err(ty:verilogBits() % 8 == 0, "Error, systolic file module type ("..tostring(ty)..") is not byte aligned. NYI. Use a cast!")
   
-  local res = {name="_FILE", kind="file",filename=filename, type=ty, hasCE=hasCE, hasRead=hasRead,hasWrite=hasWrite,passthrough,externalInstances={} }
+  local res = {name="_FILE", kind="file",filename=filename, type=ty, hasCE=hasCE, hasRead=hasRead,hasWrite=hasWrite, passthrough, header=header, externalInstances={} }
 
   local CE
   if hasCE then CE = systolic.CE("CE") end

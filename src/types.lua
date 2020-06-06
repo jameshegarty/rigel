@@ -872,9 +872,9 @@ end
 
 function TypeFunctions:channels()
   if self.kind~="array" then return 1 end
-  local chan = 1
-  for k,v in ipairs(self.size) do chan = chan*v end
-  return chan
+  local Uniform = require "uniform"
+  local res =  Uniform(self.size[1]):toNumber()*Uniform(self.size[2]):toNumber()
+  return res
 end
 
 function TypeFunctions:isTuple()  return self.kind=="tuple" end
@@ -1507,19 +1507,46 @@ function TypeFunctions:optimize( rates )
 
       return res, rr
     else
-      if rates:allGE1() then
+      if rates:allEQ1() then
         -- we're already at 100%, nothing we can do, just return
         return self, rates
       else
-        if self.V:eq(0,0) then
+        if self.V:eq(0,0) and rates:allGT1() then
+          local ty = self
+          if self.over:isArray() then
+            -- if we're increasing vector size, make sure we do it bottom up!
+            print("RECINC",ty,rates,ty.over)
+            ty, rates = ty.over:optimize( rates )
+            ty = self:replaceVar("over",ty)
+            print("RECINCdone",ty,rates)
+          end
+
+          local V = J.canonicalV( rates*SDF{ ty.V[1]*ty.V[2],ty.size[1]*ty.size[2]}, ty.size, self:columnMajor() )
+          local Vnonzero = J.canonicalV( rates*SDF{ math.max(ty.V[1]*ty.V[2],1),ty.size[1]*ty.size[2]}, ty.size, self:columnMajor() )
+
+          print("OPT",ty,rates,V,Vnonzero,ty.over:isArray())
+          
+          if V:eq(0,0) and ty.over:isArray() then
+            return ty, rates
+          else
+            local N,D = math.max(ty.V[1],ty.V[2],1),Vnonzero[1]*Vnonzero[2]
+            print("ND",N,D)
+            return self:replaceVar( "V", Vnonzero ), rates*SDF{N,D}
+          end
+        elseif self.V:eq(0,0) and rates:allLE1() then
           -- we've done all we can here, try to recurse
           local recTy, recRates = self.over:optimize( rates )
           return self:replaceVar( "over", recTy ), recRates
+        elseif self.V:eq(self.size) and rates:allGT1() then
+          --assert(false)
+          -- nothing we can do about this? This basically means the type is fundamentally oversubscribed...
+          return self, rates
         else
           J.err( #rates==1,"NYI - optimize with multiple rates!, type:",self," rates:",rates)
-                 
+                    
           -- try to optimize
-          local V = J.canonicalV( rates*SDF{ self.V[1]*self.V[2],self.size[1]*self.size[2]}, self.size, self:columnMajor() )
+          local orate = rates*SDF{ self.V[1]*self.V[2],self.size[1]*self.size[2]}
+          local V = J.canonicalV( orate, self.size, self:columnMajor() )
 
           if V:eq(0,0) then
             -- remainder was <1, so try to recurse
@@ -1529,15 +1556,14 @@ function TypeFunctions:optimize( rates )
             return tmp:replaceVar( "over", recTy ), recRate
           else
             -- we're done, we've bottomed out
-            return self:replaceVar( "V", V ), SDF{1,1}
+            local resTy, resRate = self:replaceVar( "V", V ), rates*SDF{math.max(self.V[1]*self.V[2],1),V[1]*V[2]}
+
+            return resTy, resRate
           end
         end
       end
     end
   elseif self:isTuple() then
---    if self:isInterface() then
---      assert(false) -- NYI
---    else
     local newlist = {}
     local rout = {}
 
@@ -1593,9 +1619,12 @@ function TypeFunctions:optimize( rates )
   return self, rates
 end
 
+function TypeFunctions:rowMajor()
+  return self:isArray() and ((self.V[1]==0 and self.V[2]==0) or (self.V[1]==self.size[1]) or self.V[2]==1)
+end
+
 function TypeFunctions:columnMajor()
-  local res =  self:isArray() and self.V[2]>self.V[1] and (self.V[1]~=self.size[1] or self.V[2]~=self.size[2])
-  return res
+  return self:isArray() and (self.V[1]~=0 and self.V[2]~=0) and ((self.V[2]==self.size[2] and self.V[1]<self.size[1]) or (self.V[1]==1 and self.V[2]>1))
 end
 
 function TypeFunctions:lower() return types.lower(self) end

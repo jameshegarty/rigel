@@ -311,9 +311,11 @@ int main(int argc, char** argv) {
 
       masterReadDataLatchFlops( verbose, memory, 0, M0READ_SLAVEIN );
       masterReadDataLatchFlops( verbose, memory, 1, M1READ_SLAVEIN );
-      
-      if(masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, round==1, M0WRITE_SLAVEIN )){goto WRITEOUT;}
-      if(masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, round==1, M1WRITE_SLAVEIN )){goto WRITEOUT;}
+
+      int er0 = masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, round==1, M0WRITE_SLAVEIN );
+      if(er0!=0){if(er0==1){errored=true;}else{goto WRITEOUT;}}
+      int er1 = masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, round==1, M1WRITE_SLAVEIN );
+      if(er1!=0){if(er1==1){errored=true;}else{goto WRITEOUT;}}
       
       masterReadReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEIN );
       masterWriteReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0WRITE_SLAVEIN );
@@ -386,7 +388,7 @@ int main(int argc, char** argv) {
     
     if(errored){
       //exit(1);
-      goto WRITEOUT;
+      //-goto WRITEOUT;
     }
   } // rounds
 

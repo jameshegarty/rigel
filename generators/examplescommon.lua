@@ -20,7 +20,7 @@ C.identity = memoize(function( A, name )
   err( A:isSchedule(),"C.identity: type should be schedule type, but is: "..tostring(A) )
 
   if name==nil then
-    name = "identity_"..J.verilogSanitize(tostring(A))
+    name = J.verilogSanitize("identity_"..tostring(A))
   end
   
   local identity = RM.lift( name, A:lower(), A:lower(), 0, function(sinp) return sinp end, function() return CT.identity(A) end, "C.identity")
@@ -539,15 +539,16 @@ C.rshift = memoize(function(A,B,X)
 end)
 
 -----------------------------
-C.addMSBs = memoize(function(A,bits)
+C.addMSBs = memoize(function( A, bits, X )
   err( types.isType(A),"C.addMSBs: type should be rigel type")
   err( type(bits)=="number","C.addMSBs: bits should be number or value")
-
+  assert( X==nil )
+  
   local otype
   if A:isUint() then
-    otype = types.uint(A.precision+bits)
+    otype = types.uint( A.precision+bits, A.exp )
   elseif A:isInt() then
-    otype = types.int(A.precision+bits)
+    otype = types.int( A.precision+bits, A.exp )
   else
     J.err( A:isUint() or A:isInt(), "generators.addMSBs: type should be int or uint, but is: "..tostring(A) )
   end
@@ -1391,6 +1392,11 @@ C.fifoWithMonitor = memoize(function( ty, size, delay, internalDelay, rate, inpu
   err( SDF.isSDF(rate), "rateMonitor: rate must be SDF rate, but is: ", rate)
   err( type(topFnName)=="string" )
   err( type(fnName)=="string" )
+
+  fnName = J.verilogSanitizeInner(fnName)
+  topFnName = J.verilogSanitizeInner(topFnName)
+  name = J.verilogSanitizeInner(name)
+  
   err( type(name)=="string" )
   err( X==nil, "C.fifo: too many arguments" )
 
@@ -1478,7 +1484,7 @@ wire throttle;
 integer f;
 
 initial begin
-  f = $fopen("out/TRACE_]]..fnName..J.sel(inputSide,"_I","_O")..[[.csv","w");
+  f = $fopen("out/TRACE_]]..J.verilogSanitizeInner(fnName)..J.sel(inputSide,"_I","_O")..[[.csv","w");
   $fwrite(f,"#]]..tostring(rate)..[[ size:]]..tostring(size)..[[ delay:]]..tostring(delay)..[[\n");
   $fwrite(f,"cyclesSinc,   RefCount,  mon]]..J.sel(inputSide,"I","O")..[[Cont,  mon]]..J.sel(inputSide,"O","I")..[[Cont,  fifoSize, throttle,  readyUS,    valIn,  readyDS, vaOut, error\n");
 end
@@ -1792,7 +1798,7 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
   err( types.isType(A) and A:isData(), "C.downsampleSeq: A must be data type")
 
   err( type(T)=="number", "C.downsampleSeq: T must be number")
-  err( T>0, "C.downsampleSeq: T must be >0")
+  err( T>=0, "C.downsampleSeq: T must be >=0")
   err( type(scaleX)=="number", "C.downsampleSeq: scaleX must be number")
   err( type(scaleY)=="number", "C.downsampleSeq: scaleY must be number")
   err( scaleX>=1, "C.downsampleSeq: scaleX must be >=1")
@@ -1809,7 +1815,13 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
     return C.identity(A)
   end
 
-  local inp = rigel.input( types.RV(types.Par(types.array2d(A,T))) )
+  local inp
+  if T==0 then
+    inp = rigel.input( types.RV(A) )
+  else
+    inp = rigel.input( types.RV(types.Par(types.array2d(A,T))) )
+  end
+  
   local out = inp
   if scaleY>1 then
     out = rigel.apply("downsampleSeq_Y", modules.liftHandshake(modules.liftDecimate(modules.downsampleYSeq( A, W_orig, H_orig, T, scaleY ))), out)
@@ -1818,11 +1830,11 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
     local mod = modules.liftHandshake(modules.liftDecimate(modules.downsampleXSeq( A, W_orig, H_orig, T, scaleX )))
 
     out = rigel.apply("downsampleSeq_X", mod, out)
-    local downsampleT = math.max(T/scaleX,1)
-    if downsampleT<T then
+    local downsampleT = math.max(math.max(T,1)/scaleX,1)
+    if downsampleT<math.max(T,1) then
       -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
       out = rigel.apply("downsampleSeq_incrate", modules.liftHandshake(modules.changeRate(A,1,downsampleT,T)), out )
-    elseif downsampleT>T then
+    elseif downsampleT>math.max(T,1) then
       assert(false)
     end
   end
@@ -1832,8 +1844,8 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
   if framed then
     print("FRAMED",A,T,res.inputType,res.outputType)
     local W,H = Uniform(W_orig):toNumber(), Uniform(H_orig):toNumber()
-    local itype = types.RV(types.Array2d(A,W_orig,H_orig,T,1))
-    local otype = types.RV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,1 ))
+    local itype = types.RV(types.Array2d(A,W_orig,H_orig,T,J.sel(T==0,0,1)))
+    local otype = types.RV(types.Array2d(A,math.ceil(W/scaleX),math.ceil(H/scaleY),T,J.sel(T==0,0,1) ))
 
     err( itype:lower()==res.inputType:lower(), "internal error, downsampleSeq framed. Module input type:",res.inputType, " lowered: ",res.inputType:lower()," framed type:",itype, " lowered:",itype:lower() )
     err( otype:lower()==res.outputType:lower() )
@@ -2119,7 +2131,8 @@ C.stencilLinebufferPartial = memoize(function( A, w, h, T, xmin, xmax, ymin, yma
   assert(type(framed)=="boolean")
 
   -- SSRPartial need to be able to stall the linebuffer, so we must do this with handshake interfaces. Systolic pipelines can't stall each other
-  return C.compose( J.sanitize("stencilLinebufferPartial_A"..tostring(A).."_W"..tostring(w).."_H"..tostring(h).."_L"..tostring(xmin).."_R"..tostring(xmax).."_B"..tostring(ymin).."_Top"..tostring(ymax).."_framed"..tostring(framed)), modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin,nil,nil,framed,w,h ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin, framed )), "C.stencilLinebufferPartial" )
+  local name = J.sanitize("stencilLinebufferPartial_A"..tostring(A).."_W"..tostring(w).."_H"..tostring(h).."_T"..tostring(T).."_L"..tostring(xmin).."_R"..tostring(xmax).."_B"..tostring(ymin).."_Top"..tostring(ymax).."_framed"..tostring(framed))
+  return C.compose( name, modules.liftHandshake(modules.waitOnInput(modules.SSRPartial( A, T, xmin, ymin,nil,nil,framed,w,h ))), modules.makeHandshake(modules.linebuffer( A, w, h, 1, ymin, framed )), "C.stencilLinebufferPartial",nil,SDF{1,T} )
 end)
 
 
@@ -2247,6 +2260,8 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     
     return res
   elseif inputType:isArray() then
+    err( inputType:isData() ,"C.slice: array type must be data type, but is:"..tostring(inputType) )
+    
     local W = (inputType:arrayLength())[1]
     local H = (inputType:arrayLength())[2]
     err(idxLow<W,"slice: idxLow>=W, idxLow="..tostring(idxLow)..",W="..tostring(W)," inputType:",inputType)
@@ -3175,6 +3190,8 @@ end)
 -- instead, do row major
 -- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
 C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig, H, X )
+  J.err( types.isType(ty) )
+  J.err( ty:isData() )
   J.err( type(outputItemsPerCyc)=="number", "ChangeRateRowMajor: outputItermsPerCyc should be number, but is: ",outputItemsPerCyc )
   J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
   --J.err( type(W)=="number", "ChangeRateRowMajor: W should be number, but is: ",W)
@@ -3182,7 +3199,13 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig,
   J.err( type(H)=="number", "ChangeRateRowMajor: H should be number, but is: ",H)
   
   local generators = require "generators.core"
-    
+
+  local Vw_n = Uniform(Vw):toNumber()
+  local Vh_n = Uniform(Vh):toNumber()
+  local W_n = W:toNumber()
+  
+  J.err( (Vw_n==0 and Vh_n==0) or (Vh_n==1 and Vw_n<=W_n) or (Vh_n>1 and Vw_n==W_n), "ChangeRateRowMajor: input type must be row major ordered array, but V=",Vw,",",Vh," size=",W_orig,",",H)
+  
   local cr = RM.changeRate( ty, 1, Vw*Vh, outputItemsPerCyc )
 
   J.err( outputItemsPerCyc==0 or (Uniform(W):toNumber()*Uniform(H):toNumber())%outputItemsPerCyc==0, "ChangeRateRowMajor: outputItemsPerCyc does not divide array size? W=",W," H=",H," outputItemsPerCyc=",outputItemsPerCyc)
@@ -3203,8 +3226,10 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig,
   
   outputType = types.RV( types.Array2d( ty, W_orig, H, V2w, V2h ) )
 
-  local res = generators.Function{
-    "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh).."_OIPC"..tostring(outputItemsPerCyc).."_W"..tostring(W_orig).."_H"..tostring(H), types.RV(inputType:extractData()),
+  local name =  "ChangeRateRowMajor_"..tostring(ty).."_Vw"..tostring(Vw).."_Vh"..tostring(Vh).."_OIPC"..tostring(outputItemsPerCyc).."_W"..tostring(W_orig).."_H"..tostring(H)
+  local rate = cr.sdfInput
+  
+  local res = generators.Function{ name, types.RV(inputType:extractData()), rate,
     function(inp)
       local inprs
       if Vw==0 and Vh==0 then

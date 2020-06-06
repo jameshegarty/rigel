@@ -20,7 +20,7 @@ jobs:
       - run: sudo apt-get install luajit flex bison time
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: verilator --version
-      - run: cd examples; make verilator
+      - run: cd examples; make -k verilator
       - run: cat examples/out/*.luatime.txt
       - run: cat examples/out/*.compiletime.txt
       - run: cat examples/out/*.runtime.txt
@@ -33,7 +33,7 @@ jobs:
       - run: sudo apt-get install luajit flex bison time
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;ls;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
       - run: verilator --version
-      - run: cd examples; make verilatorSIG16
+      - run: cd examples; make -k verilatorSIG16
       - run: cat examples/out/*.luatime.txt
       - run: cat examples/out/*.compiletime.txt
       - run: cat examples/out/*.runtime.txt
@@ -98,7 +98,7 @@ jobs:
       - run: wget https://github.com/zdevito/terra/releases/download/release-2016-03-25/terra-Linux-x86_64-332a506.zip
       - run: unzip terra-Linux-x86_64-332a506.zip
       - run: sudo ln -s /home/circleci/project/terra-Linux-x86_64-332a506/bin/terra /usr/bin/terra
-      - run: cd examples; make terra
+      - run: cd examples; make -k terra
       - run: cat examples/out/*.terra.terratime.txt
       - run: test -e examples/out/terra_done.txt || exit
   yosysSOC:

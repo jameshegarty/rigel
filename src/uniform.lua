@@ -187,6 +187,8 @@ UniformFunctions.simplify = J.memoize(function(self)
       return Uniform(math.ceil(inputs[1].value))
     elseif n.op=="floor" then
       return Uniform(math.floor(inputs[1].value))
+    elseif n.op=="not" then
+      return Uniform(not inputs[1].value)
     else
       print("NYI - const op "..tostring(n.op))
       assert(false)

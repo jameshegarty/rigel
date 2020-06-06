@@ -14,7 +14,7 @@ local regs = SOC.axiRegs({},SDF{1,128*64}):instantiate("regs")
 local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate("ZynqNOC")
 noc.extern=true
 
-local OffsetModule = G.Function{ "OffsetModule", R.HandshakeTrigger, SDF{1,1},
+local OffsetModule = G.Function{ "OffsetModule", R.HandshakeTrigger, SDF{1,128*64},
   function(i)
     local readStream = G.AXIReadBurst{"frame_128.raw",{128,64},u(8),0,noc.read}(i)
     local rs = G.FanOut{2}(readStream)

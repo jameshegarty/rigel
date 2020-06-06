@@ -26,7 +26,7 @@ local function writeMetadata(filename, tab)
     if type(v)=="number" or type(v)=="boolean" then
       table.insert(res,k.."="..tostring(v))
     else
-      table.insert(res,k.."='"..tostring(v).."'")
+      table.insert(res,k..[=[=[[]=]..tostring(v)..[=[]]]=])
     end
   end
 
