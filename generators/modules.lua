@@ -3613,7 +3613,7 @@ end)
 -- if nilhandshake is false or nil, and f input type is nil, we produce type nil->Handshake(A)
 -- Handshake(nil) provides a ready bit but no data, vs nil, which provides nothing.
 -- (nilhandshake also applies the same way to the output type)
-modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
+modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, name, X )
   assert( rigel.isFunction(f) )
   if nilhandshake==nil then
     -- set nilhandshake=true by default if we are dealing with explicit trigger types
@@ -3679,8 +3679,14 @@ modules.makeHandshake = memoize(function( f, tmuxRates, nilhandshake, X )
   end
   
   res.stateful = (f.delay>0) or f.stateful -- for the shift register of valid bits
-  res.name = J.sanitize("MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name)
 
+  if name~=nil then
+    assert(type(name)=="string")
+    res.name = name
+  else
+    res.name = J.sanitize("MakeHandshake_HST_"..tostring(nilhandshake).."_"..f.name)
+  end
+  
   res.requires = {}
   for inst,fnmap in pairs(f.requires) do for fnname,_ in pairs(fnmap) do J.deepsetweak(res.requires,{inst,fnname},1) end end
   res.provides = {}
@@ -4072,7 +4078,7 @@ reg [31:0] numWritten = 32'd0;
 always @(posedge CLK) begin
   if( reset) begin
     if( numRead!=numWritten ) begin
-      $display("Error: FIFO INPUTS/OUTPUTS DONT MATCH AT RESET stored:%0d loaded:%0d ]]..J.verilogSanitizeInner(res.name)..[[",numWritten, numRead);
+      $display("SEVERE WARNING: FIFO INPUTS/OUTPUTS DONT MATCH AT RESET. THIS MEANS SOME STATE WASNT FULLY CLEAR AT RESET TIME. CHECK PADSEQS. stored:%0d loaded:%0d ]]..J.verilogSanitizeInner(res.name)..[[",numWritten, numRead);
     end
 
     numRead <= 32'd0;
@@ -4389,7 +4395,7 @@ modules.overflow = memoize(function( A, count )
   -- But in theory you should only put this at the very end of your pipe, so whatever...
   local res = {kind="overflow", A=A, inputType=types.rv(types.Par(A)), outputType=types.rvV(types.Par(A)), stateful=true, count=count, sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, delay=0}
   if terralib~=nil then res.terraModule = MT.overflow(res,A,count) end
-  res.name = "Overflow_"..count.."_"..verilogSanitize(tostring(A))
+  res.name = J.sanitize("Overflow_"..count.."_"..tostring(A))
 
   function res.makeSystolic()
     local systolicModule = Ssugar.moduleConstructor(res.name)
