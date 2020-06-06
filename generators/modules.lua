@@ -385,7 +385,7 @@ modules.liftBasic = memoize(function(f)
   res.RVDelay = f.RVDelay
   res.delay = f.delay
   res.stateful = f.stateful
-  res.name = "LiftBasic_"..f.name
+  res.name = J.sanitize("LiftBasic_"..f.name)
 
   if terralib~=nil then res.terraModule = MT.liftBasic(res,f) end
 

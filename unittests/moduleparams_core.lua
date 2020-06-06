@@ -17,7 +17,7 @@ local function configToName(t)
     if type(k)=="number" then key="" end -- not interesting!
 
     if type(v)=="number" or type(v)=="boolean" or type(v)=="string" or types.isType(v) then
-      name = name..key..J.verilogSanitize(tostring(v)).."_"
+      name = name..key..J.verilogSanitizeInner(tostring(v)).."_"
     elseif type(v)=="table" then
       local rec = configToName(v)
       if #rec>20 then rec = string.sub(rec,1,20) end
@@ -31,9 +31,11 @@ local function configToName(t)
   return name
 end
 
+local topcnt = 1
 local wrap = J.memoize(function(mod)
   local G = require "generators.core"
-  return G.Function{"W"..mod.name, mod.inputType, mod.sdfInput, function(inp) return mod(inp) end}
+  topcnt = topcnt+1
+  return G.Function{"Top"..topcnt, mod.inputType, mod.sdfInput, function(inp) return mod(inp) end}
 end)
 
 function runTests( configs, meta )

@@ -422,7 +422,7 @@ local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
     local readStream = G.AXIReadBurst{ inputFilename, {W,H}, T.Tuple{T.Uint(8),T.Uint(8)}, 4, noc.read }(i)
     print("RSTReAM",readStream.type,readStream.rate)
     local padded = G.Pad{{PadRadiusAligned, PadRadiusAligned, PadRadius+1, PadRadius}}(readStream)
-    padded = G.Map{G.Fwrite{"out/"..outfile..".padded.raw"},true}(padded)
+--    padded = G.Map{G.Fwrite{"out/"..outfile..".padded.raw"},true}(padded)
     
     print("PADDED$",padded.type,padded.rate,PadRadiusAligned,PadRadius)
     local out = LK(padded)

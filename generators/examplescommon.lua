@@ -1392,6 +1392,11 @@ C.fifoWithMonitor = memoize(function( ty, size, delay, internalDelay, rate, inpu
   err( SDF.isSDF(rate), "rateMonitor: rate must be SDF rate, but is: ", rate)
   err( type(topFnName)=="string" )
   err( type(fnName)=="string" )
+
+  fnName = J.verilogSanitizeInner(fnName)
+  topFnName = J.verilogSanitizeInner(topFnName)
+  name = J.verilogSanitizeInner(name)
+  
   err( type(name)=="string" )
   err( X==nil, "C.fifo: too many arguments" )
 
@@ -1479,7 +1484,7 @@ wire throttle;
 integer f;
 
 initial begin
-  f = $fopen("out/TRACE_]]..fnName..J.sel(inputSide,"_I","_O")..[[.csv","w");
+  f = $fopen("out/TRACE_]]..J.verilogSanitizeInner(fnName)..J.sel(inputSide,"_I","_O")..[[.csv","w");
   $fwrite(f,"#]]..tostring(rate)..[[ size:]]..tostring(size)..[[ delay:]]..tostring(delay)..[[\n");
   $fwrite(f,"cyclesSinc,   RefCount,  mon]]..J.sel(inputSide,"I","O")..[[Cont,  mon]]..J.sel(inputSide,"O","I")..[[Cont,  fifoSize, throttle,  readyUS,    valIn,  readyDS, vaOut, error\n");
 end
