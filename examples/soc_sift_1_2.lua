@@ -93,7 +93,7 @@ local outfile = "soc_sift_"..tostring(TILES).."_"..tostring(V)..J.sel(size1080p,
 
 io.output("out/"..outfile..".design.txt"); io.write("SIFT "..TILES..J.sel(size1080p," 1080p","")); io.close()
 io.output("out/"..outfile..".designT.txt"); io.write(1/invV); io.close()
-io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
+io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"..J.sel(AUTOFIFO,"_autofifo","")); io.close()
 
 local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
 

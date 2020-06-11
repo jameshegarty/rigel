@@ -54,7 +54,7 @@ end
 local outfile = "soc_lk_"..CONVWIDTH.."_"..(V*CONVWIDTH)..J.sel(AUTOFIFO,"_autofifo","")
 io.output("out/"..outfile..".design.txt"); io.write("Lucas Kanade "..H.." "..CONVWIDTH.."x"..CONVWIDTH); io.close()
 io.output("out/"..outfile..".designT.txt"); io.write(V); io.close()
-io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
+io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"..J.sel(AUTOFIFO,"_autofifo","")); io.close()
 
 local PadRadius = CONVWIDTH/2
 local PadRadiusAligned = PadRadius
@@ -169,9 +169,11 @@ local CalcA = G.SchedulableFunction{"CalcA",
     print("CALCA",inp.type,inp.rate)
     local inpFO = G.FanOut{2}(inp)
     
-    --local Fdx = G.NAUTOFIFO{1}(inpFO[0][0])
+    --local Fdx = G.NAUTOFIFO{1}
+    local Fdx = inpFO[0][0]
     local FdxFO = G.FanOut{3}(Fdx)
-    --local Fdy = G.NAUTOFIFO{1}(inpFO[1][1])
+    --local Fdy = G.NAUTOFIFO{1}()
+    local Fdy = inpFO[1][1]
     local FdyFO = G.FanOut{3}(Fdy)
 
     local inp0 = G.Zip(G.NAUTOFIFO{1}(FdxFO[0]),G.NAUTOFIFO{1}(FdxFO[1]))
@@ -445,7 +447,7 @@ local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
     local out = LK(padded)
     out = G.Crop{{PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0}}(out)
 --    out = G.NAUTOFIFO{FIFOSIZE}(out)
-    return G.AXIWriteBurst{"out/soc_lk_"..CONVWIDTH.."_"..(V*CONVWIDTH),noc.write}(out)
+    return G.AXIWriteBurst{"out/"..outfile,noc.write}(out)
   end}
 
 --local Top = C.linearPipeline({regs.start, LKTop, regs.done},"Top", SDF{1,cycles}, {regs} )

@@ -50,10 +50,10 @@ end
 
 assert(SW==SearchWindow)
 
-local outfile = "soc_stereo_"..test.."_"..tostring(SearchWindow).."_"..tostring(invV)
+local outfile = "soc_stereo_"..test.."_"..tostring(SearchWindow).."_"..tostring(invV)..J.sel(AUTOFIFO,"_autofifo","")
 io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth.." "..test); io.close()
 io.output("out/"..outfile..".designT.txt"); io.write( invV/SearchWindow ); io.close()
-io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
+io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"..J.sel(AUTOFIFO,"_autofifo","")); io.close()
 
 local cycles = ((W+OffsetX+SearchWindow)*(H+7))*(SearchWindow/invV)
 print("CYCLES",cycles)
@@ -128,7 +128,7 @@ local StereoModule = G.SchedulableFunction{ "StereoModule", T.Trigger,
     local res = G.Map{DisplayOutput}(min)
     res = G.Crop{{ OffsetX+SearchWindow, 0, SADWidth-1, 0 }}(res)
     
-    return G.AXIWriteBurst{"out/soc_stereo_"..test.."_"..tostring(SearchWindow).."_"..tostring(invV)..J.sel(AUTOFIFO,"_autofifo",""),noc.write}(res)
+    return G.AXIWriteBurst{"out/"..outfile,noc.write}(res)
   end}
 
 local SM = StereoModule:complete({type=T.Trigger,rate=SDF{1,cycles}})
