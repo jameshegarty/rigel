@@ -5126,26 +5126,70 @@ local function insertFIFOs( out, delayTable, moduleName, X )
       n = rigel.newIR(n)
       local res = n
 
+      -- first, insert delays
+      if #n.inputs>0 then
+        err( type(delayTable[orig.inputs[1]])=="number", "missing delay for: ", orig.inputs[1], "IS:"..tostring(delayTable[orig.inputs[1]]) )
+        assert( type(delayTable[orig])=="number" )
+
+        local iDelayThis = delayTable[orig]
+
+        if n.kind=="apply" or n.kind=="applyMethod" then
+          local fn = n.fn
+          if n.kind=="applyMethod" then
+            if rigel.isPlainFunction(n.inst.module) then
+              fn = n.inst.module
+            else
+              fn = n.inst.module.functions[n.fnname]
+            end
+          end
+          assert( rigel.isPlainFunction(fn) )
+
+          local extraDelayForFIFOs = FIFOSizeToDelay( fn.inputBurstiness ) + FIFOSizeToDelay( fn.outputBurstiness )
+          iDelayThis = iDelayThis - fn.delay - extraDelayForFIFOs
+        end
+        
+        assert( iDelayThis >= delayTable[orig.inputs[1]])
+
+        local ntmp = n:shallowcopy()
+        for i=1,#n.inputs do
+          if iDelayThis ~= delayTable[orig.inputs[i]] then
+            local d = iDelayThis-delayTable[orig.inputs[i]]
+            if verbose then print("DFIFO",moduleName,d,n,n.inputs[i]) end
+
+            if n.inputs[i].type:streamCount()==1 then
+              ntmp.inputs[i] = C.fifo( n.inputs[i].type:deInterface(), d, nil, nil, nil, nil, "DELAYFIFO" )(n.inputs[i])
+            else
+              local stout = {}
+              for st=1,n.inputs[i].type:streamCount() do
+                local ity
+                if n.inputs[i].type:isArray() then
+                  ity = n.inputs[i].type:arrayOver()
+                elseif n.inputs[i].type:isTuple() then
+                  ity = n.inputs[i].type.list[st]
+                else
+                  assert(false)
+                end
+                stout[st] = C.fifo( ity:deInterface(), d, nil, nil, nil, nil, "DELAYFIFO" )(n.inputs[i][st-1])
+              end
+              ntmp.inputs[i] = rigel.concat(stout)
+              J.err( n.inputs[i].type == ntmp.inputs[i].type, "BADTYPE",n.inputs[i].type," ",ntmp.inputs[i].type, n.inputs[i].type:streamCount() )
+            end
+
+          end
+        end
+        local oldn = n
+        n = rigel.newIR(ntmp)
+        res = n
+--        print("DELAYDONE",oldn,n)
+      end
+      
       if n.kind=="apply" and n.type:isRV() and n.type.VRmode~=true and n.inputs[1].type:isRV() and n.inputs[1].type.VRmode~=true then
         assert( #orig.inputs==1 )
-        err( type(delayTable[orig.inputs[1]])=="number", "missing delay for: ",orig.inputs[1] )
-        assert( type(delayTable[orig])=="number" )
 
         res = n.inputs[1]
 
-        local extraDelayForFIFOs = FIFOSizeToDelay( n.fn.inputBurstiness ) + FIFOSizeToDelay( n.fn.outputBurstiness )
-
-        local iDelayThis = delayTable[orig] - orig.fn.delay - extraDelayForFIFOs
 
         --err( delayTable[orig.inputs[1]] == iDelayThis, "NYI - input to fn requires delay buffer! inputDelay:",delayTable[orig.inputs[1]]," delayAtInputOfThisFn::",iDelayThis," bits:",n.inputs[1].type:extractData():verilogBits()," del ",delayTable[orig]," fn ",orig.fn.delay,orig, orig.fn )
-        assert( iDelayThis >= delayTable[orig.inputs[1]])
-
-        if iDelayThis ~= delayTable[orig.inputs[1]] then
-          local d = iDelayThis-delayTable[orig.inputs[1]]
-          if verbose then print("DELAY",n.fn.name,d) end
-          res = C.fifo( n.inputs[1].type:deInterface(), d, nil, nil, nil, nil, "DELAYFIFO" )(res)
-        end
-
         local NAME = depth[orig].."_"..maxDepth.."_"..n.name.."_"..n.fn.name
 
         --err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
@@ -5188,7 +5232,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
 
         if IFIFO~=nil then
           local bts = (n.fn.inputBurstiness*n.fn.inputType:extractData():verilogBits())
-          if verbose then print("IFIFO ",n.fn.inputBurstiness, n.fn.inputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay,  n.fn.name) end
+          if verbose then print("IFIFO",moduleName, n.fn.inputBurstiness, n.fn.inputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay,  n.fn.name) end
           fifoBits = fifoBits + bts
           res = rigel.apply( J.sanitize(n.name.."_IFIFO"), IFIFO, res )
 
@@ -5200,10 +5244,16 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         res = rigel.apply( n.name, n.fn, res )
         if OFIFO~=nil then
           local bts = (n.fn.outputBurstiness*n.fn.outputType:extractData():verilogBits())
-          if verbose then print("OFIFO ",n.fn.outputBurstiness, n.fn.outputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay, n.fn.name) end
+          if verbose then print("OFIFO",moduleName,n.fn.outputBurstiness, n.fn.outputType:extractData():verilogBits(), (bts/8192).."KB", "delay"..n.fn.delay, n.fn.name) end
           fifoBits = fifoBits + bts
           res = rigel.apply( J.sanitize(n.name.."_OFIFO"), OFIFO, res )
         end
+--      elseif n.kind=="apply" and n.inputs[1].type:streamCount()>1 then
+        -- this is stuff like fan ins:
+--        assert( n.fn.inputBurstiness==0)
+--        assert( n.fn.outputBurstiness==0)
+--        assert( n.inputs[1].type:streamCount()==#
+                
       elseif n.kind=="apply" or n.kind=="applyMethod" then
         -- can't applys of modules
         -- this is things like VR mode, tuples of handshakes, etc
@@ -5223,12 +5273,12 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         err( fn.outputBurstiness==0 )
 
         if #orig.inputs==1 then
-          err( delayTable[orig.inputs[1]]==delayTable[orig]-fn.delay, "NYI - auto fifo unsupported call type, and the delays don't match! inputDelay:",delayTable[orig.inputs[1]]," this:",orig )
+--          err( delayTable[orig.inputs[1]]==delayTable[orig]-fn.delay, "NYI - auto fifo unsupported call type, and the delays don't match! inputDelay:",delayTable[orig.inputs[1]]," thisdelay:",delayTable[orig],"thisFnDelay:",fn.delay,"inputburst:",fn.inputBurstiness,"outburst:",fn.outputBurstiness,"this:",orig , orig.loc )
         else
           err( #orig.inputs==0, "apply with multiple inputs? ",#orig.inputs, orig )
         end
         
-      elseif n.kind~="statements" then
+--[=[      elseif n.kind~="statements" then
         -- all other nodes (like concats)
         
         for k,inp in pairs(orig.inputs) do
@@ -5244,11 +5294,11 @@ local function insertFIFOs( out, delayTable, moduleName, X )
             err( inp.type:isRV(),"input to shift register is not RV? is: ",inp.type," this:", orig )
 
             local G = require "generators.core"
-            if verbose then print("DELAY",delayDiff,n) end
+            if verbose then print("DFIFO_statements",moduleName,delayDiff,n) end
             --res.inputs[k] = modules.makeHandshake(modules.shiftRegister( inp.type:deInterface(), delayDiff ))(res.inputs[k])
             res.inputs[k] = C.fifo( inp.type:deInterface(), delayDiff, nil, nil, nil, nil, "DELAY" )(res.inputs[k])
           end
-        end
+  end]=]
       end
 
       return res
@@ -5257,12 +5307,17 @@ local function insertFIFOs( out, delayTable, moduleName, X )
   return fr
 end
 
-local function calculateDelaysZ3( output )
-
+local function calculateDelaysZ3( output, moduleName )
+  assert( type(moduleName)=="string" )
+  
   local statements = {}
   local ofTerms = {}
 
   local verbose = false
+
+  if verbose then
+    print("* DelaysZ3 ",moduleName )
+  end
   
   local seenNames = {}
   local resdelay = output:visitEach(
@@ -5277,6 +5332,7 @@ local function calculateDelaysZ3( output )
         table.insert( statements, "(assert (= "..name.." 0))" )
         res = name
       elseif n.kind=="concat" or n.kind=="concatArray2d" then
+        -- todo fix: it looks like all streams in a concat get the same delay? is that good enough behavior?
         for k,i in ipairs(inputs) do
           table.insert( statements, "(assert (>= "..name.." "..i.."))" )
           table.insert( ofTerms, "(* (- "..name.." "..i..") "..(n.inputs[k].type:extractData():verilogBits())..")" )
@@ -5337,6 +5393,122 @@ local function calculateDelaysZ3( output )
       return res
     end)
 
+  -- add extra constraints to make sure FanOuts are delayed from FanIns
+  local __INPUT = {} -- token to indicate this traces directly to input
+  local traceDelay = {} -- name->minDelayFromInput (this is the sum of the delays in the trace back to the input)
+  local nodeToName = {}
+  output:visitEach(
+    function(n, arg)
+      local name = J.verilogSanitizeInner(n.name)
+      nodeToName[n] = name
+
+      local res
+      
+      if n.kind=="input" or n.kind=="constant" then
+        res = J.broadcast(__INPUT,types.streamCount(n.type))
+        traceDelay[name] = J.broadcast(0,types.streamCount(n.type))
+      elseif n.kind=="concat" or n.kind=="concatArray2d" then
+        traceDelay[name] = {}
+        res = {}
+        for i=1,#n.inputs do
+          assert( #arg[i] == n.inputs[i].type:streamCount() )
+          
+          if #arg[i]>=1 then
+            J.err( #arg[i]==1, "concat: an input has multiple streams?\ninput:", i,"\n",n.inputs[i],"\nty:",n.inputs[i].type,"\nstcnt:",n.inputs[i].type:streamCount(),"\nargcnt:",#arg[i],"\n",n,"\n",arg[i][1],"\n",tostring(arg[i][2]) )
+            res[i] = arg[i][1]
+            traceDelay[name][i] = traceDelay[ nodeToName[n.inputs[i]] ][1]
+          else
+            print("Concat with strange number of streams?",n)
+            assert(false)
+          end
+        end
+
+      elseif n.kind=="apply" or n.kind=="applyMethod" then --(n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module)) then
+
+        local fn = n.fn
+        if n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module) then
+          fn = n.inst.module
+        elseif n.kind=="applyMethod" then
+          fn = n.inst.module.functions[n.fnname]
+        end
+
+        local delay = 0
+
+        --assert( #n.inputs==1 )
+        if #n.inputs==1 then
+          for i=1,fn.inputType:streamCount() do
+            --assert( #traceDelay[ nodeToName[n.inputs[i]] ]==1 )
+            delay = math.max( delay, traceDelay[ nodeToName[n.inputs[1]] ][i]+fn.delay )
+          end
+        elseif #n.inputs==0 then
+          delay = fn.delay
+        else
+          assert(false)
+        end
+        
+        traceDelay[name] = J.broadcast( delay, n.type:streamCount() )
+        
+        if fn.inputType:streamCount()<=1 and fn.outputType:streamCount()<=1 then
+          if fn.outputType:streamCount()==0 then
+            res = {}
+          elseif fn.inputType:streamCount()==0 then
+            res = J.broadcast(__INPUT,types.streamCount(n.type))
+          else
+            assert( fn.outputType:streamCount()==1 )
+            res = {arg[1][1]}
+          end
+        elseif fn.inputType:streamCount()==1 and fn.outputType:streamCount()>1 then
+          -- always consider these to be fan outs
+          res = J.broadcast( name, n.type:streamCount() )
+        elseif fn.inputType:streamCount()>1 and fn.outputType:streamCount()==1 then
+          -- always consider these to be fan ins
+          assert(#arg==1)
+          assert(#arg[1]==types.streamCount(fn.inputType) )
+
+
+          for i=1,types.streamCount(fn.inputType) do
+            -- insert constraints to make sure delay of this node is at least 1 larger than prior fanin/out
+            if arg[1][i]~=__INPUT then -- paths to input don't need a FIFO
+              local minDelay = traceDelay[name][1] - traceDelay[ arg[1][i] ][1] + 1
+              table.insert( statements, "(assert (>= "..name.." (+ "..arg[1][i].." "..minDelay.."))) ; DIAMOND" )
+            end
+          end
+
+          -- now, if we fan in, make sure we have a FIFO after this node...
+          res = J.broadcast(name,types.streamCount(n.type))
+        elseif fn.inputType:streamCount()==fn.outputType:streamCount() and fn.fifoStraightThrough then
+          -- sort of a hack: we marked this function to indicate that streams pass straight through, so we can just propagate signals
+          res = arg[1]
+        else
+          J.err(false, "unknown fn fifo behavior? ",fn.name," type:",fn.inputType,"->",fn.outputType," inputCount:",#n.inputs," inputStreamCount:",fn.inputType:streamCount()," outputStreamCount:",fn.outputType:streamCount() )
+        end
+      elseif n.kind=="selectStream" then
+        res = {arg[1][n.i+1]}
+        traceDelay[name] = {traceDelay[ nodeToName[n.inputs[1]] ][n.i+1]}
+      elseif n.kind=="statements" then
+        res = arg[1]
+        traceDelay[name] = traceDelay[ nodeToName[n.inputs[1]] ]
+      else
+        J.err( false, "NYI - Diamond insertion on ",n)
+      end
+
+      J.err( type(res)=="table", "diamond insertion bad res ",n )
+      J.err( #res == types.streamCount(n.type), "diamond insertion error (res:",#res,",streamcount:",types.streamCount(n.type),",type:",n.type,")- ",n )
+
+      for i=1,#res do
+        assert( res[i]==__INPUT or type(res[i])=="string")
+      end
+
+      J.err( type(traceDelay[name])=="table", "diamond insertion bad traceDelay ",n, "is:"..tostring(traceDelay[name]) )
+      J.err( #traceDelay[name] == types.streamCount(n.type), "diamond insertion error traceDelay (res:",#res,",streamcount:",types.streamCount(n.type),",type:",n.type,")- ",n," #traceDelay",#traceDelay[name] )
+
+      for i=1,#res do
+        assert( type(traceDelay[name][i])=="number" )
+      end
+
+      return res
+    end)
+  
   local z3str = {}
   table.insert(z3str,"(set-option :produce-models true)")
   table.insert(z3str,"(declare-const MINVAR Int)")
@@ -5355,7 +5527,10 @@ local function calculateDelaysZ3( output )
   
   z3str = table.concat(z3str,"\n")
 
-  if verbose then print(z3str) end
+  if verbose then
+    print("** Z3STR_"..moduleName)
+    print(z3str)
+  end
   
   local z3call = [[echo "]]..z3str..[[" | z3 -in -smt2]]
 
@@ -5391,8 +5566,8 @@ local function calculateDelaysZ3( output )
   f:close()
 
   if verbose then
-    print("TOTALBITS",totalbits)
-    print("DELAYTABLE")
+    print("** TOTALBITS",totalbits)
+    print("** DELAYTABLE")
     for k,v in pairs(delayTable) do
       print(k,v)
     end
@@ -5513,12 +5688,13 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
   
   --local resdelay, delayTable = calculateDelaysGreedy( output )
   local resdelay, delayTable
-  if rigel.Z3_FIFOS then
-    resdelay, delayTable = calculateDelaysZ3( output )
-  else
-    resdelay, delayTable = calculateDelaysGreedy( output )
-  end
 
+  if rigel.Z3_FIFOS and HANDSHAKE_MODE then
+    resdelay, delayTable = calculateDelaysZ3( output, name )
+  else
+    resdelay, delayTable = calculateDelaysGreedy( output, name )
+  end
+  
   local inputBurstiness = 0
   local outputBurstiness = 0
   

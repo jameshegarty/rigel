@@ -328,6 +328,17 @@ function(args)
   end
 end )
 
+-- this inserts a FIFO only if AUTO_FIFOS is false, and this callsite is RV mode
+generators.NAUTOFIFO = R.FunctionGenerator("core.NAUTOFIFO",{"number","type","rate"},{"bool","string"},
+function(args)
+  if args.type:isRV() and R.AUTO_FIFOS==false then
+    assert( R.AUTO_FIFOS==false )
+    return C.fifo( args.type:deInterface(), args.number, args.bool, nil, nil, nil, args.string )
+  else
+    return generators.Fmap{C.identity( args.type:deInterface() )}:complete({type=args.type,rate=args.rate})
+  end
+end )
+
 generators.NE = R.FunctionGenerator("core.NE",{},{"async","number"},
 function(args)
   if args.number~=nil then

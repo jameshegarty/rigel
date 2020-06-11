@@ -2016,9 +2016,11 @@ function MT.lambdaCompile(fn)
               assert(false)
             end
 return {readyOutput}
+          elseif n.kind=="concat" then
+return list
           else
             if n.type:isTuple() then
-              assert(false)
+              J.err(false, "NYI - multiple stream output with multiple consumers",n)
             elseif n.type:isArray() then
               table.insert( readyStats, quote mself.[n.name]:calculateReady(array(list)) end )
             else
