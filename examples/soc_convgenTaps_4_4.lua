@@ -65,7 +65,9 @@ local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
   function(i)
     local ii = G.FanOut{2}(i)
     local ii0 = ii[0]
+    ii0 = G.NAUTOFIFO{128}(ii0)
     local ii1 = ii[1]
+    ii1 = G.NAUTOFIFO{128}(ii1)
     
     local res = G.AXIReadBurst{"1080p.raw",{1920,1080},u(8),noc.read}(ii0)
 

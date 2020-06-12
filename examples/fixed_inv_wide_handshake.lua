@@ -39,11 +39,11 @@ out = R.apply( "b", bfn, R.concat("binp",{inp,inv}) )
 fn = RM.lambda( "fixed_wide", inp, out )
 ------------
 hsfninp = R.input(R.Handshake(types.array2d(ITYPE,T)))
-local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(ITYPE,1,T,1)), hsfninp )
+local out = R.apply("reducerate", RM.changeRate(ITYPE,1,T,1), hsfninp )
 local out = R.apply("idx", RM.makeHandshake(C.index(types.array2d(types.uint(8),1),0)), out)
 local out = R.apply("inner", RM.makeHandshake(fn), out )
 local out = R.apply("A0", RM.makeHandshake(C.arrayop(ITYPE,1,1)), out)
-local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE,1,1,8)), out )
+local out = R.apply("incrate", RM.changeRate(ITYPE,1,1,8), out )
 local hsfn = RM.lambda("hsfn",hsfninp,out)
 
 harness{ outFile="fixed_inv_wide_handshake", fn=hsfn, inFile="frame_128.raw", inSize={W,H}, outSize={W,H} }

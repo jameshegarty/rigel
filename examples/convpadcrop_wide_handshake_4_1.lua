@@ -59,7 +59,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   --local hsfn_taps = R.apply( "idx1", RM.makeHandshake(C.index(HST,1)), inp1 )
   local out = hsfninp_raw
   
-  local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,T)), out )
+  local out = R.apply("reducerate", RM.changeRate(types.uint(8),1,8,T), out )
 
   local out = R.apply("pad", RM.liftHandshake(RM.padSeq(types.uint(8), inputW, inputH, T, PadRadius, PadRadius, ConvRadius, ConvRadius, 0)), out)
 
@@ -89,7 +89,7 @@ function MAKE(T,ConvWidth,size1080p,NOSTALL)
   end
 
   local out = R.apply("crop",C.cropHelperSeq(types.uint(8), internalW, internalH, T, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0), out)
-  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,T,8)), out )
+  local out = R.apply("incrate", RM.changeRate(types.uint(8),1,T,8), out )
 
   if #fifos>0 then
     table.insert(statements,1,out)

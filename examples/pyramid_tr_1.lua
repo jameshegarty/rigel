@@ -49,7 +49,7 @@ local inp = R.input( R.Handshake(HST) )
 --local out = R.apply("idx0", RM.makeHandshake( C.index(HST,0)),inp0)
 local out = inp
 if T<8 then
-  out = R.apply("CRtop", RM.liftHandshake( RM.changeRate(A,1,8,T)), out)
+  out = R.apply("CRtop", RM.changeRate(A,1,8,T), out)
 end
 
 local totT = 0
@@ -105,7 +105,7 @@ for depth=1,TARGET_DEPTH do
   if depth==TARGET_DEPTH then
     if curT<outputT then
       -- we must do the changerate _before_ the fifo, or the things later will run at 1/2 rate we expect
-      out = R.apply("CR"..depth, RM.liftHandshake( RM.changeRate(A,1,math.max(curT,1),8)), out)
+      out = R.apply("CR"..depth, RM.changeRate(A,1,math.max(curT,1),8), out)
     end
 
     -- last level
@@ -118,7 +118,7 @@ for depth=1,TARGET_DEPTH do
     out0 = P.FIFO(fifos,statements,THIS_TYPE,R.selectStream("i0"..depth,out,0),nil,"internal"..depth,curW,curH,math.max(curT,1))
 
     if curT<8 then
-      out1 = R.apply("CR"..depth, RM.liftHandshake( RM.changeRate(A,1,math.max(curT,1),8)), R.selectStream("i1"..depth,out,1))
+      out1 = R.apply("CR"..depth, RM.changeRate(A,1,math.max(curT,1),8), R.selectStream("i1"..depth,out,1))
     else
       out1 = R.selectStream("i1"..depth,out,1)
     end

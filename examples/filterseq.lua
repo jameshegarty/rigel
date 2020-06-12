@@ -37,10 +37,10 @@ T = 8
 ITYPE = types.array2d(types.uint(8),T)
 
 local inpraw = R.input(R.Handshake(ITYPE))
-local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
+local inp = R.apply("reducerate", RM.changeRate(types.uint(8),1,8,1), inpraw )
 local out = R.apply("filterfn", RM.liftHandshake(RM.liftDecimate(filterfn)), inp )
 local out = R.apply("AO",RM.makeHandshake(C.arrayop(types.uint(8),1,1)),out)
-local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,1,8)), out )
+local out = R.apply("incrate", RM.changeRate(types.uint(8),1,1,8), out )
 fn = RM.lambda( "filterseq", inpraw, out )
 
 --harness.axi( "filterseq", fn, "filterseq.raw", nil, nil, ITYPE, T,W,H, ITYPE,T,W/4,H)

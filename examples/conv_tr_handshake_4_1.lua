@@ -46,14 +46,14 @@ function MAKE( T, ConvWidth, size1080p )
   local RW_TYPE = types.array2d( types.uint(8), 8 ) -- simulate axi bus
   local hsfninp = R.input( R.Handshake(types.Par(RW_TYPE)) )
 
-  local out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), hsfninp )
+  local out = R.apply("reducerate", RM.changeRate(types.uint(8),1,8,1), hsfninp )
   local out = R.apply("pad", RM.liftHandshake(RM.padSeq(types.uint(8), inputW, inputH, 1, PadRadius, PadRadius, ConvRadius, ConvRadius, 0)), out)
 
   local out = R.apply( "convLB", C.stencilLinebufferPartial( types.uint(8), internalW, internalH, T, -ConvWidth+1, 0, -ConvWidth+1, 0 ), out)
   local out = R.apply( "conv", RM.liftHandshake(convolve), out )
   
   local out = R.apply("crop", C.cropHelperSeq(types.uint(8), internalW, internalH, 1, PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0), out)
-  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,1,8)), out )
+  local out = R.apply("incrate", RM.changeRate(types.uint(8),1,1,8), out )
   local hsfn = RM.lambda("hsfn", hsfninp, out)
   
   local infile = "frame_128.raw"

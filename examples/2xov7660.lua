@@ -28,7 +28,7 @@ sout = S.tuple{sout,sout,sout,S.constant(0,types.uint(8))}
 sout = S.cast(sout,OTYPE)
 return sout end, function() return tfn end )
 
-cr = RM.liftHandshake(RM.changeRate(ITYPE,1,4,2))
+cr = RM.changeRate(ITYPE,1,4,2)
 sfn = RM.makeHandshake(RM.liftXYSeqPointwise("splitfn","split",splitfn,W,H,2))
 
 hsfn = C.compose("hsfn",sfn,cr)

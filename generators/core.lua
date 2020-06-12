@@ -337,7 +337,7 @@ function(args)
   else
     return generators.Fmap{C.identity( args.type:deInterface() )}:complete({type=args.type,rate=args.rate})
   end
-end )
+end, nil, false )
 
 generators.NE = R.FunctionGenerator("core.NE",{},{"async","number"},
 function(args)
@@ -1034,7 +1034,7 @@ function(args)
   --print("Schedulable function ",args.string," input type:",input.type)
   
   local out = args.luaFunction(input)
-  J.err( R.isIR(out), "SchedulableFunction: user function returned something other than a Rigel value? "..tostring(out))
+  J.err( R.isIR(out), "SchedulableFunction: user function returned something other than a Rigel value? ",out)
 
   local resFn = RM.lambda( args.string, input, out )
 
@@ -1383,6 +1383,12 @@ function(args)
   return C.Tile( args.T, args.insize[1], args.insize[2], args.size[1], args.size[2] )
 end,
 T.Array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V") ) )
+
+generators.RateMonitor = R.FunctionGenerator("core.RateMonitor",{"type","rate","rigelFunction"},{"string"},
+function(args)
+  local fn = args.rigelFunction:specializeToType( args.type, args.rate )
+  return C.RateMonitor( fn, args.rate, args.string )
+end,nil,false)
 
 function generators.export(t)
   if t==nil then t=_G end

@@ -531,7 +531,6 @@ return fn
           --err( false,"NYI - convertInterface to a column major array converting:",targetType," to:",fnType," for:",fn,loc)
           err( targetType.V[2]==fnType.V[2],"NYI - column major change rate with different array height. Converting ",targetType," to ",fnType)
           table.insert( resStack, RM.liftHandshake(RM.changeRate( targetType:arrayOver(), fnType.V[2], targetType.V[1], fnType.V[1], true, fnType.size[1], fnType.size[2] )) )
-          print("COLMAJOR",targetType,fnType,resStack[#resStack])
         else
           J.err("converting between strange vector sizes! ",targetType," to ",fnType)
         end
@@ -583,6 +582,7 @@ return fn
               table.insert( out, i )
             else
               local recres = rec(i)
+              recres = C.fifo( recres.type:deInterface(), 128, nil, nil, nil, nil, "fannedconvertInterface_"..tostring(k))(recres)
               table.insert( out, recres )
               assert( out[#out].type:deInterface()==fnType.list[k] )
             end
@@ -958,9 +958,9 @@ __tostring=function(mod)
   setmetatable(mod,mt)
 
   if darkroom.isPlainFunction(mod) then
-    table.insert(res,"Plain Rigel Function "..mod.name.." ("..tabstr..")")
+    table.insert(res,"* Plain Rigel Function "..mod.name.." ("..tabstr..")")
   else
-    table.insert(res,"Rigel Function "..mod.name.." ("..tabstr..")")
+    table.insert(res,"* Rigel Function "..mod.name.." ("..tabstr..")")
   end
   
   table.insert(res,"  InputType: "..tostring(mod.inputType))
@@ -1021,6 +1021,7 @@ __tostring=function(mod)
     end
 
     mod.output:visitEach(function(n) table.insert(res,tostring(n)) end)
+    table.insert(res,"** return "..mod.output.name)
   end
   
   return table.concat(res,"\n").."\n"
@@ -1657,19 +1658,20 @@ end
 
 darkroomIRMT.__tostring = function(tab)
   local res
+  local extraAtEnd
   if tab.kind=="input" then
-    res = "local "..tab.name.." = R.input("..tostring(tab.type)..")"
+    res = "** "..tab.name.." = R.input("..tostring(tab.type)..")"
   elseif tab.kind=="constant" then
-    res = "local "..tab.name.." = R.constant('"..tab.name.."',"..tostring(tab.value)..","..tostring(tab.type)..")"
+    res = "** "..tab.name.." = R.constant('"..tab.name.."',"..tostring(tab.value)..","..tostring(tab.type)..")"
   elseif tab.kind=="applyMethod" then
     if #tab.inputs==0 then
-      res = tab.name.." = "..tab.inst.name..":"..tab.fnname.."()"
+      res = "** "..tab.name.." = "..tab.inst.name..":"..tab.fnname.."()"
     else
-      res = tab.name.." = "..tab.inst.name..":"..tab.fnname.."("..tab.inputs[1].name..")"
+      res = "** "..tab.name.." = "..tab.inst.name..":"..tab.fnname.."("..tab.inputs[1].name..")"
     end
   elseif tab.kind=="apply" then
     if #tab.inputs==0 then
-      res = "local "..tab.name.." = "..tab.fn.name.."()"
+      res = tab.name.." = "..tab.fn.name.."()"
     else
       if tab.fn.generator~=nil then
         local gen
@@ -1680,8 +1682,14 @@ darkroomIRMT.__tostring = function(tab)
           gen = tab.fn.generator.name.."{"
           local lst = {}
           for k,v in pairs(tab.fn.generatorArgs) do
-            if k=="luaFunction" or k=="rigelFunction" then
+            if k=="luaFunction" then
               table.insert(lst,k.."=SKIP")
+            elseif k=="rigelFunction" then
+              table.insert(lst,v.name)
+            elseif k=="type" or k=="rate" then
+              -- skip
+            elseif k=="number" then
+              table.insert(lst,v)
             else
               table.insert(lst,k.."="..tostring(v))
             end
@@ -1689,13 +1697,27 @@ darkroomIRMT.__tostring = function(tab)
           gen = gen..table.concat(lst,",").."}"
         end
         
-        res = "local "..tab.name.." = "..gen.."("..tab.inputs[1].name..")  -- Module:"..tab.fn.name
+        res = "** "..tab.name.." = "..gen.."("..tab.inputs[1].name..")\nModule:"..tab.fn.name
+
+        -- exhaustive generator arg list list
+        if type(tab.fn.generator)~="string" then
+          extraAtEnd = "*** Generator Args\n"
+          for k,v in pairs(tab.fn.generatorArgs) do
+            if k=="rigelFunction" then
+              extraAtEnd = extraAtEnd..k..": "..tostring(v.name).."\n"
+            elseif k=="luaFunction" then
+              extraAtEnd = extraAtEnd..k..": (Lua Function) "..tostring(v).."\n"
+            else
+              extraAtEnd = extraAtEnd..k..": "..tostring(v).."\n"
+            end
+          end
+        end
       else
-        res = "local "..tab.name.." = "..tab.fn.name.."("..tab.inputs[1].name..")"
+        res = "** "..tab.name.." = "..tab.fn.name.."("..tab.inputs[1].name..")"
       end
     end
   elseif tab.kind=="selectStream" then
-    res = tab.name.." = "..tab.inputs[1].name.."["..tab.i.."] -- selectStream"
+    res = "** "..tab.name.." = "..tab.inputs[1].name.."["..tab.i.."] -- selectStream"
   elseif tab.kind=="statements" then
     res = "statements{"
     for k,v in ipairs(tab.inputs) do
@@ -1703,7 +1725,7 @@ darkroomIRMT.__tostring = function(tab)
     end
     res = res.."}"
   elseif tab.kind=="concat" or tab.kind=="concatArray2d" then
-    res = "local "..tab.name.." = R.concat('"..tab.name.."',{"
+    res = "** "..tab.name.." = R.concat('"..tab.name.."',{"
     for k,v in ipairs(tab.inputs) do
       res = res..v.name
       if k~=#tab.inputs then res = res.."," end
@@ -1714,15 +1736,16 @@ darkroomIRMT.__tostring = function(tab)
   end
 
   if darkroom.SDF then
-    res = res .." -- RateOut:"..tostring(tab.rate)
+    res = res .."\nRate:"..tostring(tab.rate)
     local util = tab:utilization()
-    if util~=nil then res=res.." Util:"..tostring(util[1]).."/"..tostring(util[2]) end
+    if util~=nil then res=res.."\nUtilization:"..tostring(util[1]).."/"..tostring(util[2]) end
   end
 
   if true then
-    res = res .. " type:"..tostring(tab.type)
+    res = res .. "\nType:"..tostring(tab.type)
   end
-  
+
+  if extraAtEnd~=nil then res = res.."\n"..extraAtEnd end
   return res
 end
 
@@ -2678,7 +2701,7 @@ end
 function darkroom.apply( name, fn, input, sdfRateOverride )
   err( type(name) == "string", "apply: first argument to apply must be name" )
   err( name==J.verilogSanitize(name),"apply: name must be verilog sanitized, from '",name,"' to '",J.verilogSanitize(name),"'")
-  err( darkroom.isFunction(fn), "second argument to apply must be a darkroom function" )
+  err( darkroom.isFunction(fn), "second argument to apply must be a darkroom function, but is:",fn )
   err( input==nil or darkroom.isIR( input ), "last argument to apply must be darkroom value or nil" )
   err( sdfRateOverride==nil or SDFRate.isSDFRate(sdfRateOverride), "sdfRateOverride must be SDF rate" )
 
@@ -2775,6 +2798,7 @@ function darkroom.concat( name, t, X )
   end
     
   err( type(t)=="table", "tuple input should be table of darkroom values" )
+  err( #t>0,"tuple should have at least 1 input!")
   err( X==nil, "rigel.concat: too many arguments")
 
   for k,v in ipairs(t) do

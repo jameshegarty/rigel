@@ -1912,7 +1912,7 @@ modules.upsampleXSeq = memoize(function( A, T, scale_orig, framed, X )
                                modules.makeHandshake(C.broadcast(A,T))},
         "upsampleXSeq_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scaleV))
     else
-      return modules.compose("upsampleXSeq_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scaleV), modules.liftHandshake(modules.changeRate(A,1,T*scaleV,T)), modules.makeHandshake(broadcastWide(A,T,scaleV)))
+      return modules.compose("upsampleXSeq_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scaleV), modules.changeRate(A,1,T*scaleV,T), modules.makeHandshake(broadcastWide(A,T,scaleV)))
     end
   end
 end)
@@ -3030,6 +3030,227 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
   err( type(framed)=="boolean","changeRate: framed must be boolean")
   err( X==nil, "changeRate: too many arguments")
 
+  local maxRate = math.max(math.max(inputRate,outputRate),1)
+  local minRate = math.max(math.min(inputRate,outputRate),1)
+  
+  err( inputRate==0 or maxRate % inputRate == 0, "maxRate ("..tostring(maxRate)..") % inputRate ("..tostring(inputRate)..") ~= 0")
+  err( outputRate==0 or maxRate % outputRate == 0, "maxRate ("..tostring(maxRate)..") % outputRate ("..tostring(outputRate)..") ~=0")
+  rigel.expectBasic(A)
+
+  local inputCount = maxRate/math.max(inputRate,1)
+  local outputCount = maxRate/math.max(outputRate,1)
+
+  local res = {kind="changeRate", type=A, H=H, inputRate=inputRate, outputRate=outputRate}
+
+  if inputRate>outputRate then
+    -- 8->4
+    res.inputBurstiness = 0
+    res.outputBurstiness = 0
+    res.delay = 1
+  else
+    -- 4->8
+    res.inputBurstiness = 0
+    res.outputBurstiness = 0
+    res.delay = 1
+  end
+  
+  
+  if framed then
+    err(type(framedW)=="number", "changeRate: if framed, framedW should be number, but is: "..tostring(framedW))
+    assert(type(framedH)=="number")
+    assert(inputRate==0 or framedW%inputRate==0)
+    assert(outputRate==0 or framedW%outputRate==0)
+    
+    if inputRate==0 then
+      assert(framedH==1)
+      assert(H==1)
+      res.inputType = types.RV(types.Seq(types.Par(A),framedW,framedH))
+    elseif inputRate<framedW then
+      assert(H==framedH)
+      res.inputType = types.RV(types.ParSeq(types.array2d(A,inputRate,H),framedW,framedH))
+    elseif inputRate==framedW then
+      assert(H==framedH)
+      res.inputType = types.RV(types.Par(types.array2d(A,inputRate,H)))
+    else
+      assert(false)
+    end
+
+    if outputRate==0 then
+      assert(framedH==1)
+      assert(H==1)
+      res.outputType = types.RV(types.Seq(A,framedW,framedH))
+    elseif outputRate<framedW then
+      assert(framedH==H)
+      res.outputType = types.RV(types.ParSeq(types.array2d(A,outputRate,H),framedW,framedH))
+    elseif outputRate==framedW then
+      assert(framedH==H)
+      res.outputType = types.RV(types.Par(types.array2d(A,framedW,framedH)))
+    else
+      assert(false)
+    end
+  else
+    if inputRate==0 then
+      assert(H==1)
+      res.inputType = types.RV(types.Par(A))
+    else
+      res.inputType = types.RV(types.Par(types.array2d(A,inputRate,H)))
+    end
+
+    if outputRate==0 then
+      assert(H==1)
+      res.outputType = types.RV(types.Par(A))
+    else
+      res.outputType = types.RV(types.Par(types.array2d(A,outputRate,H)))
+    end
+  end
+  
+  res.stateful = true
+
+  res.name = J.verilogSanitize("ChangeRate_"..tostring(A).."_from"..inputRate.."_to"..outputRate.."_H"..H.."_framed"..tostring(framed).."_framedW"..tostring(framedW).."_framedH"..tostring(framedH))
+
+  if inputRate>outputRate then -- 8 to 4
+    res.sdfInput, res.sdfOutput = SDF{math.max(outputRate,1),math.max(inputRate,1)},SDF{1,1}
+  else -- 4 to 8
+    res.sdfInput, res.sdfOutput = SDF{1,1},SDF{math.max(inputRate,1),math.max(outputRate,1)}
+  end
+
+  function res.makeSystolic()
+    local C = require "generators.examplescommon"
+    
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = {res:vHeader()}
+
+    table.insert(verilog, "  reg ["..(maxRate*H*A:verilogBits()-1)..":0] R;\n")
+    local PHASES = maxRate/minRate
+    local phaseBits = math.ceil((math.log(PHASES)/math.log(2))+1)
+    -- phase 0: indicates full (if Ser) or empty (if Deser)
+    table.insert(verilog, "  reg ["..(phaseBits-1)..":0] phase;\n")
+    
+    if math.max(inputRate,1)>math.max(outputRate,1) then
+      -- Ser: eg 8 to 4
+
+      -- for dumb reasons, we buffer the data in row major order, but need to write it out as column major
+      local COLTOROW = {}
+      for chunk=0,(maxRate/minRate)-1 do
+        for y=0,H-1 do
+          local OR = math.max(outputRate,1)
+          for x=0,OR-1 do
+            table.insert(COLTOROW,res:vInputData().."["..(A:verilogBits()*((x+chunk*OR)+y*H+1)-1)..":"..(A:verilogBits()*((x+chunk*OR)+y*H)).."]")
+          end
+        end
+      end
+      
+      table.insert(verilog, "  reg hasData;\n")
+
+      table.insert(verilog,[[
+  assign ]]..res:vInputReady()..[[ = (hasData==1'b0) || (]]..res:vOutputReady()..[[ && phase==]]..phaseBits..[['d]]..(PHASES-1)..[[);
+  assign ]]..res:vOutputValid()..[[ = (hasData==1'b1);
+  assign ]]..res:vOutputData()..[[ = R[]]..(A:verilogBits()*H*math.max(outputRate,1)-1)..[[:0];
+
+  always @(posedge CLK) begin
+    if (reset) begin
+      phase <= ]]..phaseBits..[['d0;
+      hasData <= 1'b0;
+    end else begin
+      if (]]..res:vInputValid().."&&"..res:vInputReady()..[[) begin
+        R <=  {]]..table.concat(J.reverse(COLTOROW),",")..[[};
+        hasData <= 1'b1;
+        phase <= ]]..phaseBits..[['d0;
+      end else if (hasData && ]]..res:vOutputReady()..[[) begin
+        // step the buffers
+        R <= {]]..(A:verilogBits()*H*math.max(outputRate,1))..[['d0,R[]]..(A:verilogBits()*H*maxRate-1)..":"..(A:verilogBits()*H*math.max(outputRate,1))..[[]};
+        phase <= phase+]]..phaseBits..[['d1;
+        if (phase==]]..phaseBits..[['d]]..(PHASES-1)..[[) begin
+          hasData <= 1'b0;
+          phase <= ]]..phaseBits..[['d0;
+        end
+      end
+    end
+  end
+]])
+    else
+      -- inputRate <= outputRate. Deser: eg 4 to 8
+
+      -- for dumb reasons, we buffer the data in column major order, but need to write it out as row major
+      local COLTOROW = {}
+      for y=0,H-1 do
+        for x=0,math.max(outputRate,1)-1 do
+          table.insert(COLTOROW,"R["..(A:verilogBits()*(x*H+y+1)-1)..":"..(A:verilogBits()*(x*H+y)).."]")
+        end
+      end
+
+      local ROWTOCOL = {}
+      for x=0,math.max(inputRate,1)-1 do
+        for y=0,H-1 do
+          table.insert(ROWTOCOL,res:vInputData().."["..(A:verilogBits()*(x+y*H+1)-1)..":"..(A:verilogBits()*(x+y*H)).."]")
+        end
+      end
+      
+      table.insert(verilog,[[
+  assign ]]..res:vOutputValid()..[[ = (phase==]]..phaseBits..[['d]]..PHASES..[[);
+  assign ]]..res:vInputReady()..[[ = (]]..res:vOutputValid()..[[==1'b0) || (]]..res:vOutputValid()..[[ && ]]..res:vOutputReady()..[[);
+  assign ]]..res:vOutputData()..[[ = {]]..table.concat(J.reverse(COLTOROW),",")..[[};
+
+  always @(posedge CLK) begin
+    if (reset) begin
+      phase <= ]]..phaseBits..[['d0;
+    end else begin
+      if (]]..res:vOutputValid()..[[ && ]]..res:vOutputReady()..[[) begin
+        if (]]..res:vInputValid().."&&"..res:vInputReady()..[[) begin
+          phase <= ]]..phaseBits..[['d1; // reading and writing in the same cycle
+        end else begin
+          phase <= ]]..phaseBits..[['d0;
+        end
+      end else if (]]..res:vInputValid().."&&"..res:vInputReady()..[[) begin
+        phase <= phase+]]..phaseBits..[['d1;
+      end
+
+      if (]]..res:vInputValid().."&&"..res:vInputReady()..[[) begin]])
+                   if math.max(inputRate,1)==math.max(outputRate,1) then
+table.insert( verilog,[[        R <= ]]..res:vInputData()..";")
+                   else
+table.insert(verilog,[[        R <= {]]..table.concat(J.reverse(ROWTOCOL),",")..[[,R[]]..(A:verilogBits()*H*maxRate-1)..[[:]]..(A:verilogBits()*H*math.max(inputRate,1))..[[]};]])
+                   end
+table.insert(verilog,[[      end
+    end
+  end
+]])
+    end
+
+    table.insert(verilog,[[
+endmodule
+
+]])
+    
+    s:verilog( table.concat(verilog,"") )
+
+    return s
+  end
+
+  if terralib~=nil then res.terraModule = MT.changeRate(res, A, H, inputRate, outputRate,maxRate,outputCount,inputCount ) end
+
+  return rigel.newFunction(res)
+end)
+
+--StatefulRV. Takes A[inputRate,H] in, and buffers to produce A[outputRate,H]
+-- 'rate' has a strange meaning here: 'rate' means size of array.
+--     so inputRate=2 means 2items/clock (2 wide array)
+-- framedW/H: these are the size of the whole array. So, when framed, we expect input:
+--    [inputRate,H;framedW,framedH} to [outputRate,H;framedW,framedH}
+modules.changeRateNonFIFO = memoize(function(A, H, inputRate, outputRate, framed, framedW, framedH, X)
+  err( types.isType(A), "changeRate: A should be a type")
+  err( type(H)=="number", "changeRate: H should be number")
+  err( H>0,"changeRate: H must be >0, but is: ",H)
+  err( type(inputRate)=="number", "changeRate: inputRate should be number, but is: "..tostring(inputRate))
+  err( inputRate>=0, "changeRate: inputRate must be >=0")
+  err( inputRate==math.floor(inputRate), "changeRate: inputRate should be integer")
+  err( type(outputRate)=="number", "changeRate: outputRate should be number, but is: "..tostring(outputRate))
+  err( outputRate==math.floor(outputRate), "changeRate: outputRate should be integer, but is: "..tostring(outputRate))
+  if framed==nil then framed=false end
+  err( type(framed)=="boolean","changeRate: framed must be boolean")
+  err( X==nil, "changeRate: too many arguments")
+
   local maxRate = math.max(inputRate,outputRate)
 
   err( inputRate==0 or maxRate % inputRate == 0, "maxRate ("..tostring(maxRate)..") % inputRate ("..tostring(inputRate)..") ~= 0")
@@ -3866,6 +4087,37 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
     sizeRigelFn = rigel.newFunction{name="size",inputType=types.null(),outputType=types.uint(addrBits),sdfInput=SDF{1,1},sdfOutput=SDF{1,1},delay=0,stateful=(csimOnly~=true)}
   end
 
+  local dbgMonitor = ""
+  if false then
+  dbgMonitor  = [[  // debug monitor
+  reg [31:0] totalCycles=32'd0;
+  reg [31:0] stalledCycles=32'd0;
+  reg [31:0] downstreamStalledCycles=32'd0;
+  reg printed = 1'b1;
+
+  always @(posedge CLK) begin
+    if (reset) begin
+      if (printed==1'b0 ) begin
+        $display("|]]..J.verilogSanitizeInner(tostring(dbgname)).."|"..size.."|"..tostring(A)..[[|%0d|%0d|%0d", stalledCycles, downstreamStalledCycles, totalCycles );
+      end
+      totalCycles <= 32'd0;
+      stalledCycles <= 32'd0;
+      downstreamStalledCycles <= 32'd0;
+      printed <= 1'b1;
+    end else begin
+      printed <= 1'b0;
+      totalCycles <= totalCycles+32'd1;
+      if(store_ready==1'b0) begin
+        stalledCycles <= stalledCycles + 32'd1;
+      end
+      if( load_ready_downstream==1'b0) begin
+        downstreamStalledCycles <= downstreamStalledCycles + 32'd1;
+      end
+    end
+  end
+]]
+  end
+  
   if size==1 and (csimOnly==false) then
     local name = J.sanitize("OneElementFIFO_"..tostring(A).."_dbgname"..tostring(dbgname))
     local vstr=[[module ]]..name..[[(input wire CLK, output wire []]..tostring(A:lower():verilogBits())..[[:0] load_output, input wire reset, output wire store_ready, input wire load_ready_downstream, input wire []]..tostring(A:lower():verilogBits())..[[:0] store_input);
@@ -3893,6 +4145,9 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
 
   assign load_output = {hasItem,dataBuffer};
   assign store_ready = (hasItem==1'b0)||load_ready_downstream;
+
+]]..dbgMonitor..[[
+
 endmodule
 
 ]]
@@ -4069,8 +4324,12 @@ always @(posedge CLK) begin
 end
 ]])
 
+        
         if true then
           -- extra debug stuff
+
+          table.insert(verilog,dbgMonitor)
+          
 table.insert(verilog,[[          
 reg [31:0] numRead = 32'd0;
 reg [31:0] numWritten = 32'd0;
@@ -5157,9 +5416,12 @@ local function insertFIFOs( out, delayTable, moduleName, X )
             if verbose then print("DFIFO",moduleName,d,n,n.inputs[i]) end
 
             if n.inputs[i].type:streamCount()==1 then
-              ntmp.inputs[i] = C.fifo( n.inputs[i].type:deInterface(), d, nil, nil, nil, nil, "DELAYFIFO" )(n.inputs[i])
-            else
+              ntmp.inputs[i] = C.fifo( n.inputs[i].type:deInterface(), d, nil, nil, nil, nil, "DELAY_"..moduleName.."_"..n.name )(n.inputs[i])
+            elseif n.inputs[i].type:streamCount()>0 then
               local stout = {}
+
+              J.err( n.inputs[i].type:streamCount()>0, "input has no streams?",n,"INPUT"..i,n.inputs[i] )
+              
               for st=1,n.inputs[i].type:streamCount() do
                 local ity
                 if n.inputs[i].type:isArray() then
@@ -5169,7 +5431,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
                 else
                   assert(false)
                 end
-                stout[st] = C.fifo( ity:deInterface(), d, nil, nil, nil, nil, "DELAYFIFO" )(n.inputs[i][st-1])
+                stout[st] = C.fifo( ity:deInterface(), d, nil, nil, nil, nil, "DELAY_"..moduleName.."_"..n.name )(n.inputs[i][st-1])
               end
               ntmp.inputs[i] = rigel.concat(stout)
               J.err( n.inputs[i].type == ntmp.inputs[i].type, "BADTYPE",n.inputs[i].type," ",ntmp.inputs[i].type, n.inputs[i].type:streamCount() )
@@ -5190,7 +5452,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
 
 
         --err( delayTable[orig.inputs[1]] == iDelayThis, "NYI - input to fn requires delay buffer! inputDelay:",delayTable[orig.inputs[1]]," delayAtInputOfThisFn::",iDelayThis," bits:",n.inputs[1].type:extractData():verilogBits()," del ",delayTable[orig]," fn ",orig.fn.delay,orig, orig.fn )
-        local NAME = depth[orig].."_"..maxDepth.."_"..n.name.."_"..n.fn.name
+        local NAME = moduleName.."_"..depth[orig].."_"..maxDepth.."_"..n.name.."_"..n.fn.name
 
         --err( n.fn.inputBurstiness<=16384, "inputBurstiness for module ",n.fn.name," is way too large: ",n.fn.inputBurstiness )
         --err( n.fn.outputBurstiness<=16384, "outputBurstiness for module ",n.fn.name," is way too large: ",n.fn.outputBurstiness )

@@ -50,7 +50,7 @@ local inp = R.input( R.Handshake(HST) )
 local out = inp
 
 if internalT<8 then
-  out = R.apply("CRtop",RM.liftHandshake(RM.changeRate(A,1,8,internalT)), out)
+  out = R.apply("CRtop",RM.changeRate(A,1,8,internalT), out)
 end
 
 curW = inputW
@@ -102,7 +102,7 @@ for depth=1,TARGET_DEPTH do
   if depth==TARGET_DEPTH then
 
     -- we must do the changerate _before_ the fifo, or the things later will run at 1/2 rate we expect
-    out = R.apply("CR"..depth,RM.liftHandshake(RM.changeRate(A,1,internalT,8)), out)
+    out = R.apply("CR"..depth,RM.changeRate(A,1,internalT,8), out)
 
     -- last level
     out = P.FIFO(fifos,statements,OUT_TYPE, out,nil, "finalFIFO", curW, curH, 8 )
@@ -112,7 +112,7 @@ for depth=1,TARGET_DEPTH do
     local out0 = R.selectStream("i0"..depth,out,0)
     out0 = P.FIFO( fifos, statements, TOP_TYPE, out0, nil, "internal"..depth, curW, curH, internalT )
 
-    local out1 = R.apply("CRr"..depth,RM.liftHandshake(RM.changeRate(A,1,internalT,8)), R.selectStream("i1"..depth,out,1) )
+    local out1 = R.apply("CRr"..depth,RM.changeRate(A,1,internalT,8), R.selectStream("i1"..depth,out,1) )
     out1 = P.FIFO( fifos, statements, OUT_TYPE, out1, nil, "output"..depth, curW, curH, 8 )
 
     L[depth] = out1
@@ -143,7 +143,7 @@ if TARGET_DEPTH>1 then
 end
 
 if outputT~=8 then
-  out = R.apply("CRend",RM.liftHandshake(RM.changeRate(A,1,outputT,8)), out)
+  out = R.apply("CRend", RM.changeRate(A,1,outputT,8), out)
 end
 
 table.insert(statements,1,out)
