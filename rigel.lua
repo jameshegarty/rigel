@@ -530,7 +530,7 @@ return fn
         elseif fnType:columnMajor() or targetType:columnMajor() then
           --err( false,"NYI - convertInterface to a column major array converting:",targetType," to:",fnType," for:",fn,loc)
           err( targetType.V[2]==fnType.V[2],"NYI - column major change rate with different array height. Converting ",targetType," to ",fnType)
-          table.insert( resStack, RM.liftHandshake(RM.changeRate( targetType:arrayOver(), fnType.V[2], targetType.V[1], fnType.V[1], true, fnType.size[1], fnType.size[2] )) )
+          table.insert( resStack, RM.changeRate( targetType:arrayOver(), fnType.V[2], targetType.V[1], fnType.V[1], true, fnType.size[1], fnType.size[2] ) )
         else
           J.err("converting between strange vector sizes! ",targetType," to ",fnType)
         end

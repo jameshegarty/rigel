@@ -3181,9 +3181,10 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
       end
 
       local ROWTOCOL = {}
-      for x=0,math.max(inputRate,1)-1 do
+      local IRT = math.max(inputRate,1)
+      for x=0,IRT-1 do
         for y=0,H-1 do
-          table.insert(ROWTOCOL,res:vInputData().."["..(A:verilogBits()*(x+y*H+1)-1)..":"..(A:verilogBits()*(x+y*H)).."]")
+          table.insert(ROWTOCOL,res:vInputData().."["..(A:verilogBits()*(x+y*IRT+1)-1)..":"..(A:verilogBits()*(x+y*IRT)).."]")
         end
       end
       
