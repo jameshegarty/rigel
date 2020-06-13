@@ -5411,9 +5411,15 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         assert( iDelayThis >= delayTable[orig.inputs[1]])
 
         local ntmp = n:shallowcopy()
-        for i=1,#n.inputs do
+
+        local INPUTCNT = #n.inputs
+        -- for statements, we don't care about other inputs than input 0: other inputs can have different delays (they are just passed through)
+        if n.kind=="statements" then INPUTCNT = 1 end
+        for i=1,INPUTCNT do
           if iDelayThis ~= delayTable[orig.inputs[i]] then
             local d = iDelayThis-delayTable[orig.inputs[i]]
+
+            J.err( d>0, "delay at input of this node is less than its input? thisDelay:",iDelayThis," delay of input "..(i-1)..":", delayTable[orig.inputs[i]], "\n",n )
             if verbose then print("DFIFO",moduleName,d,n,n.inputs[i]) end
 
             if n.inputs[i].type:streamCount()==1 then

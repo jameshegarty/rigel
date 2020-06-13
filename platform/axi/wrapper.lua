@@ -75,7 +75,7 @@ return fn
   local out = inp
 
   if fn.inputType:lower():verilogBits()~=64 then
-    out = R.apply("harnessCR", RM.liftHandshake(RM.changeRate(iover, 1, targetInputP, inputP )), inp)
+    out = R.apply("harnessCR", RM.changeRate(iover, 1, targetInputP, inputP ), inp)
   end
 
   if R.extractData(fn.inputType):isArray()==false then out = R.apply("harnessPW",RM.makeHandshake(C.index(types.array2d(iover,1),0)),out) end
@@ -90,7 +90,7 @@ return fn
 
 --    out = R.apply("cast1",RM.makeHandshake(C.cast(oover,types.bits(oover:verilogBits()))), out)
     out = R.apply("cast",RM.makeHandshake(C.cast(types.bits(oover:verilogBits()),types.array2d(types.bits(64),divs))), out)
-    out = R.apply("down",RM.liftHandshake(RM.changeRate(types.bits(64),1,divs,1)),out)
+    out = R.apply("down",RM.changeRate(types.bits(64),1,divs,1),out)
   else
     local targetOutputP = (64/oover:verilogBits())
     J.err( targetOutputP==math.floor(targetOutputP), "axiRateWrapper error: output type ("..tostring(fn.outputType)..") does not divide evenly into axi bus size")
@@ -110,7 +110,7 @@ return fn
     assert( targetOutputBytes%(oover:verilogBits()/8)==0)
       
     if fn.outputType:lower():verilogBits()~=64 then
-      out = R.apply("harnessCREnd", RM.liftHandshake(RM.changeRate(oover,1,outputP,targetOutputP)),out)
+      out = R.apply("harnessCREnd", RM.changeRate(oover,1,outputP,targetOutputP),out)
     end
 
   end

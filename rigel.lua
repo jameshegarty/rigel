@@ -949,7 +949,7 @@ __call=function(tab,...)
   darkroom.__unnamedID = darkroom.__unnamedID+1
   return res
 end,
-__tostring=function(mod)
+__tostring=function(mod,longform)
   local res = {}
 
   local mt = getmetatable(mod)
@@ -1020,8 +1020,10 @@ __tostring=function(mod)
       end
     end
 
-    mod.output:visitEach(function(n) table.insert(res,tostring(n)) end)
-    table.insert(res,"** return "..mod.output.name)
+    if longform then
+      mod.output:visitEach(function(n) table.insert(res,tostring(n)) end)
+      table.insert(res,"** return "..mod.output.name)
+    end
   end
   
   return table.concat(res,"\n").."\n"
@@ -1720,7 +1722,7 @@ darkroomIRMT.__tostring = function(tab)
   elseif tab.kind=="selectStream" then
     res = "** "..tab.name.." = "..tab.inputs[1].name.."["..tab.i.."] -- selectStream"
   elseif tab.kind=="statements" then
-    res = "statements{"
+    res = "** statements{"
     for k,v in ipairs(tab.inputs) do
       res = res..v.name..","
     end

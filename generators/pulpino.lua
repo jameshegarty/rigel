@@ -97,10 +97,10 @@ Pulpino.AXIInterconnect = J.memoize(function( NMaster, NSlave, slavePorts, X )
   local slaveWriteInst = {}
   if slavePorts~=nil then
     for k,v in ipairs(slavePorts) do
-      J.err( R.isFunction(v[1]), "Pulpino_AXIInterconnect: slave read should be rigel function, but is: "..tostring(v[1]))
+      J.err( R.isFunction(v[1]), "Pulpino_AXIInterconnect: slave read should be rigel function, but is: ",v[1])
       J.err( v[1].inputType==AXI.ReadAddress64 and v[1].outputType==AXI.ReadData64, "Pulpino_AXIInterconnect: slave read should have type AXI.ReadAddress32->AXI.ReadData32, but is: "..tostring(v[1].inputType).."->"..tostring(v[1].outputType))
       
-      J.err( R.isFunction(v[2]), "Pulpino_AXIInterconnect: slave write should be rigel function, but is: "..tostring(v[2]))
+      J.err( R.isFunction(v[2]), "Pulpino_AXIInterconnect: slave write should be rigel function, but is: ",v[2])
       J.err( v[2].inputType==AXI.WriteIssue64 and v[2].outputType==AXI.WriteResponse64, "Pulpino_AXIInterconnect: write should have type AXI.WriteIssue32->AXI.WriteResponse32, but is: "..tostring(v[2].inputType).."->"..tostring(v[2].outputType))
 
       slaveReadInst[k] = v[1]:instantiate("slaveRead"..k)

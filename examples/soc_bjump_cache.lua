@@ -12,6 +12,7 @@ local Zynq = require "generators.zynq"
 
 local bjump = require "generators.bjump"
 
+R.AUTO_FIFOS = false
 -- bjump cache must load 32bit chunks
 -- this does a blur in X. we load 32 pixels in X and sum them. We decimate by 4x in X (read every 4 px), 8x in Y.
 -- axi bus is artificially slowed by 8x. If cache works, we expect runtime to be approx 128*64*8. If uncached, it should be 128*64*8*8

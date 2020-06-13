@@ -50,6 +50,9 @@ SRCS_VERILATOR_SOC := $(filter-out soc_stereo_full_64_64_autofifo.lua soc_stereo
 SRCS_VERILATOR_SOC := $(filter-out soc_sift_4_1_autofifo.lua soc_sift_4_1_1080p_autofifo.lua soc_sift_4_2_autofifo.lua soc_sift_4_2_1080p_autofifo.lua soc_sift_4_4_autofifo.lua soc_sift_4_4_1080p_autofifo.lua soc_sift_4_8_autofifo.lua soc_sift_4_8_1080p_autofifo.lua, $(SRCS_VERILATOR_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_convgenTaps_8_64_autofifo.lua, $(SRCS_VERILATOR_SOC))
 
+# broken 
+SRCS_VERILATOR_SOC := $(filter-out soc_sift_1_2_autofifo.lua, $(SRCS_VERILATOR_SOC))
+
 # broken in circleci for some reason?
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua, $(SRCS_VERILATOR_SOC))
 

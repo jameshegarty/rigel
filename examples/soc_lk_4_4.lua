@@ -215,10 +215,10 @@ local CalcB = G.SchedulableFunction{"CalcB",
   function(i)                              
     print("CALCB",i.type,i.rate)
     local iFO = G.FanOut{4}(i)
-    local frame0 = G.NAUTOFIFO{1}(iFO[0][0])
-    local frame1 = G.NAUTOFIFO{1}(iFO[1][1])
-    local Fdx = G.NAUTOFIFO{2}(iFO[2][2])
-    local Fdy = G.NAUTOFIFO{2}(iFO[3][3])
+    local frame0 = G.NAUTOFIFO{FIFOSIZE}(iFO[0][0])
+    local frame1 = G.NAUTOFIFO{FIFOSIZE}(iFO[1][1])
+    local Fdx = G.NAUTOFIFO{FIFOSIZE}(iFO[2][2])
+    local Fdy = G.NAUTOFIFO{FIFOSIZE}(iFO[3][3])
 
     ---------
     local gmf = R.concat("mfgmf",{frame1,frame0}):setName("gmf")
@@ -228,7 +228,7 @@ local CalcB = G.SchedulableFunction{"CalcB",
     local gmfFO = G.FanOut{2}(gmf)
     ---------
 
---    Fdx = G.NAUTOFIFO{1}(Fdx)
+    Fdx = G.NAUTOFIFO{1}(Fdx)
     local gmf0 = G.NAUTOFIFO{1}(gmfFO[0]):setName("gmf0")
     
     local out_0 = R.concat("o0tup",{Fdx, gmf0 }):setName("out_0_concat")
@@ -451,7 +451,6 @@ local LKTop = G.SchedulableFunction{ "LKTop", T.Trigger,
     print("RSTReAM",readStream.type,readStream.rate)
     local padded = G.Pad{{PadRadiusAligned, PadRadiusAligned, PadRadius+1, PadRadius}}(readStream)
 --    padded = G.Map{G.Fwrite{"out/"..outfile..".padded.raw"},true}(padded)
-    
     print("PADDED$",padded.type,padded.rate,PadRadiusAligned,PadRadius)
     local out = LK(padded)
     out = G.Crop{{PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0}}(out)
