@@ -1658,7 +1658,8 @@ end
 
 darkroomIRMT.__tostring = function(tab)
   local res
-  local extraAtEnd
+  local extraAtEnd = "*** Loc\n"..tab.loc
+  
   if tab.kind=="input" then
     res = "** "..tab.name.." = R.input("..tostring(tab.type)..")"
   elseif tab.kind=="constant" then
@@ -1701,7 +1702,7 @@ darkroomIRMT.__tostring = function(tab)
 
         -- exhaustive generator arg list list
         if type(tab.fn.generator)~="string" then
-          extraAtEnd = "*** Generator Args\n"
+          extraAtEnd = extraAtEnd.."*** Generator Args\n"
           for k,v in pairs(tab.fn.generatorArgs) do
             if k=="rigelFunction" then
               extraAtEnd = extraAtEnd..k..": "..tostring(v.name).."\n"
@@ -2735,7 +2736,7 @@ function darkroom.applyMethod( name, inst, fnname, input, X )
   err( type(name)=="string", "name must be string")
   err( darkroom.isInstance(inst), "applyMethod: second argument should be instance" )
   err( type(fnname)=="string", "fnname must be string")
-  err( input==nil or darkroom.isIR( input ), "applyMethod: last argument should be rigel value or nil, but is: "..tostring(input) )
+  err( input==nil or darkroom.isIR( input ), "applyMethod: last argument should be rigel value or nil, but is: ", input )
   err( X==nil, "applyMethod: too many arguments")
 
   return darkroom.newIR( {kind = "applyMethod", name = name, fnname=fnname, loc=getloc(), inst = inst, inputs = {input} } )

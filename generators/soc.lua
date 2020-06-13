@@ -629,11 +629,11 @@ SOC.axiBurstReadNInner = J.memoize(function(filename,Nbytes,address,readFn_orig,
   assert(Uniform.isUniform(Nbytes))
   J.err( (Nbytes%128):eq(0):assertAlwaysTrue(), "AxiBurstReadN: Nbytes must have 128 as a factor, but is: "..tostring(Nbytes) )
   assert(Uniform.isUniform(address))
-  J.err( R.isFunction(readFn_orig), "axiBurstReadN: readFn should be rigel function, but is: "..tostring(readFn_orig))
+  J.err( R.isFunction(readFn_orig), "axiBurstReadN: readFn should be rigel function, but is: ", readFn_orig)
   J.err( X==nil, "axiBurstReadN: too many arguments" )
 
   local readFn = readFn_orig
-  J.err( R.isFunction(readFn), "axiReadBytes: readFn should be rigel function, but is: "..tostring(readFn))
+  J.err( R.isFunction(readFn), "axiReadBytes: readFn should be rigel function, but is: ",readFn)
 
   if readFn.inputType==AXI.ReadAddress and readFn.outputType==AXI.ReadData64 then
     readFn = C.ConvertVRtoRV(readFn)

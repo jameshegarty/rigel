@@ -139,7 +139,7 @@ local Invert2x2 = G.Function{"Invert2x2", T.rv(T.Array2d(T.int(20,-2),4)),SDF{1,
     return res
 end}
 
-print(Invert2x2)
+--print(Invert2x2)
 
 --local Dx = G.SchedulableFunction{"Dx",T.Array2d(T.Uint(8),3),
 local Dx = G.Fmap{G.Function{"Dx", T.rv(T.Array2d(T.Uint(8),3)),
@@ -180,10 +180,12 @@ local CalcA = G.SchedulableFunction{"CalcA",
     local out0 = G.Map{G.MulE}(inp0)
     
     out0 = G.Reduce{G.Add{R.Async}}(out0)
+--    out0 = G.FIFO{1}(out0)
     
     local inp1 = G.Zip(G.NAUTOFIFO{1}(FdxFO[2]),G.NAUTOFIFO{1}(FdyFO[0]))
     local out1 = G.Map{G.MulE}(inp1)
     out1 = G.Reduce{G.Add{R.Async}}(out1)
+--    out1 = G.FIFO{1}(out1)
     
     --local out2 = out1
     local out1FO = G.FanOut{2}(out1)
@@ -191,6 +193,7 @@ local CalcA = G.SchedulableFunction{"CalcA",
     local inp3 = G.Zip(G.NAUTOFIFO{8}(FdyFO[1]),G.NAUTOFIFO{8}(FdyFO[2]))
     local out3 = G.Map{G.MulE}(inp3)
     out3 = G.Reduce{G.Add{R.Async}}(out3)
+--    out3 = G.FIFO{1}(out3)
     
     local out = R.concat{G.NAUTOFIFO{1}(out0),G.NAUTOFIFO{1}(out1FO[0]),G.NAUTOFIFO{1}(out1FO[1]),G.NAUTOFIFO{1}(out3)}
     
@@ -212,35 +215,37 @@ local CalcB = G.SchedulableFunction{"CalcB",
   function(i)                              
     print("CALCB",i.type,i.rate)
     local iFO = G.FanOut{4}(i)
-    local frame0 = G.NAUTOFIFO{FIFOSIZE}(iFO[0][0])
-    local frame1 = G.NAUTOFIFO{FIFOSIZE}(iFO[1][1])
-    local Fdx = G.NAUTOFIFO{FIFOSIZE}(iFO[2][2])
-    local Fdy = G.NAUTOFIFO{FIFOSIZE}(iFO[3][3])
+    local frame0 = G.NAUTOFIFO{1}(iFO[0][0])
+    local frame1 = G.NAUTOFIFO{1}(iFO[1][1])
+    local Fdx = G.NAUTOFIFO{2}(iFO[2][2])
+    local Fdy = G.NAUTOFIFO{2}(iFO[3][3])
 
     ---------
-    local gmf = R.concat("mfgmf",{frame1,frame0})
-    gmf = G.Zip(gmf)
+    local gmf = R.concat("mfgmf",{frame1,frame0}):setName("gmf")
+    gmf = G.Zip(gmf):setName("gmf_zip")
     gmf = G.Map{Minus}(gmf)
     gmf = G.NAUTOFIFO{FIFOSIZE}(gmf)
     local gmfFO = G.FanOut{2}(gmf)
     ---------
 
-    Fdx = G.NAUTOFIFO{1}(Fdx)
-    local gmf0 = G.NAUTOFIFO{1}(gmfFO[0])
+--    Fdx = G.NAUTOFIFO{1}(Fdx)
+    local gmf0 = G.NAUTOFIFO{1}(gmfFO[0]):setName("gmf0")
     
-    local out_0 = R.concat("o0tup",{Fdx, gmf0 })
-    out_0 = G.Zip(out_0)
+    local out_0 = R.concat("o0tup",{Fdx, gmf0 }):setName("out_0_concat")
+    out_0 = G.Zip(out_0):setName("out_0_zip")
     out_0 = G.Map{G.MulE}(out_0)
     out_0 = G.Reduce{G.Add{R.Async}}(out_0)
-
+--    out_0 = G.FIFO{1}(out_0)
+                      
     Fdy = G.NAUTOFIFO{1}(Fdy)
     local gmf1 = G.NAUTOFIFO{1}(gmfFO[1])
     
-    local out_1 = R.concat("o1tup",{Fdy, gmf1 })
+    local out_1 = R.concat("o1tup",{Fdy, gmf1 }):setName("out_1_concat")
     out_1 = G.Zip(out_1)
     out_1 = G.Map{G.MulE}(out_1)
     out_1 = G.Reduce{G.Add{R.Async}}(out_1)
-  
+--    out_1 = G.FIFO{1}(out_1)
+    
     local out = G.FanIn(out_0,out_1)
     out = G.TupleToArray(out)
     
@@ -320,7 +325,7 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(T.Tuple{types.uint(8),types.
       frame1 = G.NAUTOFIFO{FIFOSIZE}(frame1)
       
       local lb0 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame0_0)
-
+      
       local lb0_fd = G.Stencil{{-2, 0, -2, 0}}(frame0_1)
 
 --      print("FDX_st",lb0_fd.type,lb0_fd.rate,lb0_fd.type:deSchedule():verilogBits()/8)
@@ -335,7 +340,6 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(T.Tuple{types.uint(8),types.
 
 
       local lb1 = G.Stencil{{-CONVWIDTH, 0, -CONVWIDTH, 0}}(frame1)
-
       
 --      print("FDXI",lb0_fd_0.type,lb0_fd_0.rate)
       local fdx = G.Map{G.Slice{{0,2,1,1}}}(lb0_fd_0)
@@ -343,7 +347,7 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(T.Tuple{types.uint(8),types.
 --      print("FDXINP",fdx.type,fdx.rate,fdx.type:deSchedule():verilogBits()/2)
 --      fdx = G.FwritePGM{"out/"..outfile..".fdxi.pgm"}(fdx)
       
-      fdx = G.NAUTOFIFO{FIFOSIZE}(fdx)
+      fdx = G.FIFO{1}(fdx)
 
       fdx = G.Map{Dx}(fdx)
       
@@ -354,16 +358,18 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(T.Tuple{types.uint(8),types.
       
 --      print("FDX",fdx.type,fdx.rate,fdx.scheduleConstraints)
       local fdx_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdx)
+
 --      print("FDX_ST",fdx_stencil.type,fdx_stencil.rate,fdx_stencil.scheduleConstraints)
       
       local fdx_stencilFO = G.FanOut{2}(fdx_stencil)
       
       local fdy = G.Map{G.Slice{{1,1,0,2}}}(lb0_fd_1)
-      fdy = G.NAUTOFIFO{FIFOSIZE}(fdy)
+      fdy = G.FIFO{1}(fdy)
       
       local fdy = G.Map{Dy}(fdy)
       
       local fdy_stencil = G.Stencil{{-CONVWIDTH+1, 0, -CONVWIDTH+1, 0}}(fdy)
+      
       local fdy_stencilFO = G.FanOut{2}(fdy_stencil)
       
       local Ainpinp = R.concat{ G.NAUTOFIFO{FIFOSIZE}(fdx_stencilFO[0]), G.NAUTOFIFO{FIFOSIZE}(fdy_stencilFO[0]) }
@@ -388,10 +394,13 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(T.Tuple{types.uint(8),types.
 --      local lb0FO2 = lb0FO[2]
 --      print("F0SLICEINP",lb0FO2.type,lb0FO2.rate)
       local f0_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb0)
+--      f0_slice = G.FIFO{1}(f0_slice)
+      
       print("F0SLICE",f0_slice.type,f0_slice.rate)
       f0_slice = G.Map{G.ToColumns}(f0_slice)
       print("F0",f0_slice.type,f0_slice.rate)
       local f1_slice = G.Map{G.Slice{{0, CONVWIDTH-1, 0, CONVWIDTH-1}}}(lb1)
+--      f1_slice = G.FIFO{1}(f1_slice)
       f1_slice = G.Map{G.ToColumns}(f1_slice)
 
       print("F)",f0_slice.type,f0_slice.scheduleConstraints)
