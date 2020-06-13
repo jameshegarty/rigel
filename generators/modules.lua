@@ -3136,7 +3136,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
         for y=0,H-1 do
           local OR = math.max(outputRate,1)
           for x=0,OR-1 do
-            table.insert(COLTOROW,res:vInputData().."["..(A:verilogBits()*((x+chunk*OR)+y*H+1)-1)..":"..(A:verilogBits()*((x+chunk*OR)+y*H)).."]")
+            table.insert(COLTOROW,res:vInput().."["..(A:verilogBits()*((x+chunk*OR)+y*H+1)-1)..":"..(A:verilogBits()*((x+chunk*OR)+y*H)).."]")
           end
         end
       end
@@ -3184,7 +3184,7 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
       local IRT = math.max(inputRate,1)
       for x=0,IRT-1 do
         for y=0,H-1 do
-          table.insert(ROWTOCOL,res:vInputData().."["..(A:verilogBits()*(x+y*IRT+1)-1)..":"..(A:verilogBits()*(x+y*IRT)).."]")
+          table.insert(ROWTOCOL,res:vInput().."["..(A:verilogBits()*(x+y*IRT+1)-1)..":"..(A:verilogBits()*(x+y*IRT)).."]")
         end
       end
       
@@ -5732,7 +5732,7 @@ local function calculateDelaysZ3( output, moduleName )
           for i=1,types.streamCount(fn.inputType) do
             -- insert constraints to make sure delay of this node is at least 1 larger than prior fanin/out
             if arg[1][i]~=__INPUT then -- paths to input don't need a FIFO
-              local minDelay = traceDelay[name][1] - traceDelay[ arg[1][i] ][1] + 1
+              local minDelay = traceDelay[name][1] - traceDelay[ arg[1][i] ][1] + 2
               table.insert( statements, "(assert (>= "..name.." (+ "..arg[1][i].." "..minDelay.."))) ; DIAMOND" )
             end
           end
