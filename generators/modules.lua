@@ -1907,7 +1907,7 @@ modules.upsampleXSeq = memoize(function( A, T, scale_orig, framed, X )
     if scaleV>T and scaleV%T==0 then
       -- codesize optimization
       local C = require "generators.examplescommon"
-      return C.linearPipeline({modules.liftHandshake(modules.changeRate(A,1,T,0)),
+      return C.linearPipeline({modules.changeRate(A,1,T,0),
                                modules.upsampleXSeq(A,0,scaleV/T),
                                modules.makeHandshake(C.broadcast(A,T))},
         "upsampleXSeq_"..J.verilogSanitize(tostring(A)).."_T"..tostring(T).."_scale"..tostring(scaleV))
@@ -3394,7 +3394,7 @@ modules.changeRateNonFIFO = memoize(function(A, H, inputRate, outputRate, framed
     return systolicModule
   end
 
-  if terralib~=nil then res.terraModule = MT.changeRate(res, A, H, inputRate, outputRate,maxRate,outputCount,inputCount ) end
+  if terralib~=nil then res.terraModule = MT.changeRateOld(res, A, H, inputRate, outputRate,maxRate,outputCount,inputCount ) end
 
   return modules.waitOnInput(rigel.newFunction(res))
 end)
@@ -5386,6 +5386,8 @@ local function insertFIFOs( out, delayTable, moduleName, X )
       n = rigel.newIR(n)
       local res = n
 
+      local extraDelayForFIFOs = 0
+
       -- first, insert delays
       if #n.inputs>0 then
         err( type(delayTable[orig.inputs[1]])=="number", "missing delay for: ", orig.inputs[1], "IS:"..tostring(delayTable[orig.inputs[1]]) )
@@ -5404,7 +5406,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
           end
           assert( rigel.isPlainFunction(fn) )
 
-          local extraDelayForFIFOs = FIFOSizeToDelay( fn.inputBurstiness ) + FIFOSizeToDelay( fn.outputBurstiness )
+          extraDelayForFIFOs = FIFOSizeToDelay( fn.inputBurstiness ) + FIFOSizeToDelay( fn.outputBurstiness )
           iDelayThis = iDelayThis - fn.delay - extraDelayForFIFOs
         end
         
