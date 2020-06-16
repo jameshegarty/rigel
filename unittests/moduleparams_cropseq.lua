@@ -1,5 +1,5 @@
 local rigel = require "rigel"
-rigel.MONITOR_FIFOS = true
+rigel.MONITOR_FIFOS = false
 local R = require "rigelSimple"
 local types = require "types"
 local J = require "common"
