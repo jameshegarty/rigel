@@ -290,10 +290,10 @@ local function siftKernel( dxdyType, TILES_X, TILES_Y, TILE_W, TILE_H, X )
   local inp_dxdy = C.fifo(ITYPE,1,nil,true)(R.selectStream("i1",inp_broad,1))
   local dxdy = R.apply("dxdy",RM.makeHandshake(C.index(ITYPE,0,0)), inp_dxdy)
   local dxdyTile = R.apply("TLE",RM.makeHandshake(tile( TILE_W, TILE_H, TILES_X, TILES_Y, dxdyPair )),dxdy)
-  local dxdy = R.apply( "down1", RM.liftHandshake(RM.changeRate(types.array2d(dxdyPair,TILE_W*TILE_H),1,TILES_X*TILES_Y,1)), dxdyTile )
+  local dxdy = R.apply( "down1", RM.changeRate(types.array2d(dxdyPair,TILE_W*TILE_H),1,TILES_X*TILES_Y,1), dxdyTile )
   
   local dxdy = R.apply("down1idx",RM.makeHandshake(C.index(types.array2d(types.array2d(dxdyPair,TILE_W*TILE_H),1),0,0)), dxdy)
-  local dxdy = R.apply("down2", RM.liftHandshake(RM.changeRate(dxdyPair,1,TILE_W*TILE_H,1)), dxdy )
+  local dxdy = R.apply("down2", RM.changeRate(dxdyPair,1,TILE_W*TILE_H,1), dxdy )
   local dxdy = R.apply("down2idx",RM.makeHandshake(C.index(types.array2d(dxdyPair,1),0,0)), dxdy)
   local descFn, descType = siftDescriptor(dxdyType)
 
@@ -307,7 +307,7 @@ local function siftKernel( dxdyType, TILES_X, TILES_Y, TILE_W, TILE_H, X )
 
   local desc = C.fifo(types.array2d(descType,8),1,nil,true)(desc)
 
-  local desc = R.apply("up",RM.liftHandshake(RM.changeRate(descType,1,8,1)),desc)
+  local desc = R.apply("up", RM.changeRate(descType,1,8,1), desc )
   local desc = R.apply("upidx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc)
 
   -- sum and normalize the descriptors
@@ -332,7 +332,7 @@ local function siftKernel( dxdyType, TILES_X, TILES_Y, TILE_W, TILE_H, X )
   local desc = R.apply("ptt",RM.makeHandshake(fixedDiv(descType)),desc)
   local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
-  local desc = R.apply("repack",RM.liftHandshake(RM.changeRate( descType, 1, 1, 8*TILES_X*TILES_Y )),desc)
+  local desc = R.apply("repack", RM.changeRate( descType, 1, 1, 8*TILES_X*TILES_Y ),desc)
 
   -- we now have an array of type descType[128]. Add the pos.
   local desc_pack = R.apply("dp", RM.packTuple{types.RV(types.Par(types.array2d( descType, 8*TILES_X*TILES_Y ))),types.RV(types.Par(posType)),types.RV(types.Par(posType))},R.concat("DPT",{desc,posX,posY}))
@@ -434,7 +434,7 @@ function sift.siftDesc( W, H, inputT, TILES_X, TILES_Y, X )
   local ITYPE = types.array2d(types.uint(8),inputT)
   
   local inpraw = R.input(R.Handshake(ITYPE))
-  local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
+  local inp = R.apply("reducerate", RM.changeRate(types.uint(8),1,8,1), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
 
   local dxdyType = types.Float32
@@ -457,7 +457,7 @@ function sift.siftDesc( W, H, inputT, TILES_X, TILES_Y, X )
   local siftFn, descType = siftKernel( dxdyType, TILES_X, TILES_Y, 4, 4 )
   local out = R.apply("sft", siftFn, out)
 
-  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,2+8*TILES_Y*TILES_X,2)), out )
+  local out = R.apply("incrate", RM.changeRate(descType,1,2+8*TILES_Y*TILES_X,2), out )
 
   local fn = RM.lambda( "harris", inpraw, out)
   return fn, descType
@@ -475,7 +475,7 @@ function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X )
   local ITYPE = types.array2d(types.uint(8),T)
   
   local inpraw = R.input(R.Handshake(ITYPE))
-  local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
+  local inp = R.apply("reducerate", RM.changeRate(types.uint(8),1,8,1), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
   local dxdyType = types.Float32
   local out = R.apply("dxdy",dxdyFn,inp)
@@ -507,7 +507,7 @@ function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X )
   local siftFn, descType = siftKernel( dxdyType, TILES_X, TILES_Y, 4, 4 )
   local out = R.apply("sft", siftFn, out)
 
-  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,130,2)), out )
+  local out = R.apply("incrate", RM.changeRate(descType,1,130,2), out )
 
   table.insert( statements, 1, out )
   local fn = RM.lambda( "harris", inpraw, R.statements(statements), fifos )

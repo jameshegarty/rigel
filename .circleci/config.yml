@@ -65,8 +65,7 @@ jobs:
       - run: sudo apt-get install luajit flex bison time
       - run: wget https://www.veripool.org/ftp/verilator-4.012.tgz; tar xvzf verilator*.t*gz;cd verilator-4.012;./configure;make -j2;sudo make install; cd ..;
 #      - run: sudo apt-get install luajit verilator
-      - run: export VERILATOR_FLAGS=-Wno-UNOPTFLAT
-      - run: cd examples; make bjump
+      - run: cd examples; VERILATOR_FLAGS=-Wno-UNOPTFLAT make bjump
       - run: test -e examples/out/bjump_done.txt || exit      
   pulpino:
     docker:
@@ -75,8 +74,7 @@ jobs:
       - checkout
       - run: git submodule update --init
       - run: sudo apt-get install luajit verilator time
-      - run: export VERILATOR_FLAGS=-Wno-UNOPTFLAT
-      - run: cd examples; make pulpino
+      - run: cd examples; VERILATOR_FLAGS=-Wno-UNOPTFLAT make pulpino
       - run: test -e examples/out/pulpino_done.txt || exit      
   unit:
     docker:
