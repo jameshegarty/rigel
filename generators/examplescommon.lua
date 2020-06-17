@@ -1720,8 +1720,10 @@ C.fifo = memoize(function( ty, size, nostall, csimOnly, VRLoad, includeSizeFn, n
 
   local bts = Uniform(ty:lower():verilogBits()):toNumber()
   local KBs = math.floor((size*bts)/(8*1024))
-  local res = RM.lambda("C_FIFO_KB"..tostring(KBs).."_size_"..tostring(size).."_bits"..tostring(bts).."_ty"..tostring(ty).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_SZFN"..tostring(includeSizeFn).."_CSIMONLY"..tostring(csimOnly).."_DBGNAME"..tostring(name), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+  local res = RM.lambda("C_FIFO_KB"..tostring(KBs).."_size_"..tostring(size).."_bits"..tostring(bts).."_ty"..tostring(ty).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_SZFN"..tostring(includeSizeFn).."_CSIMONLY"..tostring(csimOnly).."_DBGNAME"..tostring(name), inp, R.statements{ld,st}, regs, "C.fifo", {size=size}, nil, false, false )
   res.fifoed = true
+
+  assert( res.delay==1 or ty==nil or ty:extractData():verilogBits()==0 )
   
   return res
 end)
@@ -3621,7 +3623,7 @@ C.SqrtF = J.memoize(function( exp, sig, doDiv, X )
 
   local inpty = types.RV(types.FloatRec(exp,sig))
   if doDiv then inpty = types.RV(types.tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}) end
-  local res = R.newFunction{ name=J.sanitize("Float"..J.sel(doDiv,"Div_","Sqrt_")..tostring(exp).."_"..tostring(sig)), inputType = inpty, outputType=types.RV(types.FloatRec(exp,sig)), sdfInput=SDF{1,approxCycles}, sdfOutput=SDF{1,approxCycles}, stateful=true, instanceMap=inst, delay=0 }
+  local res = R.newFunction{ name=J.sanitize("Float"..J.sel(doDiv,"Div_","Sqrt_")..tostring(exp).."_"..tostring(sig)), inputType = inpty, outputType=types.RV(types.FloatRec(exp,sig)), sdfInput=SDF{1,approxCycles}, sdfOutput=SDF{1,approxCycles}, stateful=true, instanceMap=inst, delay=256 }
 
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)

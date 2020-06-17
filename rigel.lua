@@ -1021,7 +1021,98 @@ __tostring=function(mod,longform)
     end
 
     if longform then
-      mod.output:visitEach(function(n) table.insert(res,tostring(n)) end)
+      local liveTracks = {}
+      local maxTracks = 4
+      local function addTracks(N)
+        local Ninp = N
+        local atres = {}
+        for k,v in ipairs(liveTracks) do
+          if v==false and N>0 then
+            liveTracks[k] = true
+            table.insert(atres,k)
+            N = N-1
+          end
+        end
+
+        while N>0 do
+          table.insert(liveTracks,true)
+          table.insert(atres,#liveTracks)
+          N = N-1
+        end
+
+        J.err( #atres==Ninp,"Add tracks",Ninp,#atres )
+        return atres
+      end
+      
+      mod.output:visitEach(
+        function(n,arg)
+          local tres
+          if n.kind=="input" then
+            tres = addTracks(n.type:streamCount())
+          elseif n.kind=="concat" then
+            tres = {}
+            for k,v in ipairs(arg) do
+              assert(#v==1)
+              tres[k] = v[1]
+            end
+          elseif n.kind=="selectStream" then
+            J.err(arg[1][n.i+1]~=nil,"selectstream bug?",n.i,#arg)
+            tres = {arg[1][n.i+1]}
+          elseif #n.inputs==1 and n.inputs[1].type:streamCount()==1 and n.type:streamCount()>1 then
+            -- fan out
+            J.err(type(arg[1][1])=="number","arg should be number, but is:",#arg,arg[1][1])
+            tres = {arg[1][1]}
+            local tmp = addTracks(n.type:streamCount()-1)
+            for k,v in ipairs(tmp) do
+              assert(type(v)=="number")
+              table.insert(tres,v)
+            end
+
+            for k,v in ipairs(tres) do
+            J.err(type(v)=="number","Xres should be number but is",v,n,"#inp ",#n.inputs,"stcnt:",n.type:streamCount(),"#tres",#tres,"k",k)
+          end
+
+          elseif #n.inputs==1 and n.inputs[1].type:streamCount()>1 and n.type:streamCount()==1 then
+            -- fan in
+            tres = {arg[1][1]}
+            for i=2,#arg[1] do
+              liveTracks[arg[1][i]]=false
+            end
+          elseif #n.inputs==1 and n.inputs[1].type:streamCount() == n.type:streamCount() then
+            tres = {}
+            for k,v in ipairs(arg[1]) do
+              table.insert(tres,v)
+            end
+          else
+            J.err(false,"coult not handle node",n)
+          end
+
+          J.err(#tres==n.type:streamCount(),"streamcount doesn't match",#tres,n.type:streamCount(),n)
+          for k,v in ipairs(tres) do
+            J.err(type(v)=="number","res should be number but is",v,n,"#inp ",#n.inputs,"stcnt:",n.type:streamCount(),"#tres",#tres,"k",k)
+          end
+          
+          local track = ""
+          for i=1,math.max(maxTracks,#liveTracks) do
+            local thist = false
+            for k,v in ipairs(tres) do if v==i then thist=true end end
+
+            if thist then
+              track = track.."*"    
+            elseif liveTracks[i] then
+              track = track.."|"
+            else
+              track = track.." "
+            end
+            track = track.."  "
+          end
+
+          table.insert(res,"** "..track..n:tostringPlain())
+          --          table.insert(res,tostring(n))
+          
+          return tres
+        end)
+
       table.insert(res,"** return "..mod.output.name)
     end
   end
@@ -1030,6 +1121,9 @@ __tostring=function(mod,longform)
 end
 }
 
+function darkroomFunctionFunctions:tostringLong()
+  return darkroomFunctionMT.__tostring(self,true)  
+end
 
 function darkroomFunctionFunctions:specializeToType( ty, rate )
   -- maybe do lifts?
@@ -1422,7 +1516,7 @@ __tostring = function(tab)
   local tabstr = tostring(tab)
   setmetatable(tab,mt)
   
-  table.insert(res,"Rigel Module "..tab.name.." ("..tabstr..")")
+  table.insert(res,"* Rigel Module "..tab.name.." ("..tabstr..")")
 
   table.insert(res,"  Functions:")
   for fnname,fn in pairs(tab.functions) do
@@ -1432,6 +1526,7 @@ __tostring = function(tab)
     setmetatable(fn,fnmt)
 
     table.insert(res,"    "..fnname.."("..fntabstr..") : "..tostring(fn.inputType).."->"..tostring(fn.outputType)..", "..tostring(fn.sdfInput).."->"..tostring(fn.sdfOutput))
+    table.insert(res,tostring(fn))
   end
 
   table.insert(res,"  Stateful: "..tostring(tab.stateful))
@@ -1658,19 +1753,21 @@ function darkroomIRMT.__index(tab,key)
   end
 end
 
-darkroomIRMT.__tostring = function(tab)
+darkroomIRMT.__tostring = function(tab,prefix)
   local res
   local extraAtEnd = "*** Loc\n"..tab.loc
+
+  if prefix==nil then prefix="** " end
   
   if tab.kind=="input" then
-    res = "** "..tab.name.." = R.input("..tostring(tab.type)..")"
+    res = prefix..tab.name.." = R.input("..tostring(tab.type)..")"
   elseif tab.kind=="constant" then
-    res = "** "..tab.name.." = R.constant('"..tab.name.."',"..tostring(tab.value)..","..tostring(tab.type)..")"
+    res = prefix..tab.name.." = R.constant('"..tab.name.."',"..tostring(tab.value)..","..tostring(tab.type)..")"
   elseif tab.kind=="applyMethod" then
     if #tab.inputs==0 then
-      res = "** "..tab.name.." = "..tab.inst.name..":"..tab.fnname.."()"
+      res = prefix..tab.name.." = "..tab.inst.name..":"..tab.fnname.."()"
     else
-      res = "** "..tab.name.." = "..tab.inst.name..":"..tab.fnname.."("..tab.inputs[1].name..")"
+      res = prefix..tab.name.." = "..tab.inst.name..":"..tab.fnname.."("..tab.inputs[1].name..")"
     end
   elseif tab.kind=="apply" then
     if #tab.inputs==0 then
@@ -1700,7 +1797,7 @@ darkroomIRMT.__tostring = function(tab)
           gen = gen..table.concat(lst,",").."}"
         end
         
-        res = "** "..tab.name.." = "..gen.."("..tab.inputs[1].name..")\nModule:"..tab.fn.name
+        res = prefix..tab.name.." = "..gen.."("..tab.inputs[1].name..")\nModule:"..tab.fn.name
 
         -- exhaustive generator arg list list
         if type(tab.fn.generator)~="string" then
@@ -1716,11 +1813,11 @@ darkroomIRMT.__tostring = function(tab)
           end
         end
       else
-        res = "** "..tab.name.." = "..tab.fn.name.."("..tab.inputs[1].name..")"
+        res = prefix..tab.name.." = "..tab.fn.name.."("..tab.inputs[1].name..")"
       end
     end
   elseif tab.kind=="selectStream" then
-    res = "** "..tab.name.." = "..tab.inputs[1].name.."["..tab.i.."] -- selectStream"
+    res = prefix..tab.name.." = "..tab.inputs[1].name.."["..tab.i.."] -- selectStream"
   elseif tab.kind=="statements" then
     res = "** statements{"
     for k,v in ipairs(tab.inputs) do
@@ -1728,7 +1825,7 @@ darkroomIRMT.__tostring = function(tab)
     end
     res = res.."}"
   elseif tab.kind=="concat" or tab.kind=="concatArray2d" then
-    res = "** "..tab.name.." = R.concat('"..tab.name.."',{"
+    res = prefix..tab.name.." = R.concat('"..tab.name.."',{"
     for k,v in ipairs(tab.inputs) do
       res = res..v.name
       if k~=#tab.inputs then res = res.."," end
@@ -1750,6 +1847,10 @@ darkroomIRMT.__tostring = function(tab)
 
   if extraAtEnd~=nil then res = res.."\n"..extraAtEnd end
   return res
+end
+
+function darkroomIRFunctions:tostringPlain()
+  return darkroomIRMT.__tostring(self,"")
 end
 
 local darkroomInstanceFunctions = {}

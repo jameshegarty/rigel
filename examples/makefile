@@ -493,6 +493,7 @@ $(BUILDDIR)/%.coverage.txt: %.lua
 	touch $@
 
 $(BUILDDIR)/%.terra.raw: %.lua
+#	$(TERRA) $< terra
 	{ time -p $(TERRA) $< terra; } 2>&1 | tee $(BUILDDIR)/$*.terra.terratimeraw.txt; exit "$${PIPESTATUS[0]}"
 	printf '$*,' > $(BUILDDIR)/$*.terra.terratime.txt
 	cat $(BUILDDIR)/$*.terra.terratimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.terra.terratime.txt

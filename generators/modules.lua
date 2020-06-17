@@ -1234,6 +1234,9 @@ modules.mapVarSeq = memoize(function( fn, W_orig, H_orig, X )
   local G = require "generators.core"
   
   local res = G.Function{"MapVarSeq_fn"..fn.name.."_W"..tostring(W_orig).."_H"..tostring(H_orig),fn.inputType,SDF{1,1},function(inp) return fn(inp) end}
+
+  assert(res.over==nil)
+  res.over = fn
   assert( rigel.isFunction(res) )
   
   -- hackity hack
@@ -4066,7 +4069,7 @@ modules.fifo = memoize(function( A, size, nostall, W, H, T, csimOnly, VRLoad, SD
     storeFunction.inputType = types.Handshake(A)
   end
 
-  local loadFunction = {name="load", inputType=types.Interface(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=(csimOnly~=true), sdfExact=true, delay=0}
+  local loadFunction = {name="load", inputType=types.Interface(), sdfInput=SDFRate, sdfOutput=SDFRate, stateful=(csimOnly~=true), sdfExact=true, delay=1}
   
   if VRLoad then
     loadFunction.outputType = types.HandshakeVR(A)
@@ -4406,6 +4409,8 @@ modules.triggerFIFO = memoize(function(ty)
   always @(posedge CLK) begin
     if (reset==1'b1) begin
       cnt <= 32'd0;
+    end else if (store_ready==1'b1 && store_input==1'b1 && load_ready_downstream==1'b1) begin
+      // do nothing! load&store in same cycle
     end else if (store_ready==1'b1 && store_input==1'b1) begin
       cnt <= cnt+32'd1;
     end else if ( load_ready_downstream==1'b1 && cnt>32'd0) begin
@@ -4413,7 +4418,7 @@ modules.triggerFIFO = memoize(function(ty)
     end
   end
   assign store_ready = cnt<32'd4294967295;
-  assign load_output = (cnt>32'd0);
+  assign load_output = (cnt>32'd0) || (store_ready==1'b1 && store_input==1'b1);
 endmodule
 ]=]
     s:verilog(vstr)
@@ -5363,6 +5368,10 @@ local function insertFIFOs( out, delayTable, moduleName, X )
   local C = require "generators.examplescommon"
 
   local verbose = false
+
+  if verbose then
+    print("* InsertFIFOs",moduleName)
+  end
   
   local depth = {}
   local maxDepth=0
@@ -5422,7 +5431,10 @@ local function insertFIFOs( out, delayTable, moduleName, X )
             local d = iDelayThis-delayTable[orig.inputs[i]]
 
             J.err( d>0, "delay at input of this node is less than its input? thisDelay:",iDelayThis," delay of input "..(i-1)..":", delayTable[orig.inputs[i]], "\n",n )
-            if verbose then print("DFIFO",moduleName,d,n,n.inputs[i]) end
+            if verbose then
+              print("** DFIFO",moduleName,d,n.name,n.inputs[i].name)
+              print("input streamcount:",n.inputs[i].type:streamCount())
+            end
 
             if n.inputs[i].type:streamCount()==1 then
               ntmp.inputs[i] = C.fifo( n.inputs[i].type:deInterface(), d, nil, nil, nil, nil, "DELAY_"..moduleName.."_"..n.name )(n.inputs[i])
@@ -5451,6 +5463,7 @@ local function insertFIFOs( out, delayTable, moduleName, X )
         local oldn = n
         n = rigel.newIR(ntmp)
         res = n
+--        print(n)
 --        print("DELAYDONE",oldn,n)
       end
       
@@ -5638,7 +5651,7 @@ local function calculateDelaysZ3( output, moduleName )
         if n.inst.module.functions[n.fnname].inputType==types.null() or n.inst.module.functions[n.fnname].inputType:isInil() then
           --res = n.inst.module.functions[n.fnname].delay
           --          assert(false)
-          table.insert( statements, "(assert (= "..name.." 0))" )
+          table.insert( statements, "(assert (= "..name.." "..n.inst.module.functions[n.fnname].delay.."))" )
           res = name
         else
           table.insert( statements, "(assert (>= "..name.." (+ "..inputs[1].." "..n.inst.module.functions[n.fnname].delay..")))" )
@@ -5840,7 +5853,7 @@ local function calculateDelaysZ3( output, moduleName )
     print("** TOTALBITS",totalbits)
     print("** DELAYTABLE")
     for k,v in pairs(delayTable) do
-      print(k,v)
+      print("|"..k.."|"..v.."|")
     end
   end
   
@@ -5920,7 +5933,8 @@ end
 
 -- function definition
 -- output, inputs
-function modules.lambda( name, input, output, instanceList, generatorStr, generatorParams, globalMetadata, X )
+-- autofifos: override global autofifo setting
+function modules.lambda( name, input, output, instanceList, generatorStr, generatorParams, globalMetadata, autofifos, z3fifos, X )
   if DARKROOM_VERBOSE then print("lambda start '"..name.."'") end
 
   err( X==nil, "lambda: too many arguments" )
@@ -5958,18 +5972,20 @@ function modules.lambda( name, input, output, instanceList, generatorStr, genera
   end
   
   --local resdelay, delayTable = calculateDelaysGreedy( output )
+
   local resdelay, delayTable
 
-  if rigel.Z3_FIFOS and HANDSHAKE_MODE then
+  if (rigel.Z3_FIFOS and HANDSHAKE_MODE and z3fifos==nil) or z3fifos==true then
     resdelay, delayTable = calculateDelaysZ3( output, name )
   else
     resdelay, delayTable = calculateDelaysGreedy( output, name )
   end
-  
+
   local inputBurstiness = 0
   local outputBurstiness = 0
   
-  if rigel.AUTO_FIFOS~=false then
+  if (rigel.AUTO_FIFOS~=false and autofifos==nil) or autofifos==true then
+
     if HANDSHAKE_MODE and input~=nil and input.type:isInil()==false then
       output = insertFIFOs( output, delayTable, name )
     elseif input~=nil and input.type:isInil()==false then
