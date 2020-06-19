@@ -125,11 +125,11 @@ P.pyramidIterTaps = J.memoize(function(i,doDownsample,internalT,W,H,ConvWidth,no
     if nofifo==false then out = P.FIFO(fifos,statements,types.array2d(st_type,convT/2),out,nil,"downsample"..i,W,H,internalT) end
 
     if DUMB_DOWNSAMPLE then
-      out = R.apply("CR2x",RM.liftHandshake(RM.changeRate(st_type,1,convT/2,convT)), out)
+      out = R.apply("CR2x", RM.changeRate(st_type,1,convT/2,convT), out)
     else
       convT = internalT/4
       assert(convT==math.floor(convT))
-      out = R.apply("CR2x",RM.liftHandshake(RM.changeRate(st_type,1,convT*2,convT)), out)
+      out = R.apply("CR2x", RM.changeRate(st_type,1,convT*2,convT), out)
     end
   end
 
@@ -188,11 +188,11 @@ function P.pyramidIterTR(i, internalT, W, H, ConvWidth, nofifo, X)
   if true then
     out = R.apply("IDX", RM.makeHandshake(C.index(types.array2d(st_type,1),0,0)), out)
     out = R.apply("CST", RM.makeHandshake( C.cast(st_type,types.array2d(A,ConvWidth*ConvWidth)) ), out)
-    out = R.apply("CR", RM.liftHandshake(RM.changeRate( types.uint(8), 1, ConvWidth*ConvWidth, ConvWidth*ConvWidth*convT )), out )
+    out = R.apply("CR", RM.changeRate( types.uint(8), 1, ConvWidth*ConvWidth, ConvWidth*ConvWidth*convT ), out )
     out = R.apply("conv", RM.liftHandshake(C.convolveConstantTR(types.uint(8),ConvWidth*ConvWidth,1,1/convT,P.G,6)), out)
   else
     out = R.apply("IDX", RM.makeHandshake(C.index(types.array2d(st_type,1),0,0)), out)
-    out = R.apply("CR", RM.liftHandshake(RM.changeRate( types.uint(8), ConvWidth, ConvWidth, convT )), out )
+    out = R.apply("CR", RM.changeRate( types.uint(8), ConvWidth, ConvWidth, convT ), out )
     out = R.apply("conv", RM.liftHandshake(C.convolveConstantTR(types.uint(8),ConvWidth,ConvWidth,convT,P.G,6)), out)
 
   end

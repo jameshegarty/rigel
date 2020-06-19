@@ -1720,8 +1720,10 @@ C.fifo = memoize(function( ty, size, nostall, csimOnly, VRLoad, includeSizeFn, n
 
   local bts = Uniform(ty:lower():verilogBits()):toNumber()
   local KBs = math.floor((size*bts)/(8*1024))
-  local res = RM.lambda("C_FIFO_KB"..tostring(KBs).."_size_"..tostring(size).."_bits"..tostring(bts).."_ty"..tostring(ty).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_SZFN"..tostring(includeSizeFn).."_CSIMONLY"..tostring(csimOnly).."_DBGNAME"..tostring(name), inp, R.statements{ld,st}, regs, "C.fifo", {size=size} )
+  local res = RM.lambda("C_FIFO_KB"..tostring(KBs).."_size_"..tostring(size).."_bits"..tostring(bts).."_ty"..tostring(ty).."_nostall"..tostring(nostall).."_VR"..tostring(VRLoad).."_SZFN"..tostring(includeSizeFn).."_CSIMONLY"..tostring(csimOnly).."_DBGNAME"..tostring(name), inp, R.statements{ld,st}, regs, "C.fifo", {size=size}, nil, false, false )
   res.fifoed = true
+
+  assert( res.delay==1 or ty==nil or ty:extractData():verilogBits()==0 )
   
   return res
 end)
@@ -1833,7 +1835,7 @@ C.downsampleSeq = memoize(function( A, W_orig, H_orig, T, scaleX, scaleY, framed
     local downsampleT = math.max(math.max(T,1)/scaleX,1)
     if downsampleT<math.max(T,1) then
       -- technically, we shouldn't do this without lifting to a handshake - but we know this can never stall, so it's ok
-      out = rigel.apply("downsampleSeq_incrate", modules.liftHandshake(modules.changeRate(A,1,downsampleT,T)), out )
+      out = rigel.apply("downsampleSeq_incrate", modules.changeRate(A,1,downsampleT,T), out )
     elseif downsampleT>math.max(T,1) then
       assert(false)
     end
@@ -2361,7 +2363,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       local inp = R.input(R.Handshake(types.bits(inputBitsPerCyc)))
       local N = inputBitsPerCyc/outputBitsPerCyc
       local out = RM.makeHandshake(C.cast(types.bits(inputBitsPerCyc),types.array2d(types.bits(outputBitsPerCyc),N)))(inp)
-      out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,N,1))(out)
+      out = RM.changeRate(types.bits(outputBitsPerCyc),1,N,1)(out)
       out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
 
       local inoutBits = minTotalInputBits:max(minTotalOutputBits)
@@ -2420,7 +2422,7 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       local inp = R.input(R.Handshake(types.bits(inputBitsPerCyc)))
       local N = outputBitsPerCyc/inputBitsPerCyc
       local out = RM.makeHandshake(C.arrayop(types.bits(inputBitsPerCyc),1))(inp)
-      out = RM.liftHandshake(RM.changeRate(types.bits(inputBitsPerCyc),1,1,N))(out)
+      out = RM.changeRate(types.bits(inputBitsPerCyc),1,1,N)(out)
       out = RM.makeHandshake(C.cast(types.array2d(types.bits(inputBitsPerCyc),N),types.bits(outputBitsPerCyc)))(out)
 
       local bts = Uniform.upToNearest(inputBitsPerCyc,Uniform(minTotalInputBits):max(minTotalOutputBits))
@@ -2439,10 +2441,10 @@ C.generalizedChangeRate = memoize(function(inputBitsPerCyc, minTotalInputBits_or
       
       local inp = R.input(R.Handshake(types.bits(inputBitsPerCyc)))
       local out = RM.makeHandshake(C.cast(types.bits(inputBitsPerCyc),types.array2d(types.bits(inputBitsPerCyc),1)))(inp)
-      out = RM.liftHandshake(RM.changeRate(types.bits(inputBitsPerCyc),1,1,shifterBits/inputBitsPerCyc))(out)
+      out = RM.changeRate(types.bits(inputBitsPerCyc),1,1,shifterBits/inputBitsPerCyc)(out)
       out = RM.makeHandshake(C.cast(types.array2d(types.bits(inputBitsPerCyc),shifterBits/inputBitsPerCyc),types.bits(shifterBits)))(out)
       out = RM.makeHandshake(C.cast(types.bits(shifterBits),types.array2d(types.bits(outputBitsPerCyc),shifterBits/outputBitsPerCyc)))(out)
-      out = RM.liftHandshake(RM.changeRate(types.bits(outputBitsPerCyc),1,shifterBits/outputBitsPerCyc,1))(out)
+      out = RM.changeRate(types.bits(outputBitsPerCyc),1,shifterBits/outputBitsPerCyc,1)(out)
       out = RM.makeHandshake(C.index(types.array2d(types.bits(outputBitsPerCyc),1),0))(out)
 
       local bts = Uniform.upToNearest(inputBitsPerCyc,Uniform(minTotalInputBits):max(minTotalOutputBits))
@@ -3238,7 +3240,7 @@ C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig,
         inprs = generators.ReshapeArray{{Vw*Vh,1}}(inp)
       end
 
-      local out = RM.liftHandshake(cr)(inprs)
+      local out = cr(inprs)
       
       if outputItemsPerCyc>0 then
         local res = RM.makeHandshake( C.cast( out.type:deInterface(), types.Array2d( out.type:deInterface().over, V2w, V2h )) )(out)
@@ -3621,7 +3623,7 @@ C.SqrtF = J.memoize(function( exp, sig, doDiv, X )
 
   local inpty = types.RV(types.FloatRec(exp,sig))
   if doDiv then inpty = types.RV(types.tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}) end
-  local res = R.newFunction{ name=J.sanitize("Float"..J.sel(doDiv,"Div_","Sqrt_")..tostring(exp).."_"..tostring(sig)), inputType = inpty, outputType=types.RV(types.FloatRec(exp,sig)), sdfInput=SDF{1,approxCycles}, sdfOutput=SDF{1,approxCycles}, stateful=true, instanceMap=inst, delay=0 }
+  local res = R.newFunction{ name=J.sanitize("Float"..J.sel(doDiv,"Div_","Sqrt_")..tostring(exp).."_"..tostring(sig)), inputType = inpty, outputType=types.RV(types.FloatRec(exp,sig)), sdfInput=SDF{1,approxCycles}, sdfOutput=SDF{1,approxCycles}, stateful=true, instanceMap=inst, delay=256 }
 
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
@@ -3848,6 +3850,93 @@ C.Tile = J.memoize(function( A, W, H, TileW, TileH, X )
   local fin = R.concatArray2d("fin",outarr,(W/TileW),(H/TileH))
 
   return RM.lambda("tile", inp, fin )
+end)
+
+C.RateMonitor = J.memoize( function( fn, rate, name )
+  J.err( R.isPlainFunction(fn), "C.RateMonitor: fn should be plain rigel function, but is: ",fn )
+    
+  local G = require "generators.core"
+
+  local NAME = J.sel(name~=nil,name,string.sub(J.verilogSanitizeInner(fn.name),1,60))
+
+  local res = G.Function{"RateMonitor_"..NAME,fn.inputType,fn.sdfInput,function(inp) return fn(inp) end}
+
+  local inst = fn:instantiate("inner")
+  local instMap = {}
+  instMap[inst] = 1
+  res.instanceMap=instMap
+  
+  res.systolic=nil
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = res:vHeader()
+
+    verilog = verilog..inst:toVerilog()
+    verilog = verilog..[[
+
+  assign ]]..inst:vInput()..[[ = ]]..res:vInput()..[[;
+  assign ]]..inst:vOutputReady()..[[ = ]]..res:vOutputReady()..[[;
+  assign ]]..res:vOutput()..[[ = ]]..inst:vOutput()..[[;
+  assign ]]..res:vInputReady()..[[ = ]]..inst:vInputReady()..[[;
+  
+  reg [31:0] totalCycles = 32'd0;
+  reg [31:0] readyDSCycles = 32'd0;
+  reg [31:0] readyWhenNotStalledCycles = 32'd0;
+  reg [31:0] validWhenNotStalled = 32'd0;
+  reg printed = 1'b1;
+
+  reg [63:0] RUS = 64'd0;
+  reg [63:0] RDS = 64'd0;
+  reg [63:0] intxn = 64'd0;
+  reg [63:0] outtxn = 64'd0;
+
+  always @(posedge CLK) begin
+    if (reset) begin
+      if (printed==1'b0 ) begin
+        $display("| name | ity | oty | inputRate | outputRate | callsiteRate | validWhenNotStalled | readyWhenNotStalled | readyDS | total");
+        $display("|]]..NAME.."|"..tostring(fn.inputType).."|"..tostring(fn.outputType).."|"..tostring(fn.sdfInput).."|"..tostring(fn.sdfOutput).."|"..tostring(rate)..[[|%0d|%0d|%0d|%0d", validWhenNotStalled, readyWhenNotStalledCycles, readyDSCycles, totalCycles );
+        $display("RUS_]]..NAME..[[ %b",RUS);
+        $display("INN_]]..NAME..[[ %b",intxn);
+        $display("OUT_]]..NAME..[[ %b",outtxn);
+        $display("RDS_]]..NAME..[[ %b",RDS);
+      end
+      totalCycles <= 32'd0;
+      readyDSCycles <= 32'd0;
+      readyWhenNotStalledCycles <= 32'd0;
+      validWhenNotStalled <= 32'd0;
+      printed <= 1'b1;
+    end else begin
+      printed <= 1'b0;
+      totalCycles <= totalCycles+32'd1;
+      if(]]..res:vOutputReady()..[[==1'b1) begin
+        readyDSCycles <= readyDSCycles + 32'd1;
+      end
+      if( ]]..res:vOutputReady()..[[==1'b1 && ]]..inst:vInputReady()..[[==1'b1) begin
+        readyWhenNotStalledCycles <= readyWhenNotStalledCycles + 32'd1;
+      end
+
+      if( ]]..res:vOutputReady()..[[==1'b1 && ]]..res:vInputValid()..[[==1'b1) begin
+        validWhenNotStalled <= validWhenNotStalled + 32'd1;
+      end
+
+      if( totalCycles < 32'd5000 ) begin
+        RUS <= {RUS[62:0],]]..inst:vInputReady()..[[};
+        intxn <= {intxn[62:0],]]..inst:vInputReady()..[[&&]]..res:vInputValid()..[[};
+        outtxn <= {outtxn[62:0],]]..inst:vOutputValid()..[[&&]]..res:vOutputReady()..[[};
+        RDS <= {RDS[62:0],]]..res:vOutputReady()..[[};
+      end
+    end
+  end
+
+endmodule
+
+]]
+    s:verilog(verilog)
+    return s
+  end
+  
+  return res
 end)
 
 return C

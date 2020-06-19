@@ -6,10 +6,16 @@ SIG20 += soc_lk_4_8.lua soc_lk_4_4.lua soc_lk_4_2.lua soc_lk_4_1.lua
 SIG20 += soc_convgenTaps_8_1.lua soc_convgenTaps_8_2.lua soc_convgenTaps_8_4.lua  soc_convgenTaps_8_8.lua soc_convgenTaps_8_16.lua soc_convgenTaps_8_32.lua soc_convgenTaps_8_64.lua
 SIG20 += soc_stereo_tiny_4_4.lua soc_stereo_tiny_4_1.lua soc_stereo_tiny_4_2.lua soc_stereo_tiny_4_8.lua soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua
 SIG20 += soc_sift_4_1.lua soc_sift_4_1_1080p.lua soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_4_4.lua soc_sift_4_4_1080p.lua soc_sift_1_2.lua
+#autofifo
+SIG20 += soc_lk_12_48_autofifo.lua soc_lk_12_24_autofifo.lua soc_lk_12_12_autofifo.lua soc_lk_12_6_autofifo.lua soc_lk_12_4_autofifo.lua soc_lk_12_3_autofifo.lua soc_lk_12_2_autofifo.lua soc_lk_12_1_autofifo.lua
+SIG20 += soc_lk_6_6_autofifo.lua soc_lk_6_3_autofifo.lua soc_lk_6_2_autofifo.lua soc_lk_6_1_autofifo.lua 
+SIG20 += soc_lk_4_8_autofifo.lua soc_lk_4_4_autofifo.lua soc_lk_4_2_autofifo.lua soc_lk_4_1_autofifo.lua 
+SIG20 += soc_convgenTaps_8_1_autofifo.lua soc_convgenTaps_8_2_autofifo.lua soc_convgenTaps_8_4_autofifo.lua  soc_convgenTaps_8_8_autofifo.lua soc_convgenTaps_8_16_autofifo.lua soc_convgenTaps_8_32_autofifo.lua soc_convgenTaps_8_64_autofifo.lua
+SIG20 += soc_stereo_tiny_4_4_autofifo.lua soc_stereo_tiny_4_1_autofifo.lua soc_stereo_tiny_4_2_autofifo.lua soc_stereo_tiny_4_8_autofifo.lua soc_stereo_full_64_64_autofifo.lua soc_stereo_full_64_32_autofifo.lua soc_stereo_full_64_16_autofifo.lua soc_stereo_full_64_8_autofifo.lua
+SIG20 += soc_sift_4_1_autofifo.lua soc_sift_4_1_1080p_autofifo.lua soc_sift_4_2_autofifo.lua soc_sift_4_2_1080p_autofifo.lua soc_sift_4_4_autofifo.lua soc_sift_4_4_1080p_autofifo.lua soc_sift_4_8_autofifo.lua soc_sift_4_8_1080p_autofifo.lua soc_sift_1_2_autofifo.lua
 
 SIG20_TODO := $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.launch,$(SIG20))
 SIG20_TODO += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.launch,$(SIG20))
-SIG20_TODO += $(patsubst %.lua,$(BUILDDIR)/%.v.launch,$(SIG20))
 SIG20_TODO += $(patsubst %.lua,$(BUILDDIR)/%.v.launch,$(SIG20))
 SIG20_TODO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.stats2020.launch,$(SIG20))
 
@@ -28,9 +34,16 @@ SIG16_TODO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivado.stats2020.launch,$(SIG16)
 VERILOG := $(patsubst %.lua,$(BUILDDIR)/%.v.launch,$(SIG20))
 VERILOG += $(patsubst %.lua,$(BUILDDIR)/%.v.launch,$(SIG16))
 
+VERILATORSOC := $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOCcorrect.launch,$(SIG20))
+VERILATORSOC += $(patsubst %.lua,$(BUILDDIR)/%.v.launch,$(SIG20))
+
 all: $(SIG20_TODO) $(SIG16_TODO)
 
+sig20: $(SIG20_TODO)
+
 verilog: $(VERILOG)
+
+verilatorSOC: $(VERILATORSOC)
 
 $(BUILDDIR)/%.v.launch: %.lua
 	nc run -N $*.v -- make out/$*.v | grep JobId | grep -Eo "[0-9]+" > $@
@@ -41,6 +54,9 @@ $(BUILDDIR)/%.zu9vivadoSOC.launch: $(BUILDDIR)/%.v.launch
 
 $(BUILDDIR)/%.verilatorSOC.launch: $(BUILDDIR)/%.v.launch
 	nc run -N $*.verilatorSOC.raw -d $*.v -- make out/$*.verilatorSOC.raw | grep JobId | grep -Eo "[0-9]+" > $@
+
+$(BUILDDIR)/%.verilatorSOCcorrect.launch: $(BUILDDIR)/%.v.launch
+	nc run -N $*.verilatorSOC.correct.txt -d $*.v -- make out/$*.verilatorSOC.correct.txt | grep JobId | grep -Eo "[0-9]+" > $@
 
 $(BUILDDIR)/%.zu9vivadoSOC.stats2020.launch: $(BUILDDIR)/%.verilatorSOC.launch $(BUILDDIR)/%.zu9vivadoSOC.launch
 	nc run -N $*.zu9vivadoSOC.stats2020.txt -d $*.verilatorSOC.raw,$*.zu9vivadoSOC.bit -- make out/$*.zu9vivadoSOC.stats2020.txt | grep JobId | grep -Eo "[0-9]+" > $@

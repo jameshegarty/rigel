@@ -179,7 +179,7 @@ local hsfninp = R.input(R.Handshake(ITYPE))
 
 local hsfnout = hsfninp
 
-local hsfnout = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE:arrayOver(),1,T,2)), hsfnout )
+local hsfnout = R.apply("incrate", RM.changeRate(ITYPE:arrayOver(),1,T,2), hsfnout )
 
 if string.find(arg[0],"ov7660") and X1==false then
   -- for the camera board setup, expect 2 cameras

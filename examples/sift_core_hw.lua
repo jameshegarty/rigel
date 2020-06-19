@@ -389,9 +389,9 @@ function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
   local dxdy = R.apply("dxdy",RM.makeHandshake(C.index(ITYPE,0,0)), inp_dxdy)
 
   local dxdyTile = R.apply("TLE",RM.makeHandshake( sift.tile(TILES_X*4,TILES_Y*4,4,dxdyPair)),dxdy)
-  local dxdy = R.apply( "down1", RM.liftHandshake(RM.changeRate(types.array2d(dxdyPair,16),1,TILES_X*TILES_Y,1)), dxdyTile )
+  local dxdy = R.apply( "down1", RM.changeRate(types.array2d(dxdyPair,16),1,TILES_X*TILES_Y,1), dxdyTile )
   local dxdy = R.apply("down1idx",RM.makeHandshake(C.index(types.array2d(types.array2d(dxdyPair,16),1),0,0)), dxdy)
-  local dxdy = R.apply("down2", RM.liftHandshake(RM.changeRate(dxdyPair,1,16,1)), dxdy )
+  local dxdy = R.apply("down2", RM.changeRate(dxdyPair,1,16,1), dxdy )
   local dxdy = R.apply("down2idx",RM.makeHandshake(C.index(types.array2d(dxdyPair,1),0,0)), dxdy)
   local descFn, descTypeRed = sift.siftDescriptor( dxdyType, TILES_X, TILES_Y )
   local descType = types.Float32
@@ -405,7 +405,7 @@ function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
   --local desc = C.fifoLoop(fifos,statements,types.array2d(descTypeRed,8),desc,128,"lol",false) -- fifo size can also be 1 (tested in SW)
   local desc = C.fifo(types.array2d(descTypeRed,8),128)(desc)
 
-  local desc = R.apply("up",RM.liftHandshake(RM.changeRate(descTypeRed,1,8,1)),desc)
+  local desc = R.apply("up",RM.changeRate(descTypeRed,1,8,1),desc)
   local desc = R.apply("upidx",RM.makeHandshake(C.index(types.array2d(descTypeRed,1),0,0)), desc)
 
   -- sum and normalize the descriptors
@@ -443,7 +443,7 @@ function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
   
   local desc = R.apply("DdAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc)
 
-  local desc = R.apply("repack",RM.liftHandshake(RM.changeRate(descType,1,1,TILES_X*TILES_Y*8)),desc)
+  local desc = R.apply("repack",RM.changeRate(descType,1,1,TILES_X*TILES_Y*8),desc)
   -- we now have an array of type descType[128]. Add the pos.
   local desc_pack = R.apply("dp", RM.packTuple{types.RV(types.Par(types.array2d(descType,TILES_X*TILES_Y*8))),types.RV(types.Par(posType)),types.RV(types.Par(posType))},R.concat("DPT",{desc,posX,posY}))
   local desc = R.apply("addpos",RM.makeHandshake( sift.addDescriptorPos( descType, TILES_X, TILES_Y )), desc_pack)
@@ -510,7 +510,7 @@ function sift.siftDesc( W, H, inputT, TILES_X, TILES_Y, X )
   local ITYPE = types.array2d(types.uint(8),inputT)
   
   local inpraw = R.input(R.Handshake(ITYPE))
-  local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
+  local inp = R.apply("reducerate", RM.changeRate(types.uint(8),1,8,1), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
   local dxdyType = types.Float32
   local out = R.apply("dxdy",dxdyFn,inp)
@@ -543,7 +543,7 @@ function sift.siftDesc( W, H, inputT, TILES_X, TILES_Y, X )
   local siftFn, descType = sift.siftKernel( dxdyType, TILES_X, TILES_Y )
   local out = R.apply("sft", siftFn, out)
 
-  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2)), out )
+  local out = R.apply("incrate", RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2), out )
 
   local fn = RM.lambda( "harris", inpraw, out)
   return fn, descType
@@ -561,7 +561,7 @@ function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
   local ITYPE = types.array2d(types.uint(8),T)
   
   local inpraw = R.input(R.Handshake(ITYPE))
-  local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
+  local inp = R.apply("reducerate", RM.changeRate(types.uint(8),1,8,1), inpraw )
   local dxdyFn, dxdyType = harris.makeDXDY(W,H)
   local dxdyType = types.Float32
   local DXDY_PAIR = types.tuple{dxdyType,dxdyType}
@@ -639,7 +639,7 @@ function sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES_X, TILES_Y, X)
 
   local out = R.apply("sft", siftFn, out)
 
-  local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2)), out )
+  local out = R.apply("incrate", RM.changeRate(descType,1,TILES_X*TILES_Y*8+2,2), out )
 
   -- bitcast to uint8[8] for display...
   out = G.Fmap{C.bitcast(types.array2d(types.Float32,2),types.Array2d(types.uint(8),8))}(out)

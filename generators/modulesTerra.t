@@ -947,6 +947,104 @@ function MT.changeRate( res, A, H, inputRate, outputRate, maxRate, outputCount, 
   assert(inputRate>=0)
   assert(H>0)
   
+  local struct ChangeRate { buffer : (A:toTerraType())[maxRate*H]; phase:int, ready:bool, readyDownstream:bool; hasData:bool}
+
+  terra ChangeRate:reset() self.phase = 0; self.hasData=false end
+
+  if inputRate>outputRate then -- 8 to 4
+
+    local SELF = symbol(&ChangeRate)
+    local out = symbol(&rigel.lower(res.outputType):toTerraType())
+
+    local DOSET
+    if outputRate==0 then
+      assert( H==1 )
+      DOSET = quote data(out) = SELF.buffer[SELF.phase] end
+    else
+      DOSET = quote 
+        for y=0,H do
+          for i=0,outputRate do
+            (data(out))[i+y*outputRate] = SELF.buffer[i+SELF.phase*outputRate+y*inputRate]
+          end
+        end
+      end
+    end
+
+    terra ChangeRate.methods.process( [SELF], inp : &rigel.lower(res.inputType):toTerraType(), [out]  )
+      if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN phase %d\n", SELF.phase) end
+      if SELF.hasData==false and valid(inp) then
+        for y=0,H do
+          for i=0,inputRate do SELF.buffer[i+y*inputRate] = data(inp)[i+y*inputRate] end
+        end
+        SELF.hasData = true
+      end
+
+      DOSET
+      valid(out) = SELF.hasData
+
+      if SELF.readyDownstream and SELF.hasData then
+        SELF.phase = SELF.phase + 1
+        if  SELF.phase>=outputCount then
+          SELF.phase=0;
+          SELF.hasData=false
+        end
+
+        if DARKROOM_VERBOSE then cstdio.printf("CHANGE_DOWN OUT validOut %d\n",valid(out)) end
+      end
+    end
+    terra ChangeRate:calculateReady(readyDownstream:bool )
+      self.ready = (self.hasData==false)
+      self.readyDownstream = readyDownstream
+    end
+  else -- inputRate <= outputRate, eg 4 to 8
+
+    terra ChangeRate:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+      if valid(inp) and self.phase<inputCount then
+        escape
+          if inputRate==0 then
+            assert(H==1)
+            emit quote self.buffer[self.phase] = data(inp) end
+          else
+            emit quote 
+                for y=0,H do
+                  for i=0,inputRate do
+                    self.buffer[i+self.phase*inputRate+y*outputRate] = (data(inp))[i+y*inputRate]
+                  end
+                end
+              end
+          end 
+        end
+        self.phase = self.phase + 1
+      end
+
+      if self.phase >= inputCount then
+        valid(out) = true
+        data(out) = self.buffer
+      else
+        valid(out) = false
+      end
+
+      if self.readyDownstream and self.phase >= inputCount then
+        self.phase = 0
+        if DARKROOM_VERBOSE then cstdio.printf("CHANGE RATE RET validout %d inputPhase %d\n",valid(out),self.phase) end
+      end
+      
+    end
+    terra ChangeRate:calculateReady( readyDownstream: bool )  
+      self.ready = (self.phase<inputCount)
+      self.readyDownstream = readyDownstream
+    end
+  end
+
+  return MT.new( ChangeRate, res )
+end
+
+function MT.changeRateOld( res, A, H, inputRate, outputRate, maxRate, outputCount, inputCount )
+  assert(A:isData())
+  assert(outputRate>=0)
+  assert(inputRate>=0)
+  assert(H>0)
+  
   local struct ChangeRate { buffer : (A:toTerraType())[maxRate*H]; phase:int, ready:bool}
 
   if inputRate>outputRate then
@@ -2016,9 +2114,11 @@ function MT.lambdaCompile(fn)
               assert(false)
             end
 return {readyOutput}
+          elseif n.kind=="concat" then
+return list
           else
             if n.type:isTuple() then
-              assert(false)
+              J.err(false, "NYI - multiple stream output with multiple consumers",n)
             elseif n.type:isArray() then
               table.insert( readyStats, quote mself.[n.name]:calculateReady(array(list)) end )
             else

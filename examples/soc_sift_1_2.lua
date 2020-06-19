@@ -13,6 +13,16 @@ local P = require "params"
 local harness = require "generators.harnessSOC"
 local Uniform = require "uniform"
 
+local AUTOFIFO = string.find(arg[0],"autofifo")
+AUTOFIFO = (AUTOFIFO~=nil)
+
+if AUTOFIFO then
+  R.AUTO_FIFOS = true
+  R.Z3_FIFOS = true
+else
+  R.AUTO_FIFOS = false
+end
+
 local SIFT_OLD = require "sift_core_hw"
 -- this is just lua code, so just use old code
 local calcGaussian = SIFT_OLD.calcGaussian
@@ -79,11 +89,11 @@ local invV = (TILES_X*TILES_Y*TILE_W*TILE_H)/V
 local cycles = W*H*invV
 print("CYCLES",cycles,"invV",invV)
 
-local outfile = "soc_sift_"..tostring(TILES).."_"..tostring(V)..J.sel(size1080p,"_1080p","")
+local outfile = "soc_sift_"..tostring(TILES).."_"..tostring(V)..J.sel(size1080p,"_1080p","")..J.sel(AUTOFIFO,"_autofifo","")
 
 io.output("out/"..outfile..".design.txt"); io.write("SIFT "..TILES..J.sel(size1080p," 1080p","")); io.close()
 io.output("out/"..outfile..".designT.txt"); io.write(1/invV); io.close()
-io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
+io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"..J.sel(AUTOFIFO,"_autofifo","")); io.close()
 
 local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
 
@@ -234,11 +244,12 @@ end}
 local SiftMag = G.Function{"siftMagInp",types.RV(types.tuple{T.FloatRec32,T.FloatRec32,T.FloatRec32}),
 function(inp)
   local i = G.FanOut{2}(inp)
-  local gauss_weight = G.FIFO{128}(i[1][2])
-
+  local gauss_weight = i[1][2]
+  gauss_weight = G.NAUTOFIFO{128}(gauss_weight)
+  
   local magsq = G.Fmap{SiftMagPre}(G.Slice{{0,1}}(i[0]))
   local mag = G.SqrtF( magsq )
-  mag = G.FIFO{1}(mag)
+  mag = G.NAUTOFIFO{1}(mag)
 
   local out = G.MulF(G.FanIn(mag,gauss_weight))
   return out
@@ -252,12 +263,15 @@ T.Array2d(T.Array2d(T.Tuple{T.I8,T.I8},TILE_W,TILE_H),TILES_X,TILES_Y),
 function(inp)                                             
   local inpb = G.FanOut{3}(inp)
   
-  local gtrig = G.FIFO{128}(G.ValueToTrigger(inpb[0]))
+  local gtrig = G.ValueToTrigger(inpb[0])
+  gtrig = G.NAUTOFIFO{128}(gtrig)
 
   local gweight = G.Const{T.Array2d(T.Array2d(T.Float32,TILE_W,TILE_H),TILES_X,TILES_Y),value=GAUSS}(gtrig)
 
-  local dx = G.FIFO{128}(G.Map{G.Map{G.Index{0}}}(inpb[1]))
-  local dy = G.FIFO{128}(G.Map{G.Map{G.Index{1}}}(inpb[2]))
+  local dx = G.Map{G.Map{G.Index{0}}}(inpb[1])
+  dx = G.NAUTOFIFO{128}(dx)
+  local dy = G.Map{G.Map{G.Index{1}}}(inpb[2])
+  dy = G.NAUTOFIFO{128}(dy)
 
   if GRAD_INT then
     dx = G.Map{G.Map{G.ItoFR}}(dx)
@@ -267,15 +281,28 @@ function(inp)
   end
 
   dx, dy = G.FanOut{2}(dx), G.FanOut{2}(dy)
-  
-  local maginp = R.concat("maginp",{G.FIFO{128}(dx[0]),G.FIFO{128}(dy[0]),gweight})
+
+  local dx0 = dx[0]
+  dx0 = G.NAUTOFIFO{128}(dx0)
+
+  local dy0 = dy[0]
+  dy0 = G.NAUTOFIFO{128}(dy0)
+
+  local maginp = R.concat("maginp",{dx0,dy0,gweight})
 
   maginp = G.FanIn(maginp)
   maginp = G.Zip(maginp)
   maginp = G.Map{G.Zip}(maginp)
 
   local mag = G.Map{G.Map{SiftMag}}(maginp)
-  local bucketInp = R.concat("bktinp",{G.FIFO{128}(dx[1]),G.FIFO{128}(dy[1]),mag})
+
+  local dx1 = dx[1]
+  dx1 = G.NAUTOFIFO{128}(dx1)
+
+  local dy1 = dy[1]
+  dy1 = G.NAUTOFIFO{128}(dy1)
+
+  local bucketInp = R.concat("bktinp",{dx1,dy1,mag})
   bucketInp = G.FanIn(bucketInp)
   bucketInp = G.Zip(bucketInp)
   bucketInp = G.Map{G.Zip}(bucketInp)
@@ -309,12 +336,14 @@ function(i)
 
   local pos = inp[0][1]
 
-  pos = G.FIFO{1024}(pos)
+  pos = G.NAUTOFIFO{1024}(pos)
   
   local posFO = G.FanOut{2}(pos)
 
-  local posX = G.FIFO{1024}(posFO[0][0])
-  local posY = G.FIFO{1024}(posFO[1][1])
+  local posX = posFO[0][0]
+  posX = G.NAUTOFIFO{1024}(posX)
+  local posY = posFO[1][1]
+  posY = G.NAUTOFIFO{1024}(posY)
 
   local dxdy = inp[1][0]
 
@@ -327,16 +356,16 @@ function(i)
   -- We need a tiny fifo to hold the reduceseq output, to keep it from stalling. (the scheduling isn't smart enough to know
   -- that reduceSeq only has an output every 16 cycles, so it can't overlap them)
 
-  local desc = G.FIFO{128}(desc)
+  local desc = G.NAUTOFIFO{128}(desc)
 
   -- sum and normalize the descriptors
   local desc_broad = G.FanOut{2}(desc)
 
   local desc0 = R.selectStream("d0",desc_broad,0)
-  local desc0 = G.FIFO{256}(desc0)
+  local desc0 = G.NAUTOFIFO{256}(desc0)
   
   local desc1 = R.selectStream("d1",desc_broad,1)
-  local desc1 = G.FIFO{256}(desc1)
+  local desc1 = G.NAUTOFIFO{256}(desc1)
 
   -- sum up all the mags in all the buckets
   desc1 = G.Flatten(desc1)
@@ -396,7 +425,7 @@ function(inp)
   -- right branch: make the harris bool
   local right = R.selectStream("d1",dxdyBroad,1)
   
-  right = G.RVFIFO{128}(right)
+  right = G.NAUTOFIFO{128}(right)
   
   right = G.Map{harrisHarrisKernel}(right)
   local harrisType = types.Float32
@@ -414,7 +443,7 @@ function(inp)
     left = G.Map{DXDYToInt8}(left)
   end
 
-  left = G.FIFO{2048/(types.tuple{GRAD_TYPE,GRAD_TYPE}:verilogBits())}(left)
+  left = G.NAUTOFIFO{2048/(types.tuple{GRAD_TYPE,GRAD_TYPE}:verilogBits())}(left)
 
   left = G.Stencil{{-TILES_X*TILE_W+1,0,-TILES_Y*TILE_H+1,0}}(left)
 
@@ -425,7 +454,7 @@ function(inp)
   local out = G.Zip(left,right)
   out = G.Crop{{15,0,15,0}}(out)
   out = G.Filter{{FILTER_RATE[1],FILTER_RATE[2]}}(out)
-  out = G.FIFO{FILTER_FIFO}(out)
+  out = G.NAUTOFIFO{FILTER_FIFO}(out)
   out = G.Map{SiftKernel}(out)
 
   -- hack: we know how many descriptors will be written out, so just clamp the array to that size!

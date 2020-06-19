@@ -328,6 +328,17 @@ function(args)
   end
 end )
 
+-- this inserts a FIFO only if AUTO_FIFOS is false, and this callsite is RV mode
+generators.NAUTOFIFO = R.FunctionGenerator("core.NAUTOFIFO",{"number","type","rate"},{"bool","string"},
+function(args)
+  if args.type:isRV() and R.AUTO_FIFOS==false then
+    assert( R.AUTO_FIFOS==false )
+    return C.fifo( args.type:deInterface(), args.number, args.bool, nil, nil, nil, args.string )
+  else
+    return generators.Fmap{C.identity( args.type:deInterface() )}:complete({type=args.type,rate=args.rate})
+  end
+end, nil, false )
+
 generators.NE = R.FunctionGenerator("core.NE",{},{"async","number"},
 function(args)
   if args.number~=nil then
@@ -1023,7 +1034,7 @@ function(args)
   --print("Schedulable function ",args.string," input type:",input.type)
   
   local out = args.luaFunction(input)
-  J.err( R.isIR(out), "SchedulableFunction: user function returned something other than a Rigel value? "..tostring(out))
+  J.err( R.isIR(out), "SchedulableFunction: user function returned something other than a Rigel value? ",out)
 
   local resFn = RM.lambda( args.string, input, out )
 
@@ -1372,6 +1383,12 @@ function(args)
   return C.Tile( args.T, args.insize[1], args.insize[2], args.size[1], args.size[2] )
 end,
 T.Array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V") ) )
+
+generators.RateMonitor = R.FunctionGenerator("core.RateMonitor",{"type","rate","rigelFunction"},{"string"},
+function(args)
+  local fn = args.rigelFunction:specializeToType( args.type, args.rate )
+  return C.RateMonitor( fn, args.rate, args.string )
+end,nil,false)
 
 function generators.export(t)
   if t==nil then t=_G end

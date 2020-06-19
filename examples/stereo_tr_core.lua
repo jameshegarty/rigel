@@ -146,7 +146,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
   if RGBA then
     inp = hsfninp
   else
-    inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.array2d(A,2),1,4,1)), hsfninp )
+    inp = R.apply("reducerate", RM.changeRate(types.array2d(A,2),1,4,1), hsfninp )
   end
 
   local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
@@ -216,7 +216,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
 
   res = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(OUTPUT_TYPE, internalW, internalH, 1, OffsetX+SearchWindow,0,SADWidth-1,0))), res)
 
-  local res = R.apply("incrate", RM.liftHandshake(RM.changeRate(OUTPUT_TYPE,1,1,OUTPUT_T)), res )
+  local res = R.apply("incrate", RM.changeRate(OUTPUT_TYPE,1,1,OUTPUT_T), res )
 
   table.insert(statements,1,res)
 

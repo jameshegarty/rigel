@@ -18,7 +18,9 @@ if type(metadata.outputs)=="table" then
     assert(false)
   end
 else
-  assert(false)
+  bitspp = metadata.outputBitsPerPixel
+  W = metadata.outputWidth
+  H = metadata.outputHeight
 end
 
 ffi.cdef[[

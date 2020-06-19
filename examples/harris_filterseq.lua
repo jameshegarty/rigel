@@ -43,7 +43,7 @@ ITYPE = types.array2d(types.uint(8),T)
 OTYPE = types.array2d(types.array2d(types.uint(8),2),T/2)
 
 local inpraw = R.input(R.Handshake(ITYPE))
-local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
+local inp = R.apply("reducerate", RM.changeRate(types.uint(8),1,8,1), inpraw )
 local harrisFn = harris.makeHarris(W,H,true)
 local out = R.apply("harrisfilterinst", harrisFn, inp )
 local out = R.apply("filt", RM.liftHandshake(RM.liftDecimate(filterfn)), out)

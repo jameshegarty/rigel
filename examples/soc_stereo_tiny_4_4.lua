@@ -7,8 +7,17 @@ local SDF = require "sdf"
 local Zynq = require "generators.zynq"
 local harness = require "generators.harnessSOC"
 local Uniform = require "uniform"
+local J = require "common"
 
-R.Z3_FIFOS = true
+local AUTOFIFO = string.find(arg[0],"autofifo")
+AUTOFIFO = (AUTOFIFO~=nil)
+
+if AUTOFIFO then
+  R.AUTO_FIFOS = true
+  R.Z3_FIFOS = true
+else
+  R.AUTO_FIFOS = false
+end
 
 local test = string.sub(arg[0],12,15)
 
@@ -41,10 +50,10 @@ end
 
 assert(SW==SearchWindow)
 
-local outfile = "soc_stereo_"..test.."_"..tostring(SearchWindow).."_"..tostring(invV)
+local outfile = "soc_stereo_"..test.."_"..tostring(SearchWindow).."_"..tostring(invV)..J.sel(AUTOFIFO,"_autofifo","")
 io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth.." "..test); io.close()
 io.output("out/"..outfile..".designT.txt"); io.write( invV/SearchWindow ); io.close()
-io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"); io.close()
+io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"..J.sel(AUTOFIFO,"_autofifo","")); io.close()
 
 local cycles = ((W+OffsetX+SearchWindow)*(H+7))*(SearchWindow/invV)
 print("CYCLES",cycles)
@@ -67,9 +76,9 @@ local DisplayOutput = G.SchedulableFunction{ "DisplayOutput", T.Tuple{T.Uint(8),
 
 local FindBestMatch = G.SchedulableFunction{ "FindBestMatch", T.Array2d( T.Array2d( T.Array2d(T.Uint(8),2), SADWidth, SADWidth ), SearchWindow ),
   function(i)
-    local inp = G.FanOut{2}(i)
+    local inp = G.FanOut{2}(i):setName("FindBestInpFanOut")
 
-    local inp0, inp1 = inp[0], inp[1]
+    local inp0, inp1 = (inp[0]):setName("inp0"), (inp[1]):setName("inp1")
     
     local idx = {} -- build indices for the argmin
     for i=1,SearchWindow do
@@ -77,12 +86,12 @@ local FindBestMatch = G.SchedulableFunction{ "FindBestMatch", T.Array2d( T.Array
       idx[i] = SearchWindow+OffsetX-(i-1)
     end
 
-    local indices = G.Const{T.Array2d(T.U(8),SearchWindow),value=idx}(G.ValueToTrigger(inp0))
-    local SADOut = G.Map{G.SAD{T.Uint(16)}}(inp1)
+    local indices = G.Const{T.Array2d(T.U(8),SearchWindow),value=idx}(G.ValueToTrigger(inp0):setName("valueToTrigger")):setName("indices")
+    local SADOut = G.Map{G.SAD{T.Uint(16)}}(inp1):setName("SADOut")
 
-    indices = G.RVFIFO{128}(indices)
-    SADOut = G.RVFIFO{128}(SADOut)
-    local argminInp = G.Zip(G.FanIn(indices,SADOut)) --{u8,u16}[SearchWindow]
+    indices = G.NAUTOFIFO{128}(indices)
+    SADOut = G.NAUTOFIFO{128}(SADOut)
+    local argminInp = G.Zip(G.FanIn(indices,SADOut):setName("fanIn")) --{u8,u16}[SearchWindow]
 
     local res = G.Reduce{G.ArgMin}(argminInp)
 
@@ -97,12 +106,11 @@ local StereoModule = G.SchedulableFunction{ "StereoModule", T.Trigger,
     inp = G.FanOut{2}(inp)
 
     local left = G.Map{G.Index{0}}(inp[0])
-    left = G.FIFO{128,"left"}(left)
-
+    left = G.NAUTOFIFO{128,"left"}(left)
     left = G.StencilOfStencils{{-(SearchWindow+SADWidth+OffsetX)+2,-(OffsetX), -SADWidth+1, 0},{SADWidth,SADWidth}}(left)
 
     local right = G.Map{G.Index{1}}(inp[1])
-    right = G.FIFO{128,"right"}(right)
+    right = G.NAUTOFIFO{128,"right"}(right)
 
     -- override the default rate of this stencil op to 100%:
     -- input rate is actually 25%, but since we are broadcasting after,
@@ -116,11 +124,11 @@ local StereoModule = G.SchedulableFunction{ "StereoModule", T.Trigger,
     merged = G.Map{G.Map{G.ZipToArray}}(merged) -- {A,A}[SADWidth, SADWidth][SearchWindow]
     
     local min = G.Map{FindBestMatch}(merged) -- do the stereo match!
-    min = G.FIFO{128,"FindBestMatch"}(min)
+    min = G.NAUTOFIFO{128,"FindBestMatch"}(min)
     local res = G.Map{DisplayOutput}(min)
     res = G.Crop{{ OffsetX+SearchWindow, 0, SADWidth-1, 0 }}(res)
     
-    return G.AXIWriteBurst{"out/soc_stereo_"..test.."_"..tostring(SearchWindow).."_"..tostring(invV),noc.write}(res)
+    return G.AXIWriteBurst{"out/"..outfile,noc.write}(res)
   end}
 
 local SM = StereoModule:complete({type=T.Trigger,rate=SDF{1,cycles}})

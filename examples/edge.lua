@@ -104,7 +104,7 @@ local inptaps
 
 out = inp
 
-local out = R.apply("incrate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,2)), out )
+local out = R.apply("incrate", RM.changeRate(types.uint(8),1,8,2), out )
 local out = R.apply("bf",blurfn,out)
 local out = R.apply("ef",edgefn,out)
 

@@ -22,4 +22,5 @@ REGISTERSOUT=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __REGISTERSOUT
 
 #VERBOSE=--verbose
 
+echo "* run"
 $BITFILE $CYCLES $MEMSTART $MEMEND $VERBOSE --inputs $INPUTS --registers $REGISTERS --outputs $OUTPUTS --registersOut $REGISTERSOUT

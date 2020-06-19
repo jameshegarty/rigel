@@ -364,7 +364,7 @@ function LKTop(T,W,H,window,bits,nostall,X)
 
   local out = hsfninp
   if T~=4 then
-    out = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.array2d(types.uint(8),2),1,4,T)), hsfninp )
+    out = R.apply("reducerate", RM.changeRate(types.array2d(types.uint(8),2),1,4,T), hsfninp )
   end
 
   local out = R.apply("pad", RM.liftHandshake(RM.padSeq(ITYPE, W, H, T, PadRadiusAligned, PadRadiusAligned, PadRadius+1, PadRadius, {0,0})), out)
@@ -385,7 +385,7 @@ function LKTop(T,W,H,window,bits,nostall,X)
 
   local out = R.apply("crop",C.cropHelperSeq(ITYPE, internalW, internalH, T, PadRadius*2+PadExtra, PadExtra, PadRadius*2+1, 0), out)
   if T~=4 then
-    out = R.apply("incrate", RM.liftHandshake(RM.changeRate(ITYPE,1,T,4)), out )
+    out = R.apply("incrate", RM.changeRate(ITYPE,1,T,4), out )
   end
 
   table.insert(statements,1,out)

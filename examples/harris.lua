@@ -24,7 +24,7 @@ end
 ------------
 
 local inpraw = R.input(R.Handshake(ITYPE))
-local inp = R.apply("reducerate", RM.liftHandshake(RM.changeRate(types.uint(8),1,8,1)), inpraw )
+local inp = R.apply("reducerate", RM.changeRate(types.uint(8),1,8,1), inpraw )
 
 local dxdyfn, dxdyType = harris.makeDXDY(W,H)
 local dxdy = R.apply("dxdy",dxdyfn,inp)
