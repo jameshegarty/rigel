@@ -18,7 +18,7 @@ SRCS_SOC += soc_stereo_tiny_4_4_autofifo.lua soc_stereo_tiny_4_1_autofifo.lua so
 SRCS_SOC += soc_lk_4_8_autofifo.lua soc_lk_4_4_autofifo.lua soc_lk_4_2_autofifo.lua soc_lk_4_1_autofifo.lua
 SRCS_SOC += soc_lk_6_6_autofifo.lua soc_lk_6_3_autofifo.lua soc_lk_6_2_autofifo.lua soc_lk_6_1_autofifo.lua 
 SRCS_SOC += soc_lk_12_48_autofifo.lua soc_lk_12_24_autofifo.lua soc_lk_12_12_autofifo.lua soc_lk_12_6_autofifo.lua soc_lk_12_4_autofifo.lua soc_lk_12_3_autofifo.lua soc_lk_12_2_autofifo.lua soc_lk_12_1_autofifo.lua
-SRCS_SOC += soc_sift_4_1_autofifo.lua soc_sift_4_1_1080p_autofifo.lua soc_sift_4_2_autofifo.lua soc_sift_4_2_1080p_autofifo.lua soc_sift_4_4_autofifo.lua soc_sift_4_4_1080p_autofifo.lua soc_sift_4_8_autofifo.lua soc_sift_4_8_1080p_autofifo.lua soc_sift_1_2_autofifo.lua
+SRCS_SOC += soc_sift_4_4_autofifo.lua soc_sift_4_4_1080p_autofifo.lua soc_sift_1_2_autofifo.lua
 
 SIG20 := soc_lk_12_48.lua soc_lk_12_24.lua soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_4.lua soc_lk_12_3.lua soc_lk_12_2.lua soc_lk_12_1.lua
 SIG20 += soc_lk_6_6.lua soc_lk_6_3.lua soc_lk_6_2.lua soc_lk_6_1.lua 
