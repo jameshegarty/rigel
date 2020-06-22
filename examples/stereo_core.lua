@@ -73,8 +73,8 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
   local LRTYPE = types.array2d(A,2)
   local inp = R.apply("reducerate", RM.changeRate(LRTYPE,1,4,1), hsfninp ) -- A[2][1] -- read 4 bytes from axi bus, but reduce this to 1 L/R pair per cycle
 
-  local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
-  local inp = R.apply("pad", RM.liftHandshake(RM.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, 3, 4, {0,0})), inp)
+  local internalW, internalH = W+OffsetX+SearchWindow+SADWidth, H+SADWidth-1
+  local inp = R.apply("pad", RM.liftHandshake(RM.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow+SADWidth, 0, 3, 4, {0,0})), inp)
   local inp = R.apply("oi0", RM.makeHandshake(C.index(types.array2d(LRTYPE,1),0)), inp) -- A[2] -- just dig into the 1 element array
   local inp_broadcast = R.apply("inp_broadcast", RM.broadcastStream(types.Par(LRTYPE),2), inp) -- fan out
 
@@ -125,7 +125,7 @@ local function makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,TRESH,X)
     res = C.fifo(types.array2d(types.uint(8),1),sz,NOSTALL)(res)
   end
 
-  res = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(types.uint(8), internalW, internalH, 1, OffsetX+SearchWindow,0,SADWidth-1,0))), res)
+  res = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(types.uint(8), internalW, internalH, 1, OffsetX+SearchWindow+SADWidth,0,SADWidth-1,0))), res)
   local res = R.apply("incrate", RM.changeRate(types.uint(8),1,1,8), res )
 
   table.insert(statements,1,res)
