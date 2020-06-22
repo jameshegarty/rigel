@@ -149,8 +149,8 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
     inp = R.apply("reducerate", RM.changeRate(types.array2d(A,2),1,4,1), hsfninp )
   end
 
-  local internalW, internalH = W+OffsetX+SearchWindow, H+SADWidth-1
-  local inp = R.apply("pad", RM.liftHandshake(RM.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow, 0, SADWidth/2-1, SADWidth/2, J.sel(RGBA,{{0,0,0,0},{0,0,0,0}},{0,0}) )), inp)
+  local internalW, internalH = W+OffsetX+SearchWindow+SADWidth, H+SADWidth-1
+  local inp = R.apply("pad", RM.liftHandshake(RM.padSeq(LRTYPE, W, H, 1, OffsetX+SearchWindow+SADWidth, 0, SADWidth/2-1, SADWidth/2, J.sel(RGBA,{{0,0,0,0},{0,0,0,0}},{0,0}) )), inp)
   local inp = R.apply("oi0", RM.makeHandshake(C.index(types.array2d(types.array2d(A,2),1),0)), inp) -- A[2]
   local inp_broadcast = R.apply("inp_broadcast", RM.broadcastStream(types.Par(types.array2d(A,2)),2), inp)
 
@@ -214,7 +214,7 @@ function makeStereo( T, W, H, A, SearchWindow, SADWidth, OffsetX, reducePrecisio
     res = R.apply("display",RM.makeHandshake( displayOutput(types.uint(reducePrecision),errorThreshold,COLOR_OUTPUT) ), res)
   end
 
-  res = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(OUTPUT_TYPE, internalW, internalH, 1, OffsetX+SearchWindow,0,SADWidth-1,0))), res)
+  res = R.apply("CRP", RM.liftHandshake(RM.liftDecimate(RM.cropSeq(OUTPUT_TYPE, internalW, internalH, 1, OffsetX+SearchWindow+SADWidth,0,SADWidth-1,0))), res)
 
   local res = R.apply("incrate", RM.changeRate(OUTPUT_TYPE,1,1,OUTPUT_T), res )
 
