@@ -55,7 +55,7 @@ io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "
 io.output("out/"..outfile..".designT.txt"); io.write( invV/SearchWindow ); io.close()
 io.output("out/"..outfile..".dataset.txt"); io.write("SIG20_zu9"..J.sel(AUTOFIFO,"_autofifo","")); io.close()
 
-local cycles = ((W+OffsetX+SearchWindow)*(H+7))*(SearchWindow/invV)
+local cycles = ((W+OffsetX+SearchWindow+SADWidth)*(H+7))*(SearchWindow/invV)
 print("CYCLES",cycles)
 
 local regs = SOC.axiRegs({},SDF{1,cycles}):instantiate("regs")
@@ -101,7 +101,7 @@ local FindBestMatch = G.SchedulableFunction{ "FindBestMatch", T.Array2d( T.Array
 local StereoModule = G.SchedulableFunction{ "StereoModule", T.Trigger,
   function(i)
     local readStream = G.AXIReadBurst{ infile, {W,H}, T.Tuple{T.Uint(8),T.Uint(8)}, 4, noc.read }(i)
-    local inp = G.Pad{{OffsetX+SearchWindow,0,3,4}}(readStream)
+    local inp = G.Pad{{OffsetX+SearchWindow+SADWidth,0,3,4}}(readStream)
 
     inp = G.FanOut{2}(inp)
 
@@ -126,7 +126,7 @@ local StereoModule = G.SchedulableFunction{ "StereoModule", T.Trigger,
     local min = G.Map{FindBestMatch}(merged) -- do the stereo match!
     min = G.NAUTOFIFO{128,"FindBestMatch"}(min)
     local res = G.Map{DisplayOutput}(min)
-    res = G.Crop{{ OffsetX+SearchWindow, 0, SADWidth-1, 0 }}(res)
+    res = G.Crop{{ OffsetX+SearchWindow+SADWidth, 0, SADWidth-1, 0 }}(res)
     
     return G.AXIWriteBurst{"out/"..outfile,noc.write}(res)
   end}
