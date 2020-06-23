@@ -347,9 +347,6 @@ local LK = G.SchedulableFunction{"LK",types.Array2d(T.Tuple{types.uint(8),types.
       
 --      print("FDXINP",fdx.type,fdx.rate,fdx.type:deSchedule():verilogBits()/2)
 --      fdx = G.FwritePGM{"out/"..outfile..".fdxi.pgm"}(fdx)
-if VORIG<CONVWIDTH then
-      fdx = G.FIFO{1}(fdx)
-end
       fdx = G.Map{Dx}(fdx)
       
 --      fdx = G.Map{G.AddMSBs{6}}(fdx)
@@ -365,9 +362,6 @@ end
       local fdx_stencilFO = G.FanOut{2}(fdx_stencil)
       
       local fdy = G.Map{G.Slice{{1,1,0,2}}}(lb0_fd_1)
-if VORIG<CONVWIDTH then
-      fdy = G.FIFO{1}(fdy)
-end
 
       local fdy = G.Map{Dy}(fdy)
       
