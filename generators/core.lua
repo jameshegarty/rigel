@@ -1377,10 +1377,15 @@ T.FloatRec32 )
 -- size: size of each tile (NOT the number of tiles)
 generators.Tile = R.FunctionGenerator("core.Tile",{"type","rate","size"},{},
 function(args)
-  if args.V~=args.insize then
-    print("Warning: NYI - Tile on non-fully parallel array: ",args.type)
+  if args.V==args.size then
+    -- user asked us to partition into exactly the parseq size
+    return C.partition( args.T, args.insize, args.V )
+  else
+    if args.V~=args.insize then
+      print("Warning: NYI - Tile on non-fully parallel array: ",args.type)
+    end
+    return C.Tile( args.T, args.insize[1], args.insize[2], args.size[1], args.size[2] )
   end
-  return C.Tile( args.T, args.insize[1], args.insize[2], args.size[1], args.size[2] )
 end,
 T.Array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V") ) )
 

@@ -5741,11 +5741,9 @@ local function calculateDelaysZ3( output, moduleName )
             assert( fn.outputType:streamCount()==1 )
             res = {arg[1][1]}
           end
-        elseif fn.inputType:streamCount()==1 and fn.outputType:streamCount()>1 then
-          -- always consider these to be fan outs
-          res = J.broadcast( name, n.type:streamCount() )
-        elseif fn.inputType:streamCount()>1 and fn.outputType:streamCount()==1 then
-          -- always consider these to be fan ins
+        elseif fn.inputType:streamCount()~=fn.outputType:streamCount() then
+          -- NOTE: we require there to be a FIFO between paths whenever stream count changes (this is BOTH when there is a FanOut OR a FanIn)
+          
           assert(#arg==1)
           assert(#arg[1]==types.streamCount(fn.inputType) )
 

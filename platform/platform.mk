@@ -19,7 +19,7 @@ $(BUILDDIR)/%.$(1).regcorrect.txt : $(BUILDDIR)/%.$(1).bmp
 	date
 
 $(BUILDDIR)/%.$(1).cyclescorrect.txt : $(BUILDDIR)/%.$(1).bmp
-	$(LUA) ../misc/approxnumdiff.lua $(BUILDDIR)/$$*.$(1).cycles.txt $(GOLDSTRPRE)$$*.$(1).cycles.txt $$@ 0.05 smallerIsBetter
+	$(LUA) ../misc/approxnumdiff.lua $(BUILDDIR)/$$*.$(1).cycles.txt $(GOLDSTRPRE)$$*.$(1).cycles.txt $$@ 0.06 smallerIsBetter
 
 $(BUILDDIR)/%.$(1).correct.txt : $(BUILDDIR)/%.$(1).bmp $(BUILDDIR)/%.$(1).cyclescorrect.txt $(BUILDDIR)/%.$(1).regcorrect.txt 
 	diff $(BUILDDIR)/$$*.$(1).bmp $(GOLDSTRPRE)$$*$(GOLDSTRPOST) > $(BUILDDIR)/$$*.$(1).diff

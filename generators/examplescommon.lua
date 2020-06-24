@@ -211,6 +211,26 @@ C.flatten = memoize(function( innerT, innerSize, innerV, outerSize, X )
   return res
 end)
 
+-- partition nested arrays: take A[V;Size} to A[V]{size}
+-- outer array must be fully sequential
+C.partition = memoize(function( A, size, V )
+  assert( types.isType(A ) )
+  assert( R.isSize(size))
+  assert( R.isSize(V))
+  assert( X==nil )
+  
+  local G = require "generators.core"
+    
+  local res = G.Function{"Partition_"..tostring(A).."_w"..tostring(size[1]).."_h"..tostring(size[2]).."_VW"..tostring(V[1]).."_VH"..tostring(V[2]), types.RV(types.Array2d(A,size,V)),SDF{1,1},function(inp) return inp end}
+
+  assert(R.isPlainFunction(res))
+  local newType = types.RV( types.Array2d(types.Array2d( A, V ), size[1]/V[1],size[2]/V[2],0,0) )
+  J.err(res.outputType:lower()==newType:lower(), res.outputType,newType,res.outputType:lower(),newType:lower())
+  res.outputType = newType
+
+  return res
+end)
+
 -- converts {A,A,A...} to A[W,H] (input should be tuple of W*H A's)
 C.tupleToArray = memoize(function(A,W,H,X)
   err(types.isType(A),"tupleToArray: A should be type")
