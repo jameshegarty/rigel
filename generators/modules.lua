@@ -7043,4 +7043,146 @@ endmodule
   return res
 end)
 
+modules.FanOutRoundRobin = J.memoize(function( ty, N )
+  assert( types.isType(ty) )
+  assert( ty:isSchedule() )
+  assert( type(N)=="number" )
+  err( N>1, "fan out round robin must have at least 2 streams" )
+
+  local res = rigel.newFunction{ name=J.sanitize("FanOutRoundRobin_"..tostring(ty).."_N"..tostring(N)), inputType = types.RV(ty), outputType = types.Array2d(types.RV(ty),N), delay=0, stateful=true, sdfInput=SDF{1,1}, sdfOutput=SDF(J.broadcast({1,N},N)) }
+
+  if terralib~=nil then res.terraModule = MT.FanOutRoundRobin( res, ty, N ) end
+  
+  function res.makeSystolic()
+    local C = require "generators.examplescommon"
+    local s = C.automaticSystolicStub(res)
+    
+    local verilog = {res:vHeader()}
+
+    table.insert(verilog,[[  reg [7:0] phase;
+  reg [31:0] cnt;
+
+//  wire []]..((N*ty:verilogBits())-1)..[[:0] process_output_data;
+//  wire []]..(N-1)..[[:0] process_output_valid;
+//  assign process_output = {process_output_valid,process_output_data};
+]])
+
+    local readyDS = res:vOutputReady().."[0]"
+    local processOutputList = {}
+    for i=0,N-1 do
+      table.insert(processOutputList,res:vInputData())
+      table.insert(processOutputList,"("..res:vInputValid().." && phase==8'd"..i..")")
+      if i>0 then
+        readyDS = "(phase==8'd"..i..")?("..res:vOutputReady().."["..i.."]):("..readyDS..")"
+      end
+    end
+    
+table.insert(verilog,[[    
+  assign ]]..res:vInputReady()..[[ = ]]..readyDS..[[;
+  assign ]]..res:vOutput()..[[ = {]]..table.concat(J.reverse(processOutputList),",")..[[};
+  always @(posedge CLK) begin
+    if (reset) begin
+      phase <= 8'd0;
+      cnt <= 32'd0;
+    end else begin
+      if (]]..res:vInputValid()..[[ && ]]..res:vInputReady()..[[ ) begin
+        cnt <= cnt + 32'd1;
+        if ( phase == 8'd]]..(N-1)..[[ ) begin
+          phase <= 8'd0;
+        end else begin
+          phase <= phase + 8'd1;
+        end
+        $display("FanOut Advance to Phase %d cnt %d",phase, cnt);
+      end
+        
+//      $display("FANOUT ph %d vi %d rds %b",phase,]]..res:vInputValid()..[[,]]..res:vOutputReady()..[[);
+    end
+  end
+]])
+    
+    table.insert(verilog,[[
+endmodule
+
+]])
+
+    s:verilog(table.concat(verilog))
+    return s
+  end
+
+  return res
+end)
+
+modules.FanInRoundRobin = J.memoize(function( ty, N )
+  assert( types.isType(ty) )
+  assert( ty:isSchedule() )
+  assert( type(N)=="number" )
+  err( N>1, "fan in round robin must have at least 2 streams" )
+
+  local res = rigel.newFunction{ name=J.sanitize("FanInRoundRobin_"..tostring(ty).."_N"..tostring(N)), inputType = types.Array2d(types.RV(ty),N), outputType = types.RV(ty), delay=0, stateful=true, sdfInput=SDF(J.broadcast({1,N},N)), sdfOutput=SDF{1,1} }
+
+  if terralib~=nil then res.terraModule = MT.FanInRoundRobin( res, ty, N ) end
+  
+  function res.makeSystolic()
+    local C = require "generators.examplescommon"
+    local s = C.automaticSystolicStub(res)
+    
+    local verilog = {res:vHeader()}
+
+    table.insert(verilog,[[  reg [7:0] phase;
+  reg [31:0] cnt;
+//  wire []]..((N*ty:verilogBits())-1)..[[:0] process_input_data;
+//  assign process_input_data = process_input[]]..((N*ty:verilogBits())-1)..[[:0];
+//  wire []]..(N-1)..[[:0] process_input_valid;
+//  assign process_input_valid = process_input[]]..((N*ty:verilogBits())+N-1)..[[:]]..((N*ty:verilogBits()))..[[];
+]])
+
+    local outputValid = "process_input["..(ty:verilogBits()).."]"
+    local outputData = "process_input["..(ty:verilogBits()-1)..":0]"
+
+    for i=0,N-1 do
+      table.insert(verilog,"  assign "..res:vInputReady().."["..i.."] = "..res:vOutputReady().." && (phase==8'd"..i..");\n")
+      
+      if i>0 then
+        outputValid = "(phase==8'd"..i..")?(process_input["..((i+1)*(ty:verilogBits()+1)-1).."]):("..outputValid..")"
+        outputData = "(phase==8'd"..i..")?(process_input["..((ty:verilogBits()+1)*(i+1)-2)..":"..((ty:verilogBits()+1)*i).."]):("..outputData..")"
+      end
+    end
+    
+table.insert(verilog,[[    
+  assign ]]..res:vOutputValid()..[[ = ]]..outputValid..[[;
+  assign ]]..res:vOutputData()..[[ = ]]..outputData..[[;
+
+  always @(posedge CLK) begin
+    if (reset) begin
+      phase <= 8'd0;
+      cnt <= 32'd0;
+    end else begin
+      if (]]..res:vOutputReady()..[[ && ]]..res:vOutputValid()..[[ ) begin
+        if ( phase == 8'd]]..(N-1)..[[ ) begin
+          phase <= 8'd0;
+        end else begin
+          phase <= phase + 8'd1;
+        end
+        cnt <= cnt + 32'd1;
+        $display("FanIn advance to Phase %d cnt %d",phase,cnt);
+      end 
+
+//      $display("FANIN ph %d ri %b vo %d ro %d", phase, ]]..res:vInputReady()..","..res:vOutputValid()..","..res:vOutputReady()..[[);
+
+    end
+  end
+]])
+    
+    table.insert(verilog,[[
+endmodule
+
+]])
+
+    s:verilog(table.concat(verilog))
+    return s
+  end
+
+  return res
+end)
+
 return modules

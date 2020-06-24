@@ -68,6 +68,8 @@ C.print = memoize(function( A, str, showIfInvalid, X )
     elseif A:isFloat() then
       -- $bitstoreal could maybe be used?
       return {A}, "%0d", {symb}
+    elseif A:isFloatRec() then
+      return {A}, "NYIFLOATREC %0d", {symb}
     elseif A:isArray() then
       local resTypes={}
       local resStr="["
@@ -3957,6 +3959,36 @@ endmodule
   end
   
   return res
+end)
+
+C.BoostRate = J.memoize(function(fn, factor)
+  assert(R.isPlainFunction(fn))
+  assert( fn.inputType:isRV() )
+  assert(type(factor)=="number")
+  
+  local G = require "generators.core"
+
+  return G.Function{"BoostRate_"..fn.name.."_"..tostring(factor), fn.inputType, SDF{1,1},
+    function(inp)
+
+      local FO = RM.FanOutRoundRobin( fn.inputType:deInterface(), factor )(inp)
+
+      local outList = {}
+      for i=1,factor do
+        local a = G.FIFO{2}(FO[(i-1)])
+--        a = G.Index{0}(a)
+--        a= G.Print{"BOOSTIN"..i,false}(a)
+        local b = fn(a)
+        b = G.FIFO{2}(b)
+--        b = G.Print{"BOOSTOUT"..i,false}(b)
+        table.insert( outList, b )
+      end
+
+      local oc = R.concatArray2d("outconcat",outList,factor)
+      local res = RM.FanInRoundRobin( fn.outputType:deInterface(), factor)(oc)
+      res = G.FIFO{128}(res)
+      return res
+    end}
 end)
 
 return C

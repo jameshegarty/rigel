@@ -1326,14 +1326,14 @@ function darkroomModuleFunctions:vInput( fnname )
 end
 
 function darkroomFunctionFunctions:vInputData()
-  assert(types.isHandshakeAny(self.inputType))
+  assert(self.inputType:isRV())
   assert( self.inputType~=types.HandshakeTrigger )
   return "process_input["..(types.extractData(self.inputType):verilogBits()-1)..":0]"
 end
 
 -- verilog value of input valid (if handshaked)
 function darkroomFunctionFunctions:vInputValid()
-  assert(types.isHandshakeAny(self.inputType))
+  assert(self.inputType:isRV())
   return "process_input["..(types.lower(self.inputType):verilogBits()-1)..":"..types.extractData(self.inputType):verilogBits().."]"
 end
 
@@ -1359,14 +1359,14 @@ end
 
 -- verilog value of output data (if handshaked)
 function darkroomFunctionFunctions:vOutputData()
-  assert(types.isHandshakeAny(self.outputType))
+  assert(self.outputType:isRV())
   err( self.outputType~=types.HandshakeTrigger, "vOutputData(): attempting to get data channel of a HandshakeTrigger" )
   return "process_output["..(types.extractData(self.outputType):verilogBits()-1)..":0]"
 end
 
 -- verilog value of output valid (if handshaked)
 function darkroomFunctionFunctions:vOutputValid()
-  assert(types.isHandshakeAny(self.outputType))
+  assert(self.outputType:isRV())
   return "process_output["..(types.lower(self.outputType):verilogBits()-1)..":"..types.extractData(self.outputType):verilogBits().."]"
 end
 

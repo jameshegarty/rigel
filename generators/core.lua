@@ -1395,6 +1395,21 @@ function(args)
   return C.RateMonitor( fn, args.rate, args.string )
 end,nil,false)
 
+generators.BoostRate = R.FunctionGenerator("core.BoostRate",{"type","rate","rigelFunction"},{},
+function(args)
+  local fn = args.rigelFunction:specializeToType( args.type, args.rate )
+
+  local N = Uniform(args.rate[1][1]):toNumber()*Uniform(fn.sdfInput[1][2]):toNumber()
+  local D = Uniform(args.rate[1][2]):toNumber()*Uniform(fn.sdfInput[1][1]):toNumber()
+  local factor = math.ceil( N/D )
+  print("Boost Rate",args.rate, fn.sdfInput, factor )
+  if factor<=1 then
+    return fn
+  else
+    return C.BoostRate( fn, factor )
+  end
+end,nil,false)
+
 function generators.export(t)
   if t==nil then t=_G end
   for k,v in pairs(generators) do rawset(t,k,v) end
