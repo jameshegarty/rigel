@@ -663,4 +663,17 @@ function CT.CMPF( res, exp, sig, op )
   return MT.new( CMPF, res )
 end
 
+function CT.flatten( res )
+  local struct Flatten {ready:bool}
+
+  terra Flatten:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = @([&rigel.lower(res.outputType):toTerraType()](inp))
+  end
+
+  terra Flatten:calculateReady( readyDownstream: bool )
+    self.ready = readyDownstream
+  end
+  return MT.new( Flatten, res )
+end
+
 return CT

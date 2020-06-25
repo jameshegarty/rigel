@@ -1143,9 +1143,7 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, allo
   local G = require "generators.core"
   local C = require "generators.examplescommon"
   
-  if fn.inputType:isRV() or fn.outputType:isRV() then
-    -- special case
-    err( Vw:toNumber()==1 and Vh:toNumber()==1,"mapParSeq: if RV, vector width must be 1! but was Vw:",Vw_orig," Vh:",Vh_orig," fn:",fn.name)
+  if (fn.inputType:isRV() or fn.outputType:isRV()) and Vw:toNumber()==1 and Vh:toNumber()==1 then
 
     assert( fn.inputType:deInterface():isData() )
     local ty = fn.inputType:extractData()
@@ -1165,6 +1163,34 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, allo
       -- fix: technically, we want this to return a parseq, I guess? But this also works...
       res.outputType = types.RV( types.Seq(fn.outputType.over,W_orig,H_orig) )
     end
+  elseif fn.inputType:isRV() or fn.outputType:isRV() then
+
+    assert( fn.inputType:deInterface():isData() )
+    local ty = fn.inputType:extractData()
+
+    local fnMapped
+    fnMapped = C.MapRV( fn, Vw_orig, Vh_orig, allowStateful )
+
+    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig), types.RV(types.Array2d(ty,Vw_orig,Vh_orig)), SDF{1,1},
+                     function(inp) return fnMapped(inp) end}
+
+    assert( rigel.isPlainFunction(res) )
+        
+    -- hackity hack
+    if fn.inputType~=types.Interface() then
+      err( res.inputType:extractData():isArray(), "mapParSeq: internal error, function input type should be an array? but was: ",res.inputType)
+      local newType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType:extractData(),W_orig,H_orig))
+      J.err( newType:lower()== res.inputType:lower(), "type hack error ",newType,res.inputType )
+      res.inputType = newType
+    end
+    
+    if fn.outputType~=types.Interface() then
+      -- fix: technically, we want this to return a parseq, I guess? But this also works...
+      local newType = fn.outputType:replaceVar("over",types.ParSeq(res.outputType:extractData(),W_orig,H_orig))
+      J.err(newType:lower()== res.outputType:lower(), "type hack error ",newType,res.outputType)
+      res.outputType = newType
+    end
+
   else
     err( fn.inputType:isrv(),"mapParSeq: input must be rv, but is: ",fn.inputType )
     err( fn.outputType==types.Interface() or fn.outputType:isrv(),"mapParSeq: output must be rv, but is: ",fn.outputType )
@@ -3035,6 +3061,8 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
 
   local maxRate = math.max(math.max(inputRate,outputRate),1)
   local minRate = math.max(math.min(inputRate,outputRate),1)
+
+  assert(outputRate<1000)
   
   err( inputRate==0 or maxRate % inputRate == 0, "maxRate ("..tostring(maxRate)..") % inputRate ("..tostring(inputRate)..") ~= 0")
   err( outputRate==0 or maxRate % outputRate == 0, "maxRate ("..tostring(maxRate)..") % outputRate ("..tostring(outputRate)..") ~=0")
@@ -5454,7 +5482,14 @@ local function insertFIFOs( out, delayTable, moduleName, X )
                 end
                 stout[st] = C.fifo( ity:deInterface(), d, nil, nil, nil, nil, "DELAY_"..moduleName.."_"..n.name )(n.inputs[i][st-1])
               end
-              ntmp.inputs[i] = rigel.concat(stout)
+
+              if n.inputs[i].type:isTuple() then
+                ntmp.inputs[i] = rigel.concat(stout)
+              elseif n.inputs[i].type:isArray() then
+                ntmp.inputs[i] = rigel.concatArray2d("Delayfifo",stout,n.inputs[i].W,n.inputs[i].H)
+              else
+                assert(false)
+              end
               J.err( n.inputs[i].type == ntmp.inputs[i].type, "BADTYPE",n.inputs[i].type," ",ntmp.inputs[i].type, n.inputs[i].type:streamCount() )
             end
 
@@ -5643,7 +5678,7 @@ local function calculateDelaysZ3( output, moduleName )
           --res = inputs[1] + fn.delay + extra
           --assert(false)
           table.insert( statements, "(assert (>= "..name.." (+ "..inputs[1].." "..(fn.delay+extra)..")))" )
-          local bts = n.inputs[1].type:extractData():verilogBits()
+          local bts = Uniform(n.inputs[1].type:deInterface():verilogBits()):toNumber()
           if bts>0 then table.insert( ofTerms, "(* (- "..name.." "..inputs[1]..") "..bts..")" ) end
           res = name
         end
@@ -7092,7 +7127,7 @@ table.insert(verilog,[[
         end else begin
           phase <= phase + 8'd1;
         end
-        $display("FanOut Advance to Phase %d cnt %d",phase, cnt);
+//        $display("FanOut Advance to Phase %d cnt %d",phase, cnt);
       end
         
 //      $display("FANOUT ph %d vi %d rds %b",phase,]]..res:vInputValid()..[[,]]..res:vOutputReady()..[[);
@@ -7164,7 +7199,7 @@ table.insert(verilog,[[
           phase <= phase + 8'd1;
         end
         cnt <= cnt + 32'd1;
-        $display("FanIn advance to Phase %d cnt %d",phase,cnt);
+//        $display("FanIn advance to Phase %d cnt %d",phase,cnt);
       end 
 
 //      $display("FANIN ph %d ri %b vo %d ro %d", phase, ]]..res:vInputReady()..","..res:vOutputValid()..","..res:vOutputReady()..[[);

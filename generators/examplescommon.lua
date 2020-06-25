@@ -193,22 +193,44 @@ end)
 
 -- flatten nested arrays: take A[V;N}{M} to A[V;N*M}
 -- outer array must be fully sequential
-C.flatten = memoize(function( innerT, innerSize, innerV, outerSize, X )
+C.flatten = memoize(function( innerT, innerSize, innerV, outerSize, outerV, X )
   assert( types.isType(innerT ) )
   assert( R.isSize(innerSize))
   assert( R.isSize(innerV))
   assert( R.isSize(outerSize))
+  assert( R.isSize(outerV))
   assert( X==nil )
   
   local G = require "generators.core"
     
-  local res = G.Function{"Flatten_"..tostring(innerT).."_w"..tostring(innerSize[1]).."_h"..tostring(innerSize[2]).."_VW"..tostring(innerV[1]).."_VH"..tostring(innerV[2]).."_W"..tostring(outerSize[1]).."_H"..tostring(outerSize[2]), types.RV(types.Array2d( types.Array2d(innerT,innerSize,innerV),outerSize,0,0)),SDF{1,1},function(inp) return inp end}
+  --local res = G.Function{"Flatten_"..tostring(innerT).."_w"..tostring(innerSize[1]).."_h"..tostring(innerSize[2]).."_VW"..tostring(innerV[1]).."_VH"..tostring(innerV[2]).."_W"..tostring(outerSize[1]).."_H"..tostring(outerSize[2]), types.RV(types.Array2d( types.Array2d(innerT,innerSize,innerV),outerSize,outerV)),SDF{1,1},function(inp) return inp end}
 
-  assert(R.isPlainFunction(res))
   local W,H = outerSize[1]*innerSize[1], outerSize[2]*innerSize[2]
-  local newType = types.RV(types.Array2d( innerT, W, H, innerV ))
-  assert(res.outputType:lower()==newType:lower())
-  res.outputType = newType
+  local Vw, Vh = math.max(1,innerV[1])*math.max(1,outerV[1]), math.max(1,innerV[2])*math.max(1,outerV[2])
+  if innerV[1]==0 and outerV[1]==0 then Vw=0 end
+  if innerV[2]==0 and outerV[2]==0 then Vh=0 end
+  local newType = types.RV(types.Array2d( innerT, W, H, Vw, Vh ))
+
+  local res = R.newFunction{name="Flatten_"..tostring(innerT).."_w"..tostring(innerSize[1]).."_h"..tostring(innerSize[2]).."_VW"..tostring(innerV[1]).."_VH"..tostring(innerV[2]).."_W"..tostring(outerSize[1]).."_H"..tostring(outerSize[2]), inputType=types.RV(types.Array2d( types.Array2d(innerT,innerSize,innerV),outerSize,outerV)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, outputType = newType, delay=0, stateful=false}
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = {res:vHeader()}
+    table.insert(verilog,[[
+  assign ]]..res:vOutput()..[[ = ]]..res:vInput()..[[;
+  assign ]]..res:vInputReady()..[[ = ]]..res:vOutputReady()..[[;
+endmodule
+]])
+    s:verilog( table.concat(verilog) )
+    return s
+
+  end
+
+  function res.makeTerra() return CT.flatten( res ) end
+--               assert(R.isPlainFunction(res))
+  --J.err(res.outputType:lower()==newType:lower(),"Flatten internal error ",res.outputType,newType)
+--  res.outputType = newType
 
   return res
 end)
@@ -2288,12 +2310,12 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     
     local W = (inputType:arrayLength())[1]
     local H = (inputType:arrayLength())[2]
-    err(idxLow<W,"slice: idxLow>=W, idxLow="..tostring(idxLow)..",W="..tostring(W)," inputType:",inputType)
-    err(idxHigh<W, "slice: idxHigh>=W")
+    err(Uniform(idxLow):lt(Uniform(W)):assertAlwaysTrue(),"slice: idxLow>=W, idxLow="..tostring(idxLow)..",W="..tostring(W)," inputType:",inputType)
+    err(Uniform(idxHigh):lt(Uniform(W)):assertAlwaysTrue(), "slice: idxHigh>=W")
     err(type(idyLow)=="number", "slice:idyLow must be number")
     err(type(idyHigh)=="number","slice:idyHigh must be number")
-    err(idyLow<H, "slice: idyLow must be < array H")
-    err(idyHigh<H, "slice: idyHigh must be < array H, but input type is: ",inputType," idyHigh:",idyHigh)
+    err( Uniform(idyLow):lt(Uniform(H)):assertAlwaysTrue(), "slice: idyLow must be < array H")
+    err( Uniform(idyHigh):lt(Uniform(H)):assertAlwaysTrue(), "slice: idyHigh must be < array H, but input type is: ",inputType," idyHigh:",idyHigh)
     assert(idxLow<=idxHigh)
     assert(idyLow<=idyHigh)
     local OT
@@ -2587,9 +2609,10 @@ function C.linearPipeline( t, modulename, rate, instances, X )
   end
 
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
+  err( #t>0, "C.linearPipeline: list of functions must contain at least one function?")
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
-  err( R.isPlainFunction(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: ",t[1] )
+  err( R.isPlainFunction(t[1]),"C.linearPipeline '"..modulename.."': first function in pipe must have known type (ie must not be a generator). fn: ",tostring(t[1]) )
 
   if rate==nil then
     rate = t[1].sdfInput
@@ -3986,7 +4009,40 @@ C.BoostRate = J.memoize(function(fn, factor)
 
       local oc = R.concatArray2d("outconcat",outList,factor)
       local res = RM.FanInRoundRobin( fn.outputType:deInterface(), factor)(oc)
-      res = G.FIFO{128}(res)
+--      res = G.FIFO{128}(res)
+      return res
+    end}
+end)
+
+-- map a RV module
+C.MapRV = J.memoize(function( fn, W, H )
+  assert(R.isPlainFunction(fn))
+  assert( fn.inputType:isRV() )
+  assert( fn.outputType:isRV() )
+  assert( type(W)=="number" or Uniform.isUniform(W) )
+  assert( type(H)=="number" or Uniform.isUniform(H) )
+  
+  local G = require "generators.core"
+
+  return G.Function{"MapRV_"..fn.name.."_"..tostring(W).."_"..tostring(H),
+                    types.RV( types.Array2d(fn.inputType:deInterface(),W,H)), SDF{1,1},
+    function(inp)
+
+      local FO = G.FanOut{W*H}(inp)
+
+      local outList = {}
+      for i=1,Uniform(W):toNumber()*Uniform(H):toNumber() do
+        local a = G.FIFO{128}(FO[i-1][i-1])
+        local b = fn(a)
+        b = G.FIFO{128}(b)
+        table.insert( outList, b )
+      end
+
+      --local oc = R.concatArray2d("outconcat",outList,factor)
+      --local res = RM.FanInRoundRobin( fn.outputType:deInterface(), factor)(oc)
+      --res = G.FIFO{128}(res)
+      local res = G.FanIn(unpack(outList))
+      res = G.TupleToArray(res)
       return res
     end}
 end)

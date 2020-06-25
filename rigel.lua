@@ -527,10 +527,12 @@ return fn
           table.insert( resStack, C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
                                         fnType.V[1]*fnType.V[2],
                                         targetType.size[1], targetType.size[2] ) )
+          assert( darkroom.isPlainFunction(resStack[#resStack]) )
         elseif fnType:columnMajor() or targetType:columnMajor() then
           --err( false,"NYI - convertInterface to a column major array converting:",targetType," to:",fnType," for:",fn,loc)
           err( targetType.V[2]==fnType.V[2],"NYI - column major change rate with different array height. Converting ",targetType," to ",fnType)
           table.insert( resStack, RM.changeRate( targetType:arrayOver(), fnType.V[2], targetType.V[1], fnType.V[1], true, fnType.size[1], fnType.size[2] ) )
+          assert( darkroom.isPlainFunction(resStack[#resStack]) )
         else
           J.err("converting between strange vector sizes! ",targetType," to ",fnType)
         end
@@ -538,12 +540,14 @@ return fn
         if targetType:arrayOver()~=fnType:arrayOver() then
           local FT, TT = fnType.over, resStack[#resStack].outputType:deInterface():arrayOver()
           table.insert( resStack, RM.mapSeq(reshape( FT, TT ), fnType.size[1], fnType.size[2]) )
+          assert( darkroom.isPlainFunction(resStack[#resStack]) )
         end
 
         if #resStack==1 then
           res = resStack[1]
         else
-          res = C.linearPipeline(resStack,"ConvertInterface_Ser_stack")
+          J.err( #resStack>0,"bad fn stack? converting ",fnType," to ",targetType )
+          res = C.linearPipeline(resStack,"ConvertInterface_Ser_stack_"..tostring(fnType).."_"..tostring(targetType))
         end
       elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
         -- recurse

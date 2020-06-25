@@ -86,7 +86,7 @@ local TILE_W = 4
 local TILE_H = 4
 
 local invV = (TILES_X*TILES_Y*TILE_W*TILE_H)/V
-local cycles = W*H*invV
+local cycles = (W+15)*(H+15)*invV
 print("CYCLES",cycles,"invV",invV)
 
 local outfile = "soc_sift_"..tostring(TILES).."_"..tostring(V)..J.sel(size1080p,"_1080p","")..J.sel(AUTOFIFO,"_autofifo","")
@@ -241,14 +241,14 @@ function(i)
   return magsq
 end}
   
-local SiftMag = G.Function{"siftMagInp",types.RV(types.tuple{T.FloatRec32,T.FloatRec32,T.FloatRec32}),
+local SiftMag = G.SchedulableFunction{"siftMagInp",types.tuple{T.FloatRec32,T.FloatRec32,T.FloatRec32},
 function(inp)
   local i = G.FanOut{2}(inp)
   local gauss_weight = i[1][2]
   gauss_weight = G.NAUTOFIFO{128}(gauss_weight)
   
   local magsq = G.Fmap{SiftMagPre}(G.Slice{{0,1}}(i[0]))
-  local mag = G.SqrtF( magsq )
+  local mag = G.BoostRate{G.SqrtF}( magsq )
   mag = G.NAUTOFIFO{1}(mag)
 
   local out = G.MulF(G.FanIn(mag,gauss_weight))
@@ -373,7 +373,7 @@ function(i)
   local desc_sum = G.Reduce{ RS.modules.sumPow2{inType=types.int(32),outType=types.int(32)} }(desc1)
 
   desc_sum = G.ItoFR(desc_sum)
-  desc_sum = G.SqrtF( desc_sum )
+  desc_sum = G.BoostRate{G.SqrtF}( desc_sum )
   desc_sum = G.Broadcast{{8,1}}(desc_sum)
   desc_sum = G.Broadcast{{TILES_X,TILES_Y}}(desc_sum)
 
@@ -383,12 +383,12 @@ function(i)
 
   desc = G.Zip(desc)
   desc = G.Map{G.Zip}(desc)
-  desc = G.Map{G.Map{G.DivF}}(desc)
+  desc = G.Map{G.Map{G.BoostRate{G.DivF}}}(desc)
   desc = G.Flatten(desc)
   desc = G.ReshapeArray{{TILES_X*TILES_Y*8,1}}(desc)
 
   -- HACK:FIX: work around bug in interface conversion
-  desc = G.Deser{TILES_X*TILES_Y*8}(desc)
+--  desc = G.Deser{TILES_X*TILES_Y*8}(desc)
   
   local desc_cc = R.concat{desc,posX,posY}
 
@@ -476,7 +476,7 @@ function(i)
   local readStream = G.AXIReadBurst{ J.sel(size1080p,"boxanim0000.raw","boxanim_256.raw"), {W,H}, T.u(8), 8, noc.read }(i)
   local offset = SiftTop(readStream)
   print("SIFTOUT",offset.type)
-  return G.AXIWriteBurst{"out/"..outfile,noc.write}(offset)
+  return G.AXIWriteBurst{"out/"..outfile,noc.write,R.Unoptimized}(offset)
 end}
 
 harness({regs.start, TopModule, regs.done},nil,{regs})

@@ -683,8 +683,8 @@ T.Array2d( T.Trigger, P.SizeValue("size"), P.SizeValue("V") ) )
 -- this takes an Seq of arrays, and flattens it into a parseq
 generators.Flatten = R.FunctionGenerator("core.Flatten",{"type","rate"},{},
 function(args)
-  J.err( args.outerV:eq(0,0), "Flatten NYI - outer array must be fully sequential, but outer V was:",args.outerV," and input type was: ", args.type)
-  return C.flatten( args.innerT, args.innerSize, args.innerV, args.outerSize )
+--  J.err( args.outerV:eq(0,0), "Flatten NYI - outer array must be fully sequential, but outer V was:",args.outerV," and input type was: ", args.type)
+  return C.flatten( args.innerT, args.innerSize, args.innerV, args.outerSize, args.outerV )
 end,
 T.Array2d( T.Array2d(P.DataType("innerT"),P.SizeValue("innerSize"),P.SizeValue("innerV")), P.SizeValue("outerSize"), P.SizeValue("outerV") )  )
 
@@ -1068,7 +1068,7 @@ types.array2d( P.ScheduleType("T"), P.SizeValue("size"), P.SizeValue("V") ) )
 generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size","type"},{},
 function(args)
   J.err( args.size[1]*args.size[2]==args.insize[1]*args.insize[2], "ReshapeArray: total number of items must not change. Input size: ",args.insize," requested reshape: ",args.size )
-
+  
   if args.V:eq(0,0) then
     local tmp = C.identity( args.type:deInterface(), "ReshapeArray_"..tostring(args.type:deInterface()) )
 
@@ -1081,11 +1081,20 @@ function(args)
     tmp.outputType = OT
     
     return tmp
+  elseif args.size[1]%args.V[1]==0 and args.size[2]%args.V[2]==0 then
+    -- trivial reshape of parseq
+    local tmp = C.identity( args.type:deInterface(), "ReshapeArray_"..tostring(args.type:deInterface()) )
+
+    local OT = types.rv( types.Array2d(args.T, args.size, args.V) )
+    assert( tmp.outputType:lower()==OT:lower() )
+    tmp.outputType = OT
+
+    return tmp
   else
     return C.cast( T.Array2d(args.T,args.insize), T.Array2d(args.T,args.size) )
   end
 end,
-types.array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V")) )
+types.array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V")),false )
 
 generators.Reshape = generators.ReshapeArray
 
