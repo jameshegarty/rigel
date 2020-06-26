@@ -43,13 +43,13 @@ ZU9VIVADOSOCBITS_SIG20 += $(patsubst %.lua,$(BUILDDIR)/%.verilatorSOC.correct.tx
 SRCS_VERILATOR_SOC := $(filter-out soc_lk_12_48.lua soc_lk_12_24.lua soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_4.lua soc_lk_12_3.lua soc_lk_12_2.lua soc_lk_12_1.lua, $(SRCS_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_lk_6_6.lua soc_lk_6_3.lua soc_lk_6_2.lua soc_lk_6_1.lua, $(SRCS_VERILATOR_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_VERILATOR_SOC))
-SRCS_VERILATOR_SOC := $(filter-out soc_sift_4_1.lua soc_sift_4_1_1080p.lua soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_4_4.lua soc_sift_4_4_1080p.lua soc_sift_4_8.lua soc_sift_4_8_1080p.lua, $(SRCS_VERILATOR_SOC))
+SRCS_VERILATOR_SOC := $(filter-out soc_sift_4_64.lua soc_sift_4_64_1080p.lua soc_sift_4_128.lua soc_sift_4_128_1080p.lua soc_sift_4_256.lua soc_sift_4_256_1080p.lua, $(SRCS_VERILATOR_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_convgenTaps_8_64.lua, $(SRCS_VERILATOR_SOC))
 # autofifo
 SRCS_VERILATOR_SOC := $(filter-out soc_lk_12_48_autofifo.lua soc_lk_12_24_autofifo.lua soc_lk_12_12_autofifo.lua soc_lk_12_6_autofifo.lua soc_lk_12_4_autofifo.lua soc_lk_12_3_autofifo.lua soc_lk_12_2_autofifo.lua soc_lk_12_1_autofifo.lua, $(SRCS_VERILATOR_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_lk_6_6_autofifo.lua soc_lk_6_3_autofifo.lua soc_lk_6_2_autofifo.lua soc_lk_6_1_autofifo.lua, $(SRCS_VERILATOR_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_stereo_full_64_64_autofifo.lua soc_stereo_full_64_32_autofifo.lua soc_stereo_full_64_16_autofifo.lua soc_stereo_full_64_8_autofifo.lua soc_stereo_full_64_4_autofifo.lua, $(SRCS_VERILATOR_SOC))
-SRCS_VERILATOR_SOC := $(filter-out soc_sift_4_1_autofifo.lua soc_sift_4_1_1080p_autofifo.lua soc_sift_4_2_autofifo.lua soc_sift_4_2_1080p_autofifo.lua soc_sift_4_4_autofifo.lua soc_sift_4_4_1080p_autofifo.lua soc_sift_4_8_autofifo.lua soc_sift_4_8_1080p_autofifo.lua, $(SRCS_VERILATOR_SOC))
+SRCS_VERILATOR_SOC := $(filter-out soc_sift_4_64_autofifo.lua soc_sift_4_64_1080p_autofifo.lua soc_sift_4_128_autofifo.lua soc_sift_4_128_1080p_autofifo.lua soc_sift_4_256_autofifo.lua soc_sift_4_256_1080p_autofifo.lua, $(SRCS_VERILATOR_SOC))
 SRCS_VERILATOR_SOC := $(filter-out soc_convgenTaps_8_64_autofifo.lua, $(SRCS_VERILATOR_SOC))
 
 # broken 
@@ -70,13 +70,13 @@ SRCS_YOSYS_SOC := $(filter-out soc_convgenTaps_8_8.lua soc_convgenTaps_8_4.lua s
 SRCS_YOSYS_SOC := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_YOSYS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_lk_12_48.lua soc_lk_12_24.lua soc_lk_12_12.lua soc_lk_12_6.lua soc_lk_12_4.lua soc_lk_12_3.lua soc_lk_12_2.lua soc_lk_12_1.lua, $(SRCS_YOSYS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_lk_6_6.lua soc_lk_6_3.lua soc_lk_6_2.lua soc_lk_6_1.lua, $(SRCS_YOSYS_SOC))
-SRCS_YOSYS_SOC := $(filter-out soc_sift_4_1.lua soc_sift_4_1_1080p.lua soc_sift_4_2.lua soc_sift_4_2_1080p.lua soc_sift_4_4.lua soc_sift_4_4_1080p.lua soc_sift_4_8.lua soc_sift_4_8_1080p.lua, $(SRCS_YOSYS_SOC))
+SRCS_YOSYS_SOC := $(filter-out soc_sift_4_64.lua soc_sift_4_64_1080p.lua soc_sift_4_128.lua soc_sift_4_128_1080p.lua soc_sift_4_256.lua soc_sift_4_256_1080p.lua, $(SRCS_YOSYS_SOC))
 # autofifo
 SRCS_YOSYS_SOC := $(filter-out soc_convgenTaps_8_8_autofifo.lua soc_convgenTaps_8_4_autofifo.lua soc_convgenTaps_8_2_autofifo.lua soc_convgenTaps_8_1_autofifo.lua soc_convgenTaps_8_8_autofifo.lua  soc_convgenTaps_8_16_autofifo.lua  soc_convgenTaps_8_32_autofifo.lua soc_convgenTaps_8_64_autofifo.lua, $(SRCS_YOSYS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_stereo_full_64_64_autofifo.lua soc_stereo_full_64_32_autofifo.lua soc_stereo_full_64_16_autofifo.lua soc_stereo_full_64_8_autofifo.lua soc_stereo_full_64_4_autofifo.lua, $(SRCS_YOSYS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_lk_12_48_autofifo.lua soc_lk_12_24_autofifo.lua soc_lk_12_12_autofifo.lua soc_lk_12_6_autofifo.lua soc_lk_12_4_autofifo.lua soc_lk_12_3_autofifo.lua soc_lk_12_2_autofifo.lua soc_lk_12_1_autofifo.lua, $(SRCS_YOSYS_SOC))
 SRCS_YOSYS_SOC := $(filter-out soc_lk_6_6_autofifo.lua soc_lk_6_3_autofifo.lua soc_lk_6_2_autofifo.lua soc_lk_6_1_autofifo.lua, $(SRCS_YOSYS_SOC))
-SRCS_YOSYS_SOC := $(filter-out soc_sift_4_1_autofifo.lua soc_sift_4_1_1080p_autofifo.lua soc_sift_4_2_autofifo.lua soc_sift_4_2_1080p_autofifo.lua soc_sift_4_4_autofifo.lua soc_sift_4_4_1080p_autofifo.lua soc_sift_4_8_autofifo.lua soc_sift_4_8_1080p_autofifo.lua, $(SRCS_YOSYS_SOC))
+SRCS_YOSYS_SOC := $(filter-out soc_sift_4_64_autofifo.lua soc_sift_4_64_1080p_autofifo.lua soc_sift_4_128_autofifo.lua soc_sift_4_128_1080p_autofifo.lua soc_sift_4_256_autofifo.lua soc_sift_4_256_1080p_autofifo.lua, $(SRCS_YOSYS_SOC))
 
 YOSYS_SOC = $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.bit,$(SRCS_YOSYS_SOC))
 YOSYS_SOC += $(patsubst %.lua,$(BUILDDIR)/%.yosysSOC.cellscorrect.txt,$(SRCS_YOSYS_SOC))
@@ -155,10 +155,10 @@ SRCS_TERRA += $(SRCS_SOC)
 
 # too slow
 SRCS_TERRA := $(filter-out soc_stereo_full_64_64.lua soc_stereo_full_64_32.lua soc_stereo_full_64_16.lua soc_stereo_full_64_8.lua soc_stereo_full_64_4.lua, $(SRCS_TERRA))
-SRCS_TERRA := $(filter-out soc_sift_4_1_1080p.lua soc_sift_4_2_1080p.lua soc_sift_4_4_1080p.lua soc_sift_4_8_1080p.lua, $(SRCS_TERRA))
+SRCS_TERRA := $(filter-out soc_sift_4_64_1080p.lua soc_sift_4_128_1080p.lua soc_sift_4_256_1080p.lua, $(SRCS_TERRA))
 # autofifo
 SRCS_TERRA := $(filter-out soc_stereo_full_64_64_autofifo.lua soc_stereo_full_64_32_autofifo.lua soc_stereo_full_64_16_autofifo.lua soc_stereo_full_64_8_autofifo.lua soc_stereo_full_64_4_autofifo.lua, $(SRCS_TERRA))
-SRCS_TERRA := $(filter-out soc_sift_4_1_1080p_autofifo.lua soc_sift_4_2_1080p_autofifo.lua soc_sift_4_4_1080p_autofifo.lua soc_sift_4_8_1080p_autofifo.lua, $(SRCS_TERRA))
+SRCS_TERRA := $(filter-out soc_sift_4_64_1080p_autofifo.lua soc_sift_4_128_1080p_autofifo.lua soc_sift_4_256_1080p_autofifo.lua, $(SRCS_TERRA))
 
 TERRAOUT := $(patsubst %.lua,$(BUILDDIR)/%.terra.raw,$(SRCS_TERRA))
 TERRAOUT += $(patsubst %.lua,$(BUILDDIR)/%.terra.bmp,$(SRCS_TERRA))
