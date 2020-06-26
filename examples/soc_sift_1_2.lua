@@ -481,4 +481,4 @@ function(i)
   return G.AXIWriteBurst{"out/"..outfile,noc.write,R.Unoptimized}(offset)
 end}
 
-harness({regs.start, TopModule, regs.done},nil,{regs})
+harness({regs.start, TopModule, regs.done},{cooldown=J.sel(size1080p,1000000,-1)},{regs})

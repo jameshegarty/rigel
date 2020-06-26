@@ -113,7 +113,10 @@ return function(fn,t,instances)
 
   J.err( type(SOC.currentAddr)=="number","SOC.currentAddr should be a number?")
   J.err(SOC.currentAddr ~= 0x30008000,"SOC.currentAddr should imply a segment size > 0?")
+
+  local cooldown = -1
+  if t~=nil and t.cooldown~=nil then cooldown = t.cooldown end
   
-  f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",MHz="..MHz..",cycles="..Uniform(cyc):toEscapedString()..registerList..registerNames.."}" )
+  f:write( "return {inputs={"..table.concat(inputList,",").."},outputs={"..table.concat(outputList,",").."},topModule='"..fn.name.."',memoryStart=0x30008000,memoryEnd=0x"..string.format("%x",SOC.currentAddr)..",MHz="..MHz..",cycles="..Uniform(cyc):toEscapedString()..",cooldown="..cooldown..registerList..registerNames.."}" )
   f:close()
 end
