@@ -173,6 +173,9 @@ SRCS_VERILATOR := $(filter-out sift_float.lua sift_desc.lua sift_desc_2_1.lua, $
 # too slow
 SRCS_VERILATOR := $(filter-out sift_hw_4_1080p.lua sift_desc_hw.lua, $(SRCS_VERILATOR))
 
+# broken?
+SRCS_VERILATOR := $(filter-out sift_hw_4.lua sift_desc_hw_2_1.lua, $(SRCS_VERILATOR))
+
 # uses Xilinx huge mult blocks - no support for prims
 SRCS_VERILATOR := $(filter-out lk_tr_handshake_6_3_axi.lua lk_tr_handshake_6_6_axi.lua  lk_tr_handshake_6_2_axi.lua  lk_tr_handshake_6_1_axi.lua lk_tr_handshake_4_4_axi.lua lk_tr_handshake_4_1_axi.lua lk_tr_handshake_12_12_axi.lua  lk_tr_handshake_12_6_axi.lua lk_tr_handshake_12_4_axi.lua lk_tr_handshake_12_3_axi.lua lk_tr_handshake_12_2_axi.lua lk_tr_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi.lua lk_wide_handshake_12_1_axi_nostall.lua  lk_wide_handshake_6_4_axi.lua lk_wide_handshake_6_1_axi.lua lk_wide_handshake_4_4_axi.lua lk_wide_handshake_4_1_axi.lua, $(SRCS_VERILATOR))
 
