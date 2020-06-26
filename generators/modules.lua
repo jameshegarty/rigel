@@ -5654,7 +5654,7 @@ local function calculateDelaysZ3( output, moduleName )
         -- todo fix: it looks like all streams in a concat get the same delay? is that good enough behavior?
         for k,i in ipairs(inputs) do
           table.insert( statements, "(assert (>= "..name.." "..i.."))" )
-          table.insert( ofTerms, "(* (- "..name.." "..i..") "..(n.inputs[k].type:extractData():verilogBits())..")" )
+          table.insert( ofTerms, "(* (- "..name.." "..i..") "..(n.inputs[k].type:lower():verilogBits())..")" )
         end
         res = name
       elseif n.kind=="apply" or (n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module)) then
@@ -5678,7 +5678,7 @@ local function calculateDelaysZ3( output, moduleName )
           --res = inputs[1] + fn.delay + extra
           --assert(false)
           table.insert( statements, "(assert (>= "..name.." (+ "..inputs[1].." "..(fn.delay+extra)..")))" )
-          local bts = Uniform(n.inputs[1].type:deInterface():verilogBits()):toNumber()
+          local bts = Uniform(n.inputs[1].type:lower():verilogBits()):toNumber()
           if bts>0 then table.insert( ofTerms, "(* (- "..name.." "..inputs[1]..") "..bts..")" ) end
           res = name
         end
@@ -5690,7 +5690,7 @@ local function calculateDelaysZ3( output, moduleName )
           res = name
         else
           table.insert( statements, "(assert (>= "..name.." (+ "..inputs[1].." "..n.inst.module.functions[n.fnname].delay..")))" )
-          local bts = n.inputs[1].type:extractData():verilogBits()
+          local bts = n.inputs[1].type:lower():verilogBits()
           if bts>0 then table.insert( ofTerms, "(* (- "..name.." "..inputs[1]..") "..bts..")" ) end
           res = name
           --res = inputs[1] + n.inst.module.functions[n.fnname].delay
@@ -5835,7 +5835,7 @@ local function calculateDelaysZ3( output, moduleName )
   if #ofTerms==0 then
     table.insert(z3str,"(assert (>= MINVAR 0))")
   else
-    table.insert(z3str,"(assert (>= MINVAR (+ "..table.concat(ofTerms," ")..")))")
+    table.insert(z3str,"(assert (>= MINVAR (+ "..table.concat(ofTerms,"\n")..")))")
   end
   table.insert(z3str, "(minimize MINVAR )")
   table.insert(z3str, "(check-sat)")
@@ -5885,8 +5885,10 @@ local function calculateDelaysZ3( output, moduleName )
   if verbose then
     print("** TOTALBITS",totalbits)
     print("** DELAYTABLE")
+    print("|value|delay|bits|")
+    
     for k,v in pairs(delayTable) do
-      print("|"..k.."|"..v.."|")
+      print("|"..k.."|"..v.."|"..(seenNames[k].type:lower():verilogBits()))
     end
   end
   
