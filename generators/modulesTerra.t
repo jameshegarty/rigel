@@ -2114,7 +2114,7 @@ function MT.lambdaCompile(fn)
               assert(false)
             end
 return {readyOutput}
-          elseif n.kind=="concat" then
+          elseif n.kind=="concat" or n.kind=="concatArray2d" then
 return list
           else
             if n.type:isTuple() then

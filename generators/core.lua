@@ -397,6 +397,10 @@ generators.Neg = R.FunctionGenerator("core.Neg", {}, {"async"},
 function(a) return C.neg( a.T.precision, a.T.exp ) end,
 P.IntType("T") )
 
+generators.Pow2 = R.FunctionGenerator("core.Pow2", {}, {"async"},
+function(a) return C.Pow2( a.T.precision, a.T.exp ) end,
+P.IntType("T") )
+
 generators.Sub = R.FunctionGenerator("core.Sub",{"type","rate"},{"async","number"},
 function(args)
   if args.number~=nil then
@@ -910,7 +914,7 @@ function(args)
     J.err( args.type:deInterface():isArray() )
     local S, size, V = args.type:deInterface():arrayOver(), args.type:deInterface().size, args.type:deInterface().V
     print("WRITEPGM",size)
-    assert( S:deSchedule():verilogBits()%8 == 0)
+    J.err( S:deSchedule():verilogBits()%8 == 0, "FwritePGM: type must be byte aligned? ", args.type)
     assert( V:eq(0,0) )
     local W = Uniform(size[1]):toNumber() * (S:deSchedule():verilogBits()/8)
     local H = Uniform(size[2]):toNumber()

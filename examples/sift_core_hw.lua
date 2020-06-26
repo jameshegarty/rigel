@@ -419,7 +419,9 @@ function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
 
   local desc1 = C.fifo(descTypeRed,256)(desc1)
 
-  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( RS.modules.sumPow2{inType=types.int(32),outType=types.int(32)},(TILES_X*TILES_Y*8)))),desc1)
+  local descpow2 = RM.makeHandshake(C.Pow2(32))(desc1)
+  local desc_sum = R.apply("sum",RM.liftHandshake(RM.liftDecimate(RM.reduceSeq( C.sum(types.int(32),types.int(32),types.int(32),true),(TILES_X*TILES_Y*8)))),descpow2)
+  
   --local desc_sum = R.apply("sumlift",RM.makeHandshake( sift.fixedLift(types.int(32))), desc_sum)
   desc_sum = G.Float(G.ItoFR(desc_sum))
 

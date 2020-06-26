@@ -370,10 +370,12 @@ function(i)
   -- sum up all the mags in all the buckets
   desc1 = G.Flatten(desc1)
 
-  local desc_sum = G.Reduce{ RS.modules.sumPow2{inType=types.int(32),outType=types.int(32)} }(desc1)
-
+  local descpow2 = G.Map{G.Pow2}(desc1)
+  local desc_sum = G.Reduce{G.Add{R.Async}}(descpow2)
+  
   desc_sum = G.ItoFR(desc_sum)
   desc_sum = G.BoostRate{G.SqrtF}( desc_sum )
+  
   desc_sum = G.Broadcast{{8,1}}(desc_sum)
   desc_sum = G.Broadcast{{TILES_X,TILES_Y}}(desc_sum)
 

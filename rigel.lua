@@ -523,24 +523,36 @@ return fn
 
         local resStack = {}
 
-        if fnType:rowMajor() and targetType:rowMajor() then
-          table.insert( resStack, C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
-                                        fnType.V[1]*fnType.V[2],
-                                        targetType.size[1], targetType.size[2] ) )
+        local fnTypeShadow, targetTypeShadow = fnType, targetType
+
+        -- we're deser: need to go from inner to outer
+        if targetTypeShadow:arrayOver()~=fnTypeShadow:arrayOver() and fnTypeShadow.V[1]*fnTypeShadow.V[2]>targetTypeShadow.V[1]*targetTypeShadow.V[2] then
+          print("CRRMREC",targetType,fnType)
+          table.insert( resStack, RM.mapSeq(reshape( fnTypeShadow.over, targetTypeShadow.over ), fnType.size[1], fnType.size[2]) )
           assert( darkroom.isPlainFunction(resStack[#resStack]) )
-        elseif fnType:columnMajor() or targetType:columnMajor() then
+          targetTypeShadow = resStack[#resStack].outputType:deInterface()
+        end
+
+        if fnTypeShadow:rowMajor() and targetTypeShadow:rowMajor() then
+          print("CRRM",targetType,fnType)
+          table.insert( resStack, C.ChangeRateRowMajor( targetTypeShadow:arrayOver(), targetTypeShadow.V[1], targetTypeShadow.V[2],
+                                        fnTypeShadow.V[1]*fnTypeShadow.V[2],
+                                        targetTypeShadow.size[1], targetTypeShadow.size[2] ) )
+          assert( darkroom.isPlainFunction(resStack[#resStack]) )
+        elseif fnTypeShadow:columnMajor() or targetTypeShadow:columnMajor() then
           --err( false,"NYI - convertInterface to a column major array converting:",targetType," to:",fnType," for:",fn,loc)
-          err( targetType.V[2]==fnType.V[2],"NYI - column major change rate with different array height. Converting ",targetType," to ",fnType)
-          table.insert( resStack, RM.changeRate( targetType:arrayOver(), fnType.V[2], targetType.V[1], fnType.V[1], true, fnType.size[1], fnType.size[2] ) )
+          err( targetTypeShadow.V[2]==fnTypeShadow.V[2],"NYI - column major change rate with different array height. Converting ",targetTypeShadow," to ",fnTypeShadow)
+          table.insert( resStack, RM.changeRate( targetTypeShadow:arrayOver(), fnTypeShadow.V[2], targetTypeShadow.V[1], fnTypeShadow.V[1], true, fnTypeShadow.size[1], fnTypeShadow.size[2] ) )
           assert( darkroom.isPlainFunction(resStack[#resStack]) )
         else
-          J.err("converting between strange vector sizes! ",targetType," to ",fnType)
+          J.err("converting between strange vector sizes! ",targetTypeShadow," to ",fnTypeShadow)
         end
-        
-        if targetType:arrayOver()~=fnType:arrayOver() then
-          local FT, TT = fnType.over, resStack[#resStack].outputType:deInterface():arrayOver()
-          table.insert( resStack, RM.mapSeq(reshape( FT, TT ), fnType.size[1], fnType.size[2]) )
+
+        -- we're ser: need to go from outer to inner
+        if targetTypeShadow:arrayOver()~=fnTypeShadow:arrayOver()  and fnTypeShadow.V[1]*fnTypeShadow.V[2]<targetTypeShadow.V[1]*targetTypeShadow.V[2] then
+          table.insert( resStack, RM.mapSeq(reshape( fnTypeShadow.over, targetTypeShadow.over ), fnTypeShadow.size[1], fnTypeShadow.size[2]) )
           assert( darkroom.isPlainFunction(resStack[#resStack]) )
+          targetTypeShadow = resStack[#resStack].outputType:deInterface()
         end
 
         if #resStack==1 then

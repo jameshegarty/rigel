@@ -430,6 +430,12 @@ C.neg = memoize(function( bits, exp )
   return RM.lift( "Neg_"..tostring(bits), types.Int(bits,exp), types.Int(bits,exp), 1, function(sinp) return S.neg(sinp) end )
 end)
 
+C.Pow2 = memoize(function( bits, exp )
+  assert(type(bits)=="number")
+  if exp==nil then exp=0 end
+  return RM.lift( "Pow2_"..tostring(bits), types.Int(bits,exp), types.Int(bits,exp), 2, function(sinp) return sinp*sinp end )
+end)
+
 C.tokenCounter = memoize(function(A,str,X)
   err( types.isType(A), "C.tokenCounter: A must be type")
   err( types.isHandshake(A),"C.tokenCounter: A must be handshake")
@@ -3238,7 +3244,7 @@ end)
 -- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
 C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig, H, X )
   J.err( types.isType(ty) )
-  J.err( ty:isData() )
+  J.err( ty:isData(), "ChangeRateRowMajor: input type should be data type, but is: ",ty )
   J.err( type(outputItemsPerCyc)=="number", "ChangeRateRowMajor: outputItermsPerCyc should be number, but is: ",outputItemsPerCyc )
   J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
   --J.err( type(W)=="number", "ChangeRateRowMajor: W should be number, but is: ",W)
@@ -3991,7 +3997,7 @@ C.BoostRate = J.memoize(function(fn, factor)
   
   local G = require "generators.core"
 
-  return G.Function{"BoostRate_"..fn.name.."_"..tostring(factor), fn.inputType, SDF{1,1},
+  local res = G.Function{"BoostRate_"..fn.name.."_"..tostring(factor), fn.inputType, SDF{1,1},
     function(inp)
 
       local FO = RM.FanOutRoundRobin( fn.inputType:deInterface(), factor )(inp)
@@ -4012,6 +4018,9 @@ C.BoostRate = J.memoize(function(fn, factor)
 --      res = G.FIFO{128}(res)
       return res
     end}
+
+  assert( R.isPlainFunction(res) )
+  return res
 end)
 
 -- map a RV module

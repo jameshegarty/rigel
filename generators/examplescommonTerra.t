@@ -666,6 +666,8 @@ end
 function CT.flatten( res )
   local struct Flatten {ready:bool}
 
+  assert( rigel.lower(res.inputType):sizeof() == rigel.lower(res.outputType):sizeof() )
+  
   terra Flatten:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
     @out = @([&rigel.lower(res.outputType):toTerraType()](inp))
   end
