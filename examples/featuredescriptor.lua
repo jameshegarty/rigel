@@ -5,6 +5,7 @@ local R = require "rigelSimple"
 local harris = require "harris_core"
 local descriptor = require "descriptor_core"
 local G = require "generators.core"
+local C = require "generators.examplescommon"
 local types = require "types"
 
 W, H = 256, 256
@@ -80,8 +81,9 @@ branch2, branch3 = R.fanOut{ input = branch1_histbucket, branches = 2 }
 branch2 = G.FIFO{256}(branch2)
 
 -- sum all 128 histogram buckets
-branch2_sum = R.connect{ input = branch2, toModule = 
-  R.HS( R.modules.reduceSeq{ fn=R.modules.sumPow2{inType=R.int32,outType=R.int32},
+branch2pow2 = G.Map{C.Pow2(32)}(branch2)
+branch2_sum = R.connect{ input = branch2pow2, toModule = 
+    R.HS( R.modules.reduceSeq{ fn=C.sum(types.int(32),types.int(32),types.int(32),true),
     V=TILES_X*TILES_Y*8} ) }
 
 -- calculate sqrt of sum
