@@ -1415,6 +1415,9 @@ function(args)
   local N = Uniform(args.rate[1][1]):toNumber()*Uniform(fn.sdfInput[1][2]):toNumber()
   local D = Uniform(args.rate[1][2]):toNumber()*Uniform(fn.sdfInput[1][1]):toNumber()
   local factor = math.ceil( N/D )
+  -- for sanity, never boost rate above 100%!
+  local maxFactor = math.ceil(Uniform(fn.sdfInput[1][2]):toNumber()/Uniform(fn.sdfInput[1][1]):toNumber())
+  factor = math.min( factor, maxFactor )
   print("Boost Rate",args.rate, fn.sdfInput, factor )
   if factor<=1 then
     return fn
