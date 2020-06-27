@@ -34,7 +34,7 @@ local pos = R.apply("idx0", C.index(PS.outputType:extractData(),0,0), pos )
 local pos = R.apply("cst", touint8pair, pos)
 
 local fsinp = R.concat("PTT",{pos,inp})
-local out = R.apply("FS",RM.filterSeq(types.array2d(types.uint(8),2),W,H,{FILTER_OUTPUT_CNT,W*H},FILTER_FIFO,false),fsinp)
+local out = R.apply("FS",RM.filterSeq(types.array2d(types.uint(8),2),W,H,{FILTER_OUTPUT_CNT,W*H},FILTER_FIFO,false,nil,false),fsinp)
 local filterfn = RM.lambda( "filterfnmodule", inpraw, out )
 
 ----------------

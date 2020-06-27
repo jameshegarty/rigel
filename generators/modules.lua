@@ -1387,7 +1387,7 @@ end)
 -- type {A,bool}->A
 -- rate: {n,d} format frac. If coerce=true, 1/rate must be integer.
 -- if rate={1,16}, filterSeq will return W*H/16 pixels
-modules.filterSeq = memoize(function( A, W_orig, H, rate, fifoSize, coerce, framed, X )
+modules.filterSeq = memoize(function( A, W_orig, H, rate, fifoSize, coerce, framed, annotateBurstiness, X )
   assert(types.isType(A))
   local W = Uniform(W_orig):toNumber()
   --err(type(W)=="number", "filterSeq: W must be number, but is: ",W)
@@ -1417,7 +1417,7 @@ modules.filterSeq = memoize(function( A, W_orig, H, rate, fifoSize, coerce, fram
   res.sdfOutput = SDF{rate}
   res.name = sanitize("FilterSeq_"..tostring(A))
 
-  if coerce==false then
+  if annotateBurstiness~=false then
     res.outputBurstiness = fifoSize
   end
   
