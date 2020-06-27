@@ -78,7 +78,7 @@ if size1080p then
   OUTPUT_COUNT = 3599
 end
 
-local FILTER_RATE = {OUTPUT_COUNT,W*H}
+local FILTER_RATE = {OUTPUT_COUNT,(W+15)*(H+15)}
 
 local TILES_X = TILES
 local TILES_Y = TILES
@@ -199,6 +199,31 @@ local BucketReduce = G.Function{"BucketReduce", T.rv(T.Tuple{T.Array2d(T.I32,8),
 function(i)
   local z = G.Zip(i)
   return G.Map{G.Add{R.Async}}(z)
+end}
+
+local FilterCrop = G.SchedulableFunction{"FilterCrop",types.Array2d(types.Bool,Uniform(W+15),H+15),
+function(i)
+  print("FILTERCROP",i.type)
+  local iFO = G.FanOut{2}(i)
+  
+  local posTrig = G.Map{G.ValueToTrigger}(iFO[1])
+  print("POSTRIG",posTrig.type)
+  local pos = G.PosCounter{true}(posTrig)
+  print("POS",pos.type)
+  local X = G.Map{G.Index{0}}(pos)
+  local Y = G.Map{G.Index{1}}(pos)
+
+  local Xgt = G.Map{G.GT{14}}(X)
+  local Ygt = G.Map{G.GT{14}}(Y)
+
+  local rhs = G.Map{G.And}(G.Zip(Xgt,Ygt))
+  
+  local lhs = iFO[0]
+  local res = G.Zip(lhs,rhs)
+  print("RES",res.type)
+  res = G.Map{G.And}(res)
+  print("RES",res.type)
+  return res
 end}
 
 local Bucketize = G.Function{"Bucketize",types.rv(types.tuple{T.FloatRec32,T.FloatRec32,T.FloatRec32}),
@@ -326,7 +351,6 @@ end}
 
 local SiftKernel = G.SchedulableFunction{"SiftKernel",
 T.Tuple{T.Array2d(T.Tuple{T.I8,T.I8},TILES_X*TILE_W,TILES_Y*TILE_H), T.Tuple{T.U16,T.U16} },
---T.Tuple{T.Array2d(T.Tuple{T.I8,T.I8},TILES_X*4,TILES_Y*4), T.Array2d(T.U16,2) },
 function(i)
   local dxdyType = types.I8
   local dxdyPair = types.tuple{dxdyType,dxdyType}
@@ -436,6 +460,7 @@ function(inp)
   local right = G.Stencil{{-2,0,-2,0}}(right)
   
   right = G.Map{harrisNMS}(right)
+  right = FilterCrop(right)
   
   -------------------------------
   -- left branch: make the dxdy int8 stencils
@@ -454,7 +479,7 @@ function(inp)
 
   -- merge left/right
   local out = G.Zip(left,right)
-  out = G.Crop{{15,0,15,0}}(out)
+--  out = G.Crop{{15,0,15,0}}(out)
   out = G.Filter{{FILTER_RATE[1],FILTER_RATE[2]}}(out)
   out = G.NAUTOFIFO{FILTER_FIFO}(out)
   out = G.Map{SiftKernel}(out)

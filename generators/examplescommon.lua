@@ -3997,7 +3997,9 @@ C.BoostRate = J.memoize(function(fn, factor)
   
   local G = require "generators.core"
 
-  local res = G.Function{"BoostRate_"..fn.name.."_"..tostring(factor), fn.inputType, SDF{1,1},
+  local isdf = SDF{fn.sdfInput[1][1]*factor,fn.sdfInput[1][2]}
+  
+  local res = G.Function{"BoostRate_"..fn.name.."_"..tostring(factor), fn.inputType, isdf,
     function(inp)
 
       local FO = RM.FanOutRoundRobin( fn.inputType:deInterface(), factor )(inp)
@@ -4005,11 +4007,8 @@ C.BoostRate = J.memoize(function(fn, factor)
       local outList = {}
       for i=1,factor do
         local a = G.FIFO{2}(FO[(i-1)])
---        a = G.Index{0}(a)
---        a= G.Print{"BOOSTIN"..i,false}(a)
         local b = fn(a)
         b = G.FIFO{2}(b)
---        b = G.Print{"BOOSTOUT"..i,false}(b)
         table.insert( outList, b )
       end
 
@@ -4034,7 +4033,7 @@ C.MapRV = J.memoize(function( fn, W, H )
   local G = require "generators.core"
 
   return G.Function{"MapRV_"..fn.name.."_"..tostring(W).."_"..tostring(H),
-                    types.RV( types.Array2d(fn.inputType:deInterface(),W,H)), SDF{1,1},
+                    types.RV( types.Array2d(fn.inputType:deInterface(),W,H)), fn.sdfInput,
     function(inp)
 
       local FO = G.FanOut{W*H}(inp)

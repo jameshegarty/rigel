@@ -710,16 +710,26 @@ function(args)
 
   -- NOTE: we send the fn we are mapping over the original (non-optimized) type, b/c it may not
   -- want to optimize the type!
+  -- so we sort of have to just optimize our own type...
   local S = args.type:deInterface():arrayOver()
+  local innerRate = args.rate
 
+  if args.unoptimized~=true then
+    local AR = args.type:deInterface()
+    local startRate = SDF{args.rate[1][1]*math.max(1,Uniform(AR.V[1]):toNumber())*math.max(1,Uniform(AR.V[2]):toNumber()),args.rate[1][2]*math.max(1,Uniform(AR.size[1]):toNumber())*math.max(1,Uniform(AR.size[2]):toNumber())}
+    local outerV = J.canonicalV( startRate, AR.size, AR:columnMajor() )
+    innerRate = SDF{args.rate[1][1]*math.max(1,AR.V[1])*math.max(1,AR.V[2]),args.rate[1][2]*math.max(1,outerV[1])*math.max(1,outerV[2])}
+--    print("MAP_ONE_OPT",args.type,args.rate,"S",S,"INNERRATE",innerRate,"OUTERV",outerV)
+  end
+  
   --print( "MAP:SPECIALIZE TO TYPE", args.rigelFunction.name,types.rv(S))
-  local fn = args.rigelFunction:specializeToType( types.rv(S), args.rate )
+  local fn = args.rigelFunction:specializeToType( types.rv(S), innerRate, false )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
 
   if ((fn.inputType:isrv() and fn.outputType:isrv()) or (fn.inputType:isRV() and fn.outputType:isRV()))==false then
     --print("Map: fn returned unsupported types",fn.inputType,fn.outputType," - trying again with RV...")
     -- NYI - we basically only support rv or RV (ie no rvV etc), so if it can't be rv, ask for RV
-    fn = args.rigelFunction:specializeToType( types.RV(S), args.rate )
+    fn = args.rigelFunction:specializeToType( types.RV(S), innerRate )
     J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.RV(S))
   end
 
@@ -728,27 +738,30 @@ function(args)
     ty,rate = args.type,args.rate
   else
     ty,rate = args.type:optimize(args.rate)
+--    print("OPTIMIZE_MAP",args.type,args.rate,ty,rate)
   end
   
   local S, size, V, var = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V, ty:deInterface().var
 
+  local res
   if var then
     if V:eq(R.Size(0,0)) then
-      return RM.mapVarSeq(fn, size[1], size[2] )
+      res = RM.mapVarSeq(fn, size[1], size[2] )
     else
       assert(false)
     end
   else
     if size==V then
-      return RM.map( fn, size[1], size[2], args.bool )
+      res = RM.map( fn, size[1], size[2], args.bool )
     elseif V:eq(R.Size(0,0)) then
-      return RM.mapSeq( fn, size[1], size[2] )
+      res = RM.mapSeq( fn, size[1], size[2] )
     else -- parseq
-      return RM.mapParSeq( fn, V[1], V[2], size[1], size[2], args.bool )
+      res = RM.mapParSeq( fn, V[1], V[2], size[1], size[2], args.bool )
     end
   end
-  
-  assert(false)
+
+--  print("MAPDONE",ty,rate,res.inputType,res.outputType,"SIZE",size,"V",V,"VAR",var,"FN",fn.inputType,fn.outputType,fn.name)
+  return res
 end,
 nil,false)
 
@@ -1009,7 +1022,7 @@ function(args)
         print("!!!!!!!! rate mismatch into SchedulableFunction ",args.string," forcing RV! ",optType,SDF{optRate[1]},SDF{r})
         RVMode = true
         assert( optType:isTuple() or optType:isArray() )
-        input = R.input( optType, optRate)
+        input = R.input( optType, optRate )
         break
       end
     end
@@ -1408,17 +1421,24 @@ function(args)
   return C.RateMonitor( fn, args.rate, args.string )
 end,nil,false)
 
-generators.BoostRate = R.FunctionGenerator("core.BoostRate",{"type","rate","rigelFunction"},{},
+generators.BoostRate = R.FunctionGenerator("core.BoostRate",{"type","rate","rigelFunction"},{"number"},
 function(args)
   local fn = args.rigelFunction:specializeToType( args.type, args.rate )
 
   local N = Uniform(args.rate[1][1]):toNumber()*Uniform(fn.sdfInput[1][2]):toNumber()
   local D = Uniform(args.rate[1][2]):toNumber()*Uniform(fn.sdfInput[1][1]):toNumber()
   local factor = math.ceil( N/D )
+  local origFactor = factor
   -- for sanity, never boost rate above 100%!
   local maxFactor = math.ceil(Uniform(fn.sdfInput[1][2]):toNumber()/Uniform(fn.sdfInput[1][1]):toNumber())
   factor = math.min( factor, maxFactor )
-  print("Boost Rate",args.rate, fn.sdfInput, factor )
+
+  if args.number~=nil then
+    factor = args.number
+  end
+
+  print("Boost Rate",fn.name,args.rate, fn.sdfInput, factor, origFactor, args.number )
+  
   if factor<=1 then
     return fn
   else

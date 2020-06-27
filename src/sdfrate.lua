@@ -30,12 +30,18 @@ end
 
 function SDFRate.tostring(t)
   err(SDFRate.isSDFRate(t), "SDFRate.tostring: not an SDF rate?")
+  local Uniform = require "uniform"
   local str = "{"
   for k,v in ipairs(t) do
     if v=='x' then
       str = str.."x,"
     else
-      str = str..tostring(v[1]).."/"..tostring(v[2])
+      local thisstr = tostring(v[1]).."/"..tostring(v[2])
+      if #thisstr>5 then
+        thisstr = thisstr.." "..(math.ceil(Uniform(v[1]):toNumber()*1000/Uniform(v[2]):toNumber())/10).."%"
+      end
+      
+      str = str..thisstr
       if k~=#t then str = str.."," end
     end
   end

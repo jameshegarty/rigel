@@ -398,7 +398,8 @@ functionGeneratorMT.__index = functionGeneratorFunctions
 
 -- this will specialize the generator to the given type. It must return a plain function.
 -- This function may fail to return you exactly what you want, but it will try, and return something.
-function functionGeneratorFunctions:specializeToType( ty, rate )
+-- convert: should we add conversion functions to get exactly what you want? default true
+function functionGeneratorFunctions:specializeToType( ty, rate, convert )
   err( types.isType(ty),"specializeToType: first arg should be a type, but is: ",ty)
   err( ty:isInterface(),"specializeToType: first arg should be interface type, but is: ",ty)
   err( SDFRate.isSDFRate(rate),"specializeToType: second arg should be a rate, but is: ",rate)
@@ -441,7 +442,7 @@ function functionGeneratorFunctions:specializeToType( ty, rate )
   end
   
 
-  return self:complete( arglist )
+  return self:complete( arglist, nil, convert )
 end
 
 -- return true if done, false if not done
@@ -527,14 +528,12 @@ return fn
 
         -- we're deser: need to go from inner to outer
         if targetTypeShadow:arrayOver()~=fnTypeShadow:arrayOver() and fnTypeShadow.V[1]*fnTypeShadow.V[2]>targetTypeShadow.V[1]*targetTypeShadow.V[2] then
-          print("CRRMREC",targetType,fnType)
           table.insert( resStack, RM.mapSeq(reshape( fnTypeShadow.over, targetTypeShadow.over ), fnType.size[1], fnType.size[2]) )
           assert( darkroom.isPlainFunction(resStack[#resStack]) )
           targetTypeShadow = resStack[#resStack].outputType:deInterface()
         end
 
         if fnTypeShadow:rowMajor() and targetTypeShadow:rowMajor() then
-          print("CRRM",targetType,fnType)
           table.insert( resStack, C.ChangeRateRowMajor( targetTypeShadow:arrayOver(), targetTypeShadow.V[1], targetTypeShadow.V[2],
                                         fnTypeShadow.V[1]*fnTypeShadow.V[2],
                                         targetTypeShadow.size[1], targetTypeShadow.size[2] ) )
@@ -723,7 +722,8 @@ end)
 
 -- this function either returns a plain function, or fails
 -- This may not return a function with exactly the type you asked for! You need to check for that!
-function functionGeneratorFunctions:complete( arglist, loc, X )
+-- convert: should we add conversion functions to get exactly the type you want? default true
+function functionGeneratorFunctions:complete( arglist, loc, convert, X )
   assert( X==nil )
   
   if DARKROOM_VERBOSE then print("FunctionGenerator:complete() ",self.name) end
@@ -766,7 +766,7 @@ function functionGeneratorFunctions:complete( arglist, loc, X )
   local fn = self.completeFn( a )
   J.err( darkroom.isPlainFunction(fn), "function generator '",self.name,"' returned something other than a plain rigel function? returned:",fn )
 
-  if self.requiredArgs.type~=nil and self.requiredArgs.rate~=nil then -- if we don't know type, we can't lift
+  if self.requiredArgs.type~=nil and self.requiredArgs.rate~=nil and convert~=false then -- if we don't know type, we can't lift
     fn = darkroom.convertInterface( fn, arglist.type, arglist.rate )
     --J.err( fn.inputType == arglist.type, "convertInterface Fail wanted: ",arglist.type," returned: ",fn.inputType )
   end
@@ -1854,7 +1854,8 @@ darkroomIRMT.__tostring = function(tab,prefix)
   if darkroom.SDF then
     res = res .."\nRate:"..tostring(tab.rate)
     local util = tab:utilization()
-    if util~=nil then res=res.."\nUtilization:"..tostring(util[1]).."/"..tostring(util[2]) end
+    local Uniform = require "uniform"
+    if util~=nil then res=res.."\nUtilization: "..tostring(util[1]).."/"..tostring(util[2])..", "..(Uniform(util[1]):toNumber()*100/Uniform(util[2]):toNumber()).."%" end
   end
 
   if true then

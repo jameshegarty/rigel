@@ -207,7 +207,7 @@ local siftMag = J.memoize(function(dxdyType)
       local gauss_weight = G.FIFO{128}(G.FloatRec(i[1][2]))
 
       local magsq = G.Fmap{Pre}(G.Slice{{0,1}}(i[0]))
-      local mag = G.BoostRate{G.SqrtF}( magsq )
+      local mag = G.BoostRate{G.SqrtF,8}( magsq )
       mag = G.FIFO{1}(mag)
 
       local out = G.MulF(G.FanIn(mag,gauss_weight))
@@ -426,7 +426,7 @@ function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
   desc_sum = G.Float(G.ItoFR(desc_sum))
 
   --local desc_sum = R.apply("sumsqrt",RM.makeHandshake( sift.fixedSqrt(descType)), desc_sum)
-  desc_sum = G.Float(G.BoostRate{G.SqrtF}( G.FtoFR(desc_sum) ))
+  desc_sum = G.Float(G.SqrtF( G.FtoFR(desc_sum) ))
   local desc_sum = R.apply("DAO",RM.makeHandshake(C.arrayop(descType,1,1)), desc_sum)
   local desc_sum = R.apply("sumup",RM.upsampleXSeq( descType, 1, TILES_X*TILES_Y*8), desc_sum)
   local desc_sum = R.apply("Didx",RM.makeHandshake(C.index(types.array2d(descType,1),0,0)), desc_sum)
@@ -439,7 +439,7 @@ function sift.siftKernel( dxdyType, TILES_X, TILES_Y, X )
   desc = G.Map{G.FtoFR}(desc)
   desc = G.ArrayToTuple(desc)
 
-  desc = G.BoostRate{G.DivF}(desc)
+  desc = G.BoostRate{G.DivF,4}(desc)
 
   desc = G.Float(desc)
   

@@ -1149,7 +1149,7 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, allo
     local ty = fn.inputType:extractData()
     
     res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),
-                     types.RV(types.Array2d(ty,1,1)), SDF{1,1}, function(inp) return fn(G.Index{0}(inp)) end}
+                     types.RV(types.Array2d(ty,1,1)), fn.sdfInput, function(inp) return fn(G.Index{0}(inp)) end}
 
     assert( rigel.isPlainFunction(res) )
         
@@ -1171,7 +1171,7 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, allo
     local fnMapped
     fnMapped = C.MapRV( fn, Vw_orig, Vh_orig, allowStateful )
 
-    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig), types.RV(types.Array2d(ty,Vw_orig,Vh_orig)), SDF{1,1},
+    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig), types.RV(types.Array2d(ty,Vw_orig,Vh_orig)), fnMapped.sdfInput,
                      function(inp) return fnMapped(inp) end}
 
     assert( rigel.isPlainFunction(res) )
@@ -2800,7 +2800,7 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
       if indexMode then
         ot = types.rvV(res.outputType:deInterface().list[1]:arrayOver())
       end
-      assert( ot:lower()==res.outputType:lower() )
+      J.err( ot:lower()==res.outputType:lower(),"CropSeq Internal Type error",ot,res.outputType )
       res.outputType = ot
     end
   else
@@ -5033,7 +5033,6 @@ local function lambdaSDFNormalize( input, output, name, X )
   assert( X==nil, "lambdaSDFNormalize: too many arguments")
   assert( type(name)=="string")
   
-
   if input~=nil and input.sdfRate~=nil then
     err( SDFRate.isSDFRate(input.sdfRate),"SDF input rate is not a valid SDF rate")
 
@@ -5072,13 +5071,11 @@ local function lambdaSDFNormalize( input, output, name, X )
 
           n.rate = SDF(SDFRate.multiply(n.rate,tr[1][2],tr[1][1]))
           assert( SDFRate.isSDFRate(n.rate))
-
-          --output:visitEach(function(n) print(n) end)
-          --J.err( n.rate:allLE1(), "Error? somehow lambda SDF normalize resulted in a function input with rate>1? rate:",n.rate," originalRate:",orig," maxRate:",sdfMaxRate[1],"/",sdfMaxRate[2])
         end
 
         if orig:le(n.rate)==false then
-          print("Warning: Module rate ended up being less than what the user requested. Function ",name," requested:",orig," but solved rate was:", n.rate)
+          print("* Warning: ",name," requested rate:",orig," but solved rate was:", n.rate)
+          --print(maxNode)
         end
         
         newInput = rigel.newIR(n)
