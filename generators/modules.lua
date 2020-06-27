@@ -1416,6 +1416,7 @@ modules.filterSeq = memoize(function( A, W_orig, H, rate, fifoSize, coerce, fram
   res.sdfInput = SDF{1,1}
   res.sdfOutput = SDF{rate}
   res.name = sanitize("FilterSeq_"..tostring(A))
+  res.outputBurstiness = fifoSize
 
   if coerce then
     local outTokens = ((W*H)*rate[1])/rate[2]

@@ -1171,13 +1171,15 @@ function(a)
 end,
 T.Array2d(P.DataType("D"),P.SizeValue("size"),P.SizeValue("V")) )
 
-generators.Filter = R.FunctionGenerator("core.Filter",{"size"},{},
+generators.Filter = R.FunctionGenerator("core.Filter",{"size"},{"number"},
 function(args)
   if args.opt==1 then
     assert(args.V[2]==1)
     return C.FilterSeqPar( args.T, args.V[1], SDF(args.size), true, args.insize[1], args.insize[2] )
   else
-    return RM.filterSeq( args.T, args.insize[1], args.insize[2], args.size, 0, false, true )
+    local fifosize = 0
+    if args.number~=nil then fifosize=args.number end
+    return RM.filterSeq( args.T, args.insize[1], args.insize[2], args.size, fifosize, false, true )
   end
 end,
 T.ParSeq( T.Array2d( T.tuple{P.DataType("T"),T.bool()},P.SizeValue("V")),P.SizeValue("insize") ) )

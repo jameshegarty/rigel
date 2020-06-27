@@ -480,7 +480,7 @@ function(inp)
   -- merge left/right
   local out = G.Zip(left,right)
 --  out = G.Crop{{15,0,15,0}}(out)
-  out = G.Filter{{FILTER_RATE[1],FILTER_RATE[2]}}(out)
+  out = G.Filter{{FILTER_RATE[1],FILTER_RATE[2]},FILTER_FIFO}(out)
   out = G.NAUTOFIFO{FILTER_FIFO}(out)
   out = G.Map{SiftKernel}(out)
 
@@ -506,4 +506,4 @@ function(i)
   return G.AXIWriteBurst{"out/"..outfile,noc.write,R.Unoptimized}(offset)
 end}
 
-harness({regs.start, TopModule, regs.done},{cooldown=J.sel(size1080p,1000000,-1)},{regs})
+harness({regs.start, TopModule, regs.done},{cooldown=1000000},{regs})
