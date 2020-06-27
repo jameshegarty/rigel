@@ -37,7 +37,8 @@ function SDFRate.tostring(t)
       str = str.."x,"
     else
       local thisstr = tostring(v[1]).."/"..tostring(v[2])
-      if #thisstr>5 then
+      if #thisstr>5 and (type(v[1])=="number" or (Uniform.isUniform(v[1]) and v[1].kind=="const"))
+        and (type(v[2])=="number" or (Uniform.isUniform(v[2]) and v[2].kind=="const")) then
         thisstr = thisstr.." "..(math.ceil(Uniform(v[1]):toNumber()*1000/Uniform(v[2]):toNumber())/10).."%"
       end
       
