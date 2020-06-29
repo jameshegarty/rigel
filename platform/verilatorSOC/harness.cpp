@@ -318,9 +318,9 @@ int main(int argc, char** argv) {
       masterReadDataLatchFlops( verbose, memory, 1, M1READ_SLAVEIN );
 
       int er0 = masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, round==1, M0WRITE_SLAVEIN );
-      if(er0!=0){if(er0==1){errored=true;}else{goto WRITEOUT;}}
+      if(er0!=0){if(er0==1){errored=true;}else{errored=true;goto WRITEOUT;}}
       int er1 = masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, round==1, M1WRITE_SLAVEIN );
-      if(er1!=0){if(er1==1){errored=true;}else{goto WRITEOUT;}}
+      if(er1!=0){if(er1==1){errored=true;}else{errored=true;goto WRITEOUT;}}
       
       masterReadReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEIN );
       masterWriteReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0WRITE_SLAVEIN );

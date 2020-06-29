@@ -150,7 +150,7 @@ function CT.tokenCounter( res, A, str, X )
   
   local struct TokenCounter { cnt:uint, ready:bool }
   terra TokenCounter:reset() self.cnt=0 end
-  terra TokenCounter:process( a : &A:toTerraType(), out : &A:toTerraType() )
+  terra TokenCounter:process( a : &A:lower():toTerraType(), out : &A:lower():toTerraType() )
     @out = @a
 
     if valid(a) and self.ready then

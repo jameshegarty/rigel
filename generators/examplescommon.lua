@@ -203,15 +203,13 @@ C.flatten = memoize(function( innerT, innerSize, innerV, outerSize, outerV, X )
   
   local G = require "generators.core"
     
-  --local res = G.Function{"Flatten_"..tostring(innerT).."_w"..tostring(innerSize[1]).."_h"..tostring(innerSize[2]).."_VW"..tostring(innerV[1]).."_VH"..tostring(innerV[2]).."_W"..tostring(outerSize[1]).."_H"..tostring(outerSize[2]), types.RV(types.Array2d( types.Array2d(innerT,innerSize,innerV),outerSize,outerV)),SDF{1,1},function(inp) return inp end}
-
   local W,H = outerSize[1]*innerSize[1], outerSize[2]*innerSize[2]
   local Vw, Vh = math.max(1,innerV[1])*math.max(1,outerV[1]), math.max(1,innerV[2])*math.max(1,outerV[2])
   if innerV[1]==0 and outerV[1]==0 then Vw=0 end
   if innerV[2]==0 and outerV[2]==0 then Vh=0 end
   local newType = types.RV(types.Array2d( innerT, W, H, Vw, Vh ))
 
-  local res = R.newFunction{name="Flatten_"..tostring(innerT).."_w"..tostring(innerSize[1]).."_h"..tostring(innerSize[2]).."_VW"..tostring(innerV[1]).."_VH"..tostring(innerV[2]).."_W"..tostring(outerSize[1]).."_H"..tostring(outerSize[2]), inputType=types.RV(types.Array2d( types.Array2d(innerT,innerSize,innerV),outerSize,outerV)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, outputType = newType, delay=0, stateful=false}
+  local res = R.newFunction{name=J.sanitize("Flatten_"..tostring(innerT).."_w"..tostring(innerSize[1]).."_h"..tostring(innerSize[2]).."_VW"..tostring(innerV[1]).."_VH"..tostring(innerV[2]).."_W"..tostring(outerSize[1]).."_H"..tostring(outerSize[2])), inputType=types.RV(types.Array2d( types.Array2d(innerT,innerSize,innerV),outerSize,outerV)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, outputType = newType, delay=0, stateful=false}
 
   function res.makeSystolic()
     local s = C.automaticSystolicStub(res)
@@ -444,19 +442,47 @@ C.tokenCounter = memoize(function(A,str,X)
   if str==nil then str="" end
   assert(type(str)=="string")
 
---  print("TC",str)
---  assert(false)
+  local res = R.newFunction{name=J.sanitize("tokencounter_A"..tostring(A).."_"..str), inputType=A,outputType=A,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=true,delay=0}
+
+  function res:makeSystolic()
+    local s = C.automaticSystolicStub(res)
+    local verilog = {res:vHeader()}
+    table.insert(verilog,[[
+  assign ]]..res:vOutput()..[[ = ]]..res:vInput()..[[;
+  assign ]]..res:vInputReady()..[[ = ]]..res:vOutputReady()..[[;
   
-  local partial = RM.lift( J.sanitize("tokencounter_A"..tostring(A)).."_"..str, A, A, 1,
-                           function(sinp) assert(false) end,
-                           function() return CT.tokenCounter(A,str) end,
-    "C.tokenCounter" )
+
+  reg [31:0] cnt;
+  reg [31:0] cycles;
+
+  always @(posedge CLK) begin
+    if( reset ) begin
+      cnt <= 32'd0;
+      cycles <= 32'd0;
+      $display("]]..str..[[:%d",cnt);
+    end else begin
+      if( ]]..res:vInputValid()..[[ && ]]..res:vOutputReady()..[[) begin
+        cnt <= cnt + 32'd1;
+      end
+
+      cycles <= cycles + 32'd1;
+
+      if(cycles>32'd150000) begin
+//        $display("]]..str..[[:%d",cnt);
+      end
+    end
+  end
+endmodule
+]])
+    s:verilog( table.concat(verilog) )
+    return s
+  end
 
   if terralib~=nil then
-    partial.terraModule = CT.tokenCounter(A,str)
+    partial.terraModule = CT.tokenCounter( res, A, str )
   end
   
-  return partial
+  return res
 end)
 
 ------------
@@ -466,6 +492,9 @@ C.sum = memoize(function( A, B, outputType, async )
   err( types.isType(A), "C.sum: A must be type")
   err( types.isType(B), "C.sum: B must be type")
   err( types.isType(outputType), "C.sum: outputType must be type")
+
+  assert(A:isInt() or A:isUint())
+  assert(B:isInt() or B:isUint())
 
   err( A:isInt()==B:isInt() and A:isInt()==outputType:isInt(),"C.sum NYI: all types must have same signedness" )
   err( A.exp==B.exp and A.exp==outputType.exp,"C.sum NYI: all type must have same exponant")
@@ -3725,7 +3754,9 @@ always @(posedge CLK) begin
 
       if (bufferEmpty==1'b0) begin
         $display("Critical error: there is already something in the sqrt output buffer???\n");
+//synopsys translate_off
         $finish();
+//synopsys translate_on
       end
     end else if( ]]..res:vOutputReady()..[[ && bufferEmpty==1'b0 ) begin
       bufferEmpty <= 1'b1;
@@ -3790,6 +3821,7 @@ C.CMPF = J.memoize(function( exp, sig, op, X )
   if op==">" then ops="gt"
   elseif op==">=" then ops="ge"
   elseif op=="<" then ops="lt"
+  elseif op=="=" then ops="eq"
   else assert(false) end
   
   local res = R.newFunction{ name=J.sanitize("FloatCMP_"..tostring(exp).."_"..tostring(sig).."_"..ops), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.Bool), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
@@ -3827,6 +3859,8 @@ compareRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) cmpinst (.a(proces
       verilog = verilog.."assign process_output = gt || eq;\n"
     elseif op=="<" then
       verilog = verilog.."assign process_output = lt;\n"
+    elseif op=="=" then
+      verilog = verilog.."assign process_output = eq;\n"
     else
       assert(false)
     end

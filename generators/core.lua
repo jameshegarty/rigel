@@ -397,9 +397,20 @@ generators.Neg = R.FunctionGenerator("core.Neg", {}, {"async"},
 function(a) return C.neg( a.T.precision, a.T.exp ) end,
 P.IntType("T") )
 
-generators.Pow2 = R.FunctionGenerator("core.Pow2", {}, {"async"},
-function(a) return C.Pow2( a.T.precision, a.T.exp ) end,
-P.IntType("T") )
+generators.Pow2 = R.FunctionGenerator("core.Pow2", {"type","rate"}, {"async"},
+function(a)
+  if a.type:deInterface():isFloatRec() then
+    local res = generators.Function{"Power2F",a.type,SDF{1,1},
+                  function(i)
+                    return generators.MulF(i,i)
+                  end}
+    return res
+  elseif a.type:deInterface():isInt() then
+    return C.Pow2( a.type:deInterface().precision, a.type:deInterface().exp )
+  else
+    assert(false)
+  end
+end)
 
 generators.Sub = R.FunctionGenerator("core.Sub",{"type","rate"},{"async","number"},
 function(args)
@@ -796,14 +807,20 @@ function(args)
   local fn = args.rigelFunction:specializeToType( T.rv(types.Tuple{tyOver,tyOver}), SDF{1,1} )
 
   J.err( fn.inputType:isrv() and fn.outputType:isrv(),"Reduce: error, reduce can only operator over rv functions, but fn had type: ",fn.inputType,"->",fn.outputType)
-  
-  if args.V[1]==0 and args.V[2]==0 then
-    return RM.reduceSeq( fn, args.size[1], args.size[2], true)
-  elseif args.V[1]<args.size[1] or args.V[2]<args.size[2] then
-    return RM.reduceParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2] )
-  else
-    return RM.reduce( fn, args.size[1],args.size[2])
-  end
+
+    if fn.delay>0 then
+      -- we need to go parallel
+      print("WARNING: non-async function passed to reduce (ie delay>0), so we must go parallel!")
+      return RM.reduce( fn, args.size[1],args.size[2])
+    else
+      if args.V[1]==0 and args.V[2]==0 then
+        return RM.reduceSeq( fn, args.size[1], args.size[2], true)
+      elseif args.V[1]<args.size[1] or args.V[2]<args.size[2] then
+        return RM.reduceParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2] )
+      else
+        return RM.reduce( fn, args.size[1],args.size[2])
+      end
+    end
 end,
 T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")))
 
@@ -1126,12 +1143,24 @@ generators.Identity = R.FunctionGenerator("core.Identity",{},{},
 function(args) return C.identity(args.T) end,
 P.ScheduleType("T") )
 
-generators.Sel = R.FunctionGenerator("core.Sel",{},{},
+generators.Sel = R.FunctionGenerator("core.Sel",{"type","rate"},{"type1","number","number1"},
 function(args)
-  return C.select(args.T)
-end,
-types.tuple{types.bool(),P.DataType("T"),P.DataType("T")} )
-
+  if args.number~=nil then
+    assert( args.type:deInterface():isBool() )
+    local res = generators.Function{"Sel_Unary_"..tostring(args.type1).."_"..args.number.."_"..args.number1,types.rv(types.Bool),SDF{1,1},
+                  function(inp)
+                    return C.select(args.type1)(inp,R.c(args.type1,args.number),R.c(args.type1,args.number1))
+                  end}
+    assert(R.isPlainFunction(res))
+    print(res)
+    return res
+  else
+    assert( args.type:deInterface():isTuple() )
+    assert( #args.type:deInterface().list==3 )
+    assert( args.type:deInterface().list[2]==args.type:deInterface().list[3] )
+    return C.select(args.type:deInterface().list[2])
+  end
+end)
 
 generators.Slice = R.FunctionGenerator("core.Slice",{"type","rate"},{"bounds","size"},
 function(args)
@@ -1296,7 +1325,7 @@ end)
 
 -- add floats
 -- we intentionally named this something different than regular add, to clearly indicate it is float
-generators.AddF = R.FunctionGenerator("core.AddF",{"type","rate"},{"async","number"},
+generators.AddF = R.FunctionGenerator("core.AddF",{"type","rate"},{"number"},
 function(args)
   
   local res = {}
@@ -1311,7 +1340,7 @@ function(args)
   end
 end)
 
-generators.SubF = R.FunctionGenerator("core.AddF",{"type","rate"},{"async","number"},
+generators.SubF = R.FunctionGenerator("core.AddF",{"type","rate"},{"number"},
 function(args)
   
   local res = {}
@@ -1372,6 +1401,19 @@ function(args)
   end
 end)
 
+generators.EQF = R.FunctionGenerator("core.EQF",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple(), "GTF: expected tuple input, but was: ",args.type )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "GTF: lhs and rhs must have same types! but input type is: ",args.type )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.CMPF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, "=" )
+  end
+end)
+
 generators.LTF = R.FunctionGenerator("core.LTF",{"type","rate"},{"async","number"},
 function(args)
   local res = {}
@@ -1421,6 +1463,11 @@ generators.RateMonitor = R.FunctionGenerator("core.RateMonitor",{"type","rate","
 function(args)
   local fn = args.rigelFunction:specializeToType( args.type, args.rate )
   return C.RateMonitor( fn, args.rate, args.string )
+end,nil,false)
+
+generators.TokenCounter = R.FunctionGenerator("core.TokenCounter",{"type","rate"},{"string"},
+function(args)
+  return C.tokenCounter( args.type, args.string )
 end,nil,false)
 
 generators.BoostRate = R.FunctionGenerator("core.BoostRate",{"type","rate","rigelFunction"},{"number"},
