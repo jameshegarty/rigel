@@ -3684,6 +3684,7 @@ C.SqrtF = J.memoize(function( exp, sig, doDiv, X )
     verilog = verilog..[[
 
 reg bufferEmpty;
+reg waiting;
 reg [32:0] buffer;
 
 wire unitReady;
@@ -3694,26 +3695,37 @@ wire validIn;
 assign validIn = ]]..res:vInputValid()..[[;
 
 wire unitValid;
-assign unitValid = validIn && (bufferEmpty==1'b1);
+assign unitValid = validIn && (bufferEmpty==1'b1) && (waiting==1'b0);
 
 assign ]]..res:vOutputData()..[[ = buffer;
 assign ]]..res:vOutputValid()..[[ = (bufferEmpty==1'b0);
 
 // only accept an input if there is already space available
-assign ]]..res:vInputReady()..[[ = bufferEmpty && unitReady;
+assign ]]..res:vInputReady()..[[ = bufferEmpty && unitReady && (waiting==1'b0);
 
 always @(posedge CLK) begin
   if ( reset ) begin
     bufferEmpty <= 1'b1;
+    waiting <= 1'b0;
   end else begin
-    if( outValid ) begin
+    if( ready && validIn ) begin
+      waiting <= 1'b1;
+    end else if (outValid) begin
+      waiting <= 1'b0;
+    end
+
+    if( outValid && (ready_downstream && bufferEmpty==1'b0) ) begin
+      // overlapped read/write to buffer
+      buffer <= out;
+    end else if( outValid ) begin
       // note: we should never have initiated a sqrt unless the buffer was already empty!
       // so, we shouldn't have to worry about reads and writes into the buffer overlapping!! hopefully
       bufferEmpty <= 1'b0;
       buffer <= out;
 
       if (bufferEmpty==1'b0) begin
-//        $display("Critical error: there is already something in the sqrt output buffer???\n");
+        $display("Critical error: there is already something in the sqrt output buffer???\n");
+        $finish();
       end
     end else if( ]]..res:vOutputReady()..[[ && bufferEmpty==1'b0 ) begin
       bufferEmpty <= 1'b1;
