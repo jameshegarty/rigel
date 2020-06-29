@@ -70,7 +70,7 @@ local size1080p = (string.find(arg[0],"1080p")~=nil)
 local W = 256
 local H = 256
 
-local FILTER_FIFO = 512
+local FILTER_FIFO = 512*4
 local OUTPUT_COUNT = 614
 
 if size1080p then
