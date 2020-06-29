@@ -394,10 +394,11 @@ function(i)
   -- sum up all the mags in all the buckets
   desc1 = G.Flatten(desc1)
 
-  local descpow2 = G.Map{G.Pow2}(desc1)
-  local desc_sum = G.Reduce{G.Add{R.Async}}(descpow2)
+  desc1 = G.Map{G.ItoFR}(desc1)
   
-  desc_sum = G.ItoFR(desc_sum)
+  local descpow2 = G.Map{G.Pow2}(desc1)
+  local desc_sum = G.Reduce{G.AddF}(descpow2)
+
   desc_sum = G.BoostRate{G.SqrtF}( desc_sum )
   
   desc_sum = G.Broadcast{{8,1}}(desc_sum)
@@ -506,4 +507,4 @@ function(i)
   return G.AXIWriteBurst{"out/"..outfile,noc.write,R.Unoptimized}(offset)
 end}
 
-harness({regs.start, TopModule, regs.done},{cooldown=1000000},{regs})
+harness({regs.start, TopModule, regs.done},{cooldown=J.sel(size1080p,1000000,10000)},{regs})

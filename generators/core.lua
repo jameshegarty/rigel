@@ -400,7 +400,7 @@ P.IntType("T") )
 generators.Pow2 = R.FunctionGenerator("core.Pow2", {"type","rate"}, {"async"},
 function(a)
   if a.type:deInterface():isFloatRec() then
-    local res = generators.Function{"Power2F",a.type,SDF{1,1},
+    local res = generators.Function{"Power2F",types.rv(a.type:deInterface()),SDF{1,1},
                   function(i)
                     return generators.MulF(i,i)
                   end}
@@ -810,7 +810,10 @@ function(args)
 
     if fn.delay>0 then
       -- we need to go parallel
-      print("WARNING: non-async function passed to reduce (ie delay>0), so we must go parallel!")
+      if args.V[1]<args.size[1] or args.V[2]<args.size[2] then
+        print("WARNING: non-async function passed to reduce (ie delay>0), so we must go parallel!")
+      end
+      
       return RM.reduce( fn, args.size[1],args.size[2])
     else
       if args.V[1]==0 and args.V[2]==0 then
@@ -900,7 +903,7 @@ generators.DeserSeq = R.FunctionGenerator("core.DeserSeq",{"number"},{},
 function(args)
   return RM.changeRate( args.T, args.size[2], args.size[1], args.size[1]*args.number )
 end,
-types.rV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))), false )
+types.array2d(P.DataType("T"),P.SizeValue("size")), false )
 
 
 -- Number: this is the factor of # of parallel tokens we should concat.
@@ -908,12 +911,12 @@ types.rV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))), false )
 -- [1,4;4,4} with factor 4 would end up [4,4]
 generators.Deser = R.FunctionGenerator("core.Deser",{"number"},{},
 function(args)
-  if args.V:eq(0,0) then
+  if args.V:eq(0,0) or args.V:eq(1,1) then
     -- change T{W,H} to T[W,H]
     assert(args.size[2]==1)
     assert(args.size[1]*args.size[2]==args.number)
 
-    return RM.changeRate( args.T, 1, 0, args.number, true, args.size[1], args.size[2] )
+    return RM.changeRate( args.T, 1, args.V[1], args.number, true, args.size[1], args.size[2] )
   else
     print( "NYI - deser on type: ", args.type )
     assert(false)

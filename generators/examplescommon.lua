@@ -3699,7 +3699,7 @@ C.SqrtF = J.memoize(function( exp, sig, doDiv, X )
   inst[sqrt] = 1
 
   -- depends on input, but this is what it approximatley is according to the docs
-  local approxCycles = sig+3+12
+  local approxCycles = sig+3+6
 
   local inpty = types.RV(types.FloatRec(exp,sig))
   if doDiv then inpty = types.RV(types.tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}) end
