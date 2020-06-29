@@ -81,14 +81,14 @@ branch2, branch3 = R.fanOut{ input = branch1_histbucket, branches = 2 }
 branch2 = G.FIFO{256}(branch2)
 
 -- sum all 128 histogram buckets
-branch2pow2 = G.Map{C.Pow2(32)}(branch2)
-branch2_sum = R.connect{ input = branch2pow2, toModule = 
-    R.HS( R.modules.reduceSeq{ fn=C.sum(types.int(32),types.int(32),types.int(32),true),
-    V=TILES_X*TILES_Y*8} ) }
+branch2 = G.Map{G.ItoFR}(branch2)
+branch2 = G.Map{G.Pow2}(branch2)
+branch2 = G.DeserSeq{TILES_X*TILES_Y*8}(branch2)
+branch2 = G.Reduce{G.AddF}(branch2)
 
 -- calculate sqrt of sum
-branch2_sumsqrt = R.connect{ input = branch2_sum, toModule = 
-  R.HS(R.modules.sqrt{ inputType = R.int32, outputType = R.float }) }
+branch2 = G.SqrtF( branch2 )
+local branch2_sumsqrt = G.Float(branch2)
 
 -- duplicate the sum 128 times to normalize each 128 histogram bucket
 branch2_sum = R.connect{ input = branch2_sumsqrt, toModule = 

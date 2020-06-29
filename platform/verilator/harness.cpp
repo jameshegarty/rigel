@@ -210,7 +210,7 @@ int main(int argc, char** argv) {
     float expectedOutputsAtThisPoint = (float)totalCycles*((float)outN/(float)outD);
     int seenRef = validcnt*2+200000;
     if( expectedOutputsAtThisPoint > seenRef ){
-      printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %d validOutputsSeen %d inputsSentIn:%d seenref:%d\n", (unsigned int)totalCycles, expectedOutputsAtThisPoint, validcnt, validInCnt, seenRef );
+      printf("Simulation went on for way too long, giving up! cycles: %d, expectedOutputPackets %f validOutputsSeen %d inputsSentIn:%d seenref:%d\n", (unsigned int)totalCycles, expectedOutputsAtThisPoint, validcnt, validInCnt, seenRef );
       exit(1);
     }
   }

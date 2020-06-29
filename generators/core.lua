@@ -408,6 +408,7 @@ function(a)
   elseif a.type:deInterface():isInt() then
     return C.Pow2( a.type:deInterface().precision, a.type:deInterface().exp )
   else
+    print("NYI - pow2 on type ",a.type)
     assert(false)
   end
 end)
