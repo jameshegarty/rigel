@@ -13,6 +13,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LUA=$DIR/../../rigelLuajit
 
 CYCLES=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE cycles)
+COOLDOWN=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE cooldown)
 MEMSTART=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryStart)
 MEMEND=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE memoryEnd)
 INPUTS=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __INPUTS)
@@ -23,4 +24,4 @@ REGISTERSOUT=$($LUA $DIR/../../misc/extractMetadata.lua $METAFILE __REGISTERSOUT
 #VERBOSE=--verbose
 
 echo "* run"
-$BITFILE $CYCLES $MEMSTART $MEMEND $VERBOSE --inputs $INPUTS --registers $REGISTERS --outputs $OUTPUTS --registersOut $REGISTERSOUT
+$BITFILE $CYCLES $COOLDOWN $MEMSTART $MEMEND $VERBOSE --inputs $INPUTS --registers $REGISTERS --outputs $OUTPUTS --registersOut $REGISTERSOUT

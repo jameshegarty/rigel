@@ -2114,7 +2114,7 @@ function MT.lambdaCompile(fn)
               assert(false)
             end
 return {readyOutput}
-          elseif n.kind=="concat" then
+          elseif n.kind=="concat" or n.kind=="concatArray2d" then
 return list
           else
             if n.type:isTuple() then
@@ -2525,4 +2525,77 @@ function MT.shiftRegister( res, ty, N, X )
   return MT.new( ShiftRegister, res )
 end
         
+function MT.FanOutRoundRobin( res, ty, N, X )
+  local struct FanOutRoundRobin {ready:bool, readyDownstream:bool[N], phase:uint}
+
+  terra FanOutRoundRobin:reset()
+    self.phase = 0
+  end
+
+  terra FanOutRoundRobin:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+
+    for i=0,N do
+      if i==self.phase then
+        data((@out)[i]) = data(inp)
+        valid((@out)[i]) = valid(inp)
+      else
+        valid((@out)[i]) = false
+      end
+    end
+
+    if self.ready and valid(inp) then
+      if self.phase==N-1 then
+        self.phase = 0
+      else
+        self.phase = self.phase+1
+      end
+    end
+  end
+
+  terra FanOutRoundRobin:calculateReady( readyDownstream : bool[N] )
+    for i=0,N do
+      self.readyDownstream[i] = readyDownstream[i]
+    end
+    self.ready = readyDownstream[self.phase]
+  end
+
+  return MT.new( FanOutRoundRobin, res )
+end
+
+
+function MT.FanInRoundRobin( res, ty, N, X )
+  local struct FanInRoundRobin {ready:bool[N], readyDownstream:bool, phase:uint}
+
+  terra FanInRoundRobin:reset()
+    self.phase = 0
+  end
+
+  terra FanInRoundRobin:process( inp : &rigel.lower(res.inputType):toTerraType(), out : &rigel.lower(res.outputType):toTerraType() )
+
+    data(out) = data((@inp)[self.phase])
+    valid(out) = valid((@inp)[self.phase])
+
+    if self.readyDownstream and valid(out) then
+      if self.phase==N-1 then
+        self.phase = 0
+      else
+        self.phase = self.phase+1
+      end
+    end
+  end
+
+  terra FanInRoundRobin:calculateReady( readyDownstream : bool )
+    self.readyDownstream = readyDownstream
+    for i=0,N do
+      if self.phase==i then
+        self.ready[i] = readyDownstream
+      else
+        self.ready[i] = false
+      end
+    end
+  end
+
+  return MT.new( FanInRoundRobin, res )
+end
+
 return MT

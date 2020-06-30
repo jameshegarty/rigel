@@ -1689,7 +1689,7 @@ types.extractData = J.memoize(function(a)
     res = a
   elseif a:isArray() then
     -- this is a scheduled array - we need to return type of data bus
-    assert(a:isSchedule())
+    J.err(a:isSchedule(), "Calling extractData on an array of interfaces? ",a)
     if Uniform(a.V[1]):eq(0):assertAlwaysTrue() and Uniform(a.V[2]):eq(0):assertAlwaysTrue() then
       res = a:arrayOver():extractData() -- special case for not vectorized
     else

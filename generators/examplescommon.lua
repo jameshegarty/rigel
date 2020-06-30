@@ -68,6 +68,8 @@ C.print = memoize(function( A, str, showIfInvalid, X )
     elseif A:isFloat() then
       -- $bitstoreal could maybe be used?
       return {A}, "%0d", {symb}
+    elseif A:isFloatRec() then
+      return {A}, "NYIFLOATREC %0d", {symb}
     elseif A:isArray() then
       local resTypes={}
       local resStr="["
@@ -191,22 +193,42 @@ end)
 
 -- flatten nested arrays: take A[V;N}{M} to A[V;N*M}
 -- outer array must be fully sequential
-C.flatten = memoize(function( innerT, innerSize, innerV, outerSize, X )
+C.flatten = memoize(function( innerT, innerSize, innerV, outerSize, outerV, X )
   assert( types.isType(innerT ) )
   assert( R.isSize(innerSize))
   assert( R.isSize(innerV))
   assert( R.isSize(outerSize))
+  assert( R.isSize(outerV))
   assert( X==nil )
   
   local G = require "generators.core"
     
-  local res = G.Function{"Flatten_"..tostring(innerT).."_w"..tostring(innerSize[1]).."_h"..tostring(innerSize[2]).."_VW"..tostring(innerV[1]).."_VH"..tostring(innerV[2]).."_W"..tostring(outerSize[1]).."_H"..tostring(outerSize[2]), types.RV(types.Array2d( types.Array2d(innerT,innerSize,innerV),outerSize,0,0)),SDF{1,1},function(inp) return inp end}
-
-  assert(R.isPlainFunction(res))
   local W,H = outerSize[1]*innerSize[1], outerSize[2]*innerSize[2]
-  local newType = types.RV(types.Array2d( innerT, W, H, innerV ))
-  assert(res.outputType:lower()==newType:lower())
-  res.outputType = newType
+  local Vw, Vh = math.max(1,innerV[1])*math.max(1,outerV[1]), math.max(1,innerV[2])*math.max(1,outerV[2])
+  if innerV[1]==0 and outerV[1]==0 then Vw=0 end
+  if innerV[2]==0 and outerV[2]==0 then Vh=0 end
+  local newType = types.RV(types.Array2d( innerT, W, H, Vw, Vh ))
+
+  local res = R.newFunction{name=J.sanitize("Flatten_"..tostring(innerT).."_w"..tostring(innerSize[1]).."_h"..tostring(innerSize[2]).."_VW"..tostring(innerV[1]).."_VH"..tostring(innerV[2]).."_W"..tostring(outerSize[1]).."_H"..tostring(outerSize[2])), inputType=types.RV(types.Array2d( types.Array2d(innerT,innerSize,innerV),outerSize,outerV)), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, outputType = newType, delay=0, stateful=false}
+
+  function res.makeSystolic()
+    local s = C.automaticSystolicStub(res)
+
+    local verilog = {res:vHeader()}
+    table.insert(verilog,[[
+  assign ]]..res:vOutput()..[[ = ]]..res:vInput()..[[;
+  assign ]]..res:vInputReady()..[[ = ]]..res:vOutputReady()..[[;
+endmodule
+]])
+    s:verilog( table.concat(verilog) )
+    return s
+
+  end
+
+  function res.makeTerra() return CT.flatten( res ) end
+--               assert(R.isPlainFunction(res))
+  --J.err(res.outputType:lower()==newType:lower(),"Flatten internal error ",res.outputType,newType)
+--  res.outputType = newType
 
   return res
 end)
@@ -406,6 +428,12 @@ C.neg = memoize(function( bits, exp )
   return RM.lift( "Neg_"..tostring(bits), types.Int(bits,exp), types.Int(bits,exp), 1, function(sinp) return S.neg(sinp) end )
 end)
 
+C.Pow2 = memoize(function( bits, exp )
+  assert(type(bits)=="number")
+  if exp==nil then exp=0 end
+  return RM.lift( "Pow2_"..tostring(bits), types.Int(bits,exp), types.Int(bits,exp), 2, function(sinp) return sinp*sinp end )
+end)
+
 C.tokenCounter = memoize(function(A,str,X)
   err( types.isType(A), "C.tokenCounter: A must be type")
   err( types.isHandshake(A),"C.tokenCounter: A must be handshake")
@@ -414,19 +442,47 @@ C.tokenCounter = memoize(function(A,str,X)
   if str==nil then str="" end
   assert(type(str)=="string")
 
---  print("TC",str)
---  assert(false)
+  local res = R.newFunction{name=J.sanitize("tokencounter_A"..tostring(A).."_"..str), inputType=A,outputType=A,sdfInput=SDF{1,1},sdfOutput=SDF{1,1},stateful=true,delay=0}
+
+  function res:makeSystolic()
+    local s = C.automaticSystolicStub(res)
+    local verilog = {res:vHeader()}
+    table.insert(verilog,[[
+  assign ]]..res:vOutput()..[[ = ]]..res:vInput()..[[;
+  assign ]]..res:vInputReady()..[[ = ]]..res:vOutputReady()..[[;
   
-  local partial = RM.lift( J.sanitize("tokencounter_A"..tostring(A)).."_"..str, A, A, 1,
-                           function(sinp) assert(false) end,
-                           function() return CT.tokenCounter(A,str) end,
-    "C.tokenCounter" )
+
+  reg [31:0] cnt;
+  reg [31:0] cycles;
+
+  always @(posedge CLK) begin
+    if( reset ) begin
+      cnt <= 32'd0;
+      cycles <= 32'd0;
+      $display("]]..str..[[:%d",cnt);
+    end else begin
+      if( ]]..res:vInputValid()..[[ && ]]..res:vOutputReady()..[[) begin
+        cnt <= cnt + 32'd1;
+      end
+
+      cycles <= cycles + 32'd1;
+
+      if(cycles>32'd150000) begin
+//        $display("]]..str..[[:%d",cnt);
+      end
+    end
+  end
+endmodule
+]])
+    s:verilog( table.concat(verilog) )
+    return s
+  end
 
   if terralib~=nil then
-    partial.terraModule = CT.tokenCounter(A,str)
+    partial.terraModule = CT.tokenCounter( res, A, str )
   end
   
-  return partial
+  return res
 end)
 
 ------------
@@ -436,6 +492,9 @@ C.sum = memoize(function( A, B, outputType, async )
   err( types.isType(A), "C.sum: A must be type")
   err( types.isType(B), "C.sum: B must be type")
   err( types.isType(outputType), "C.sum: outputType must be type")
+
+  assert(A:isInt() or A:isUint())
+  assert(B:isInt() or B:isUint())
 
   err( A:isInt()==B:isInt() and A:isInt()==outputType:isInt(),"C.sum NYI: all types must have same signedness" )
   err( A.exp==B.exp and A.exp==outputType.exp,"C.sum NYI: all type must have same exponant")
@@ -2286,12 +2345,12 @@ C.slice = memoize(function( inputType, idxLow, idxHigh, idyLow, idyHigh, index, 
     
     local W = (inputType:arrayLength())[1]
     local H = (inputType:arrayLength())[2]
-    err(idxLow<W,"slice: idxLow>=W, idxLow="..tostring(idxLow)..",W="..tostring(W)," inputType:",inputType)
-    err(idxHigh<W, "slice: idxHigh>=W")
+    err(Uniform(idxLow):lt(Uniform(W)):assertAlwaysTrue(),"slice: idxLow>=W, idxLow="..tostring(idxLow)..",W="..tostring(W)," inputType:",inputType)
+    err(Uniform(idxHigh):lt(Uniform(W)):assertAlwaysTrue(), "slice: idxHigh>=W")
     err(type(idyLow)=="number", "slice:idyLow must be number")
     err(type(idyHigh)=="number","slice:idyHigh must be number")
-    err(idyLow<H, "slice: idyLow must be < array H")
-    err(idyHigh<H, "slice: idyHigh must be < array H, but input type is: ",inputType," idyHigh:",idyHigh)
+    err( Uniform(idyLow):lt(Uniform(H)):assertAlwaysTrue(), "slice: idyLow must be < array H")
+    err( Uniform(idyHigh):lt(Uniform(H)):assertAlwaysTrue(), "slice: idyHigh must be < array H, but input type is: ",inputType," idyHigh:",idyHigh)
     assert(idxLow<=idxHigh)
     assert(idyLow<=idyHigh)
     local OT
@@ -2585,9 +2644,10 @@ function C.linearPipeline( t, modulename, rate, instances, X )
   end
 
   err(type(t)=="table" and J.keycount(t)==#t, "C.linearPipeline: input must be array")
+  err( #t>0, "C.linearPipeline: list of functions must contain at least one function?")
   for k,v in ipairs(t) do err(R.isFunction(v), "C.linearPipeline: input must be table of Rigel modules (idx "..k..")") end
 
-  err( R.isPlainFunction(t[1]),"C.linearPipeline: first function in pipe must have known type (ie must not be a generator). fn: ",t[1] )
+  err( R.isPlainFunction(t[1]),"C.linearPipeline '"..modulename.."': first function in pipe must have known type (ie must not be a generator). fn: ",tostring(t[1]) )
 
   if rate==nil then
     rate = t[1].sdfInput
@@ -3213,7 +3273,7 @@ end)
 -- takes ty[Vw,Vh;W,H} to ty[V2w,V2h;W,H} where V2w*V2h==outputItemsPerCyc
 C.ChangeRateRowMajor = J.memoize(function(ty, Vw, Vh, outputItemsPerCyc, W_orig, H, X )
   J.err( types.isType(ty) )
-  J.err( ty:isData() )
+  J.err( ty:isData(), "ChangeRateRowMajor: input type should be data type, but is: ",ty )
   J.err( type(outputItemsPerCyc)=="number", "ChangeRateRowMajor: outputItermsPerCyc should be number, but is: ",outputItemsPerCyc )
   J.err( math.floor(outputItemsPerCyc)==outputItemsPerCyc, "ChangeRateRowMajor outputItemsPerCyc is not integer, is: ",outputItemsPerCyc )
   --J.err( type(W)=="number", "ChangeRateRowMajor: W should be number, but is: ",W)
@@ -3639,7 +3699,7 @@ C.SqrtF = J.memoize(function( exp, sig, doDiv, X )
   inst[sqrt] = 1
 
   -- depends on input, but this is what it approximatley is according to the docs
-  local approxCycles = sig+3
+  local approxCycles = sig+3+6
 
   local inpty = types.RV(types.FloatRec(exp,sig))
   if doDiv then inpty = types.RV(types.tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}) end
@@ -3653,6 +3713,7 @@ C.SqrtF = J.memoize(function( exp, sig, doDiv, X )
     verilog = verilog..[[
 
 reg bufferEmpty;
+reg waiting;
 reg [32:0] buffer;
 
 wire unitReady;
@@ -3663,26 +3724,39 @@ wire validIn;
 assign validIn = ]]..res:vInputValid()..[[;
 
 wire unitValid;
-assign unitValid = validIn && (bufferEmpty==1'b1);
+assign unitValid = validIn && (bufferEmpty==1'b1) && (waiting==1'b0);
 
 assign ]]..res:vOutputData()..[[ = buffer;
 assign ]]..res:vOutputValid()..[[ = (bufferEmpty==1'b0);
 
 // only accept an input if there is already space available
-assign ]]..res:vInputReady()..[[ = bufferEmpty && unitReady;
+assign ]]..res:vInputReady()..[[ = bufferEmpty && unitReady && (waiting==1'b0);
 
 always @(posedge CLK) begin
   if ( reset ) begin
     bufferEmpty <= 1'b1;
+    waiting <= 1'b0;
   end else begin
-    if( outValid ) begin
+    if( ready && validIn ) begin
+      waiting <= 1'b1;
+    end else if (outValid) begin
+      waiting <= 1'b0;
+    end
+
+    if( outValid && (ready_downstream && bufferEmpty==1'b0) ) begin
+      // overlapped read/write to buffer
+      buffer <= out;
+    end else if( outValid ) begin
       // note: we should never have initiated a sqrt unless the buffer was already empty!
       // so, we shouldn't have to worry about reads and writes into the buffer overlapping!! hopefully
       bufferEmpty <= 1'b0;
       buffer <= out;
 
       if (bufferEmpty==1'b0) begin
-//        $display("Critical error: there is already something in the sqrt output buffer???\n");
+        $display("Critical error: there is already something in the sqrt output buffer???\n");
+//synopsys translate_off
+        $finish();
+//synopsys translate_on
       end
     end else if( ]]..res:vOutputReady()..[[ && bufferEmpty==1'b0 ) begin
       bufferEmpty <= 1'b1;
@@ -3747,6 +3821,7 @@ C.CMPF = J.memoize(function( exp, sig, op, X )
   if op==">" then ops="gt"
   elseif op==">=" then ops="ge"
   elseif op=="<" then ops="lt"
+  elseif op=="=" then ops="eq"
   else assert(false) end
   
   local res = R.newFunction{ name=J.sanitize("FloatCMP_"..tostring(exp).."_"..tostring(sig).."_"..ops), inputType = types.rv(types.Tuple{types.FloatRec(exp,sig),types.FloatRec(exp,sig)}), outputType=types.rv(types.Bool), sdfInput=SDF{1,1}, sdfOutput=SDF{1,1}, stateful=false, instanceMap=inst, delay=0 }
@@ -3784,6 +3859,8 @@ compareRecFN #(.expWidth(]]..exp..[[),.sigWidth(]]..sig..[[)) cmpinst (.a(proces
       verilog = verilog.."assign process_output = gt || eq;\n"
     elseif op=="<" then
       verilog = verilog.."assign process_output = lt;\n"
+    elseif op=="=" then
+      verilog = verilog.."assign process_output = eq;\n"
     else
       assert(false)
     end
@@ -3957,6 +4034,71 @@ endmodule
   end
   
   return res
+end)
+
+C.BoostRate = J.memoize(function(fn, factor)
+  assert(R.isPlainFunction(fn))
+  assert( fn.inputType:isRV() )
+  assert(type(factor)=="number")
+  
+  local G = require "generators.core"
+
+  local isdf = SDF{fn.sdfInput[1][1]*factor,fn.sdfInput[1][2]}
+  
+  local res = G.Function{"BoostRate_"..fn.name.."_"..tostring(factor), fn.inputType, isdf,
+    function(inp)
+
+      local FO = RM.FanOutRoundRobin( fn.inputType:deInterface(), factor )(inp)
+
+      local outList = {}
+      for i=1,factor do
+        local a = G.FIFO{2}(FO[(i-1)])
+        local b = fn(a)
+        b = G.FIFO{2}(b)
+        table.insert( outList, b )
+      end
+
+      local oc = R.concatArray2d("outconcat",outList,factor)
+      local res = RM.FanInRoundRobin( fn.outputType:deInterface(), factor)(oc)
+--      res = G.FIFO{128}(res)
+      return res
+    end}
+
+  assert( R.isPlainFunction(res) )
+  return res
+end)
+
+-- map a RV module
+C.MapRV = J.memoize(function( fn, W, H )
+  assert(R.isPlainFunction(fn))
+  assert( fn.inputType:isRV() )
+  assert( fn.outputType:isRV() )
+  assert( type(W)=="number" or Uniform.isUniform(W) )
+  assert( type(H)=="number" or Uniform.isUniform(H) )
+  
+  local G = require "generators.core"
+
+  return G.Function{"MapRV_"..fn.name.."_"..tostring(W).."_"..tostring(H),
+                    types.RV( types.Array2d(fn.inputType:deInterface(),W,H)), fn.sdfInput,
+    function(inp)
+
+      local FO = G.FanOut{W*H}(inp)
+
+      local outList = {}
+      for i=1,Uniform(W):toNumber()*Uniform(H):toNumber() do
+        local a = G.FIFO{128}(FO[i-1][i-1])
+        local b = fn(a)
+        b = G.FIFO{128}(b)
+        table.insert( outList, b )
+      end
+
+      --local oc = R.concatArray2d("outconcat",outList,factor)
+      --local res = RM.FanInRoundRobin( fn.outputType:deInterface(), factor)(oc)
+      --res = G.FIFO{128}(res)
+      local res = G.FanIn(unpack(outList))
+      res = G.TupleToArray(res)
+      return res
+    end}
 end)
 
 return C

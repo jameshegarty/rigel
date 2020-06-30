@@ -70,7 +70,7 @@ local size1080p = (string.find(arg[0],"1080p")~=nil)
 local W = 256
 local H = 256
 
-local FILTER_FIFO = 512
+local FILTER_FIFO = 512*4
 local OUTPUT_COUNT = 614
 
 if size1080p then
@@ -78,7 +78,7 @@ if size1080p then
   OUTPUT_COUNT = 3599
 end
 
-local FILTER_RATE = {OUTPUT_COUNT,W*H}
+local FILTER_RATE = {OUTPUT_COUNT,(W+15)*(H+15)}
 
 local TILES_X = TILES
 local TILES_Y = TILES
@@ -86,7 +86,7 @@ local TILE_W = 4
 local TILE_H = 4
 
 local invV = (TILES_X*TILES_Y*TILE_W*TILE_H)/V
-local cycles = W*H*invV
+local cycles = (W+15)*(H+15)*invV
 print("CYCLES",cycles,"invV",invV)
 
 local outfile = "soc_sift_"..tostring(TILES).."_"..tostring(V)..J.sel(size1080p,"_1080p","")..J.sel(AUTOFIFO,"_autofifo","")
@@ -201,6 +201,31 @@ function(i)
   return G.Map{G.Add{R.Async}}(z)
 end}
 
+local FilterCrop = G.SchedulableFunction{"FilterCrop",types.Array2d(types.Bool,Uniform(W+15),H+15),
+function(i)
+  print("FILTERCROP",i.type)
+  local iFO = G.FanOut{2}(i)
+  
+  local posTrig = G.Map{G.ValueToTrigger}(iFO[1])
+  print("POSTRIG",posTrig.type)
+  local pos = G.PosCounter{true}(posTrig)
+  print("POS",pos.type)
+  local X = G.Map{G.Index{0}}(pos)
+  local Y = G.Map{G.Index{1}}(pos)
+
+  local Xgt = G.Map{G.GT{14}}(X)
+  local Ygt = G.Map{G.GT{14}}(Y)
+
+  local rhs = G.Map{G.And}(G.Zip(Xgt,Ygt))
+  
+  local lhs = iFO[0]
+  local res = G.Zip(lhs,rhs)
+  print("RES",res.type)
+  res = G.Map{G.And}(res)
+  print("RES",res.type)
+  return res
+end}
+
 local Bucketize = G.Function{"Bucketize",types.rv(types.tuple{T.FloatRec32,T.FloatRec32,T.FloatRec32}),
 function(i)
   local dx = i[0]
@@ -241,14 +266,14 @@ function(i)
   return magsq
 end}
   
-local SiftMag = G.Function{"siftMagInp",types.RV(types.tuple{T.FloatRec32,T.FloatRec32,T.FloatRec32}),
+local SiftMag = G.SchedulableFunction{"siftMagInp",types.tuple{T.FloatRec32,T.FloatRec32,T.FloatRec32},
 function(inp)
   local i = G.FanOut{2}(inp)
   local gauss_weight = i[1][2]
   gauss_weight = G.NAUTOFIFO{128}(gauss_weight)
   
   local magsq = G.Fmap{SiftMagPre}(G.Slice{{0,1}}(i[0]))
-  local mag = G.SqrtF( magsq )
+  local mag = G.BoostRate{G.SqrtF}( magsq )
   mag = G.NAUTOFIFO{1}(mag)
 
   local out = G.MulF(G.FanIn(mag,gauss_weight))
@@ -326,7 +351,6 @@ end}
 
 local SiftKernel = G.SchedulableFunction{"SiftKernel",
 T.Tuple{T.Array2d(T.Tuple{T.I8,T.I8},TILES_X*TILE_W,TILES_Y*TILE_H), T.Tuple{T.U16,T.U16} },
---T.Tuple{T.Array2d(T.Tuple{T.I8,T.I8},TILES_X*4,TILES_Y*4), T.Array2d(T.U16,2) },
 function(i)
   local dxdyType = types.I8
   local dxdyPair = types.tuple{dxdyType,dxdyType}
@@ -370,10 +394,13 @@ function(i)
   -- sum up all the mags in all the buckets
   desc1 = G.Flatten(desc1)
 
-  local desc_sum = G.Reduce{ RS.modules.sumPow2{inType=types.int(32),outType=types.int(32)} }(desc1)
+  desc1 = G.Map{G.ItoFR}(desc1)
+  
+  local descpow2 = G.Map{G.Pow2}(desc1)
+  local desc_sum = G.Reduce{G.AddF}(descpow2)
 
-  desc_sum = G.ItoFR(desc_sum)
-  desc_sum = G.SqrtF( desc_sum )
+  desc_sum = G.BoostRate{G.SqrtF}( desc_sum )
+  
   desc_sum = G.Broadcast{{8,1}}(desc_sum)
   desc_sum = G.Broadcast{{TILES_X,TILES_Y}}(desc_sum)
 
@@ -383,12 +410,12 @@ function(i)
 
   desc = G.Zip(desc)
   desc = G.Map{G.Zip}(desc)
-  desc = G.Map{G.Map{G.DivF}}(desc)
+  desc = G.Map{G.Map{G.BoostRate{G.DivF}}}(desc)
   desc = G.Flatten(desc)
   desc = G.ReshapeArray{{TILES_X*TILES_Y*8,1}}(desc)
 
   -- HACK:FIX: work around bug in interface conversion
-  desc = G.Deser{TILES_X*TILES_Y*8}(desc)
+--  desc = G.Deser{TILES_X*TILES_Y*8}(desc)
   
   local desc_cc = R.concat{desc,posX,posY}
 
@@ -434,6 +461,7 @@ function(inp)
   local right = G.Stencil{{-2,0,-2,0}}(right)
   
   right = G.Map{harrisNMS}(right)
+  right = FilterCrop(right)
   
   -------------------------------
   -- left branch: make the dxdy int8 stencils
@@ -452,8 +480,8 @@ function(inp)
 
   -- merge left/right
   local out = G.Zip(left,right)
-  out = G.Crop{{15,0,15,0}}(out)
-  out = G.Filter{{FILTER_RATE[1],FILTER_RATE[2]}}(out)
+--  out = G.Crop{{15,0,15,0}}(out)
+  out = G.Filter{{FILTER_RATE[1],FILTER_RATE[2]},FILTER_FIFO}(out)
   out = G.NAUTOFIFO{FILTER_FIFO}(out)
   out = G.Map{SiftKernel}(out)
 
@@ -476,7 +504,7 @@ function(i)
   local readStream = G.AXIReadBurst{ J.sel(size1080p,"boxanim0000.raw","boxanim_256.raw"), {W,H}, T.u(8), 8, noc.read }(i)
   local offset = SiftTop(readStream)
   print("SIFTOUT",offset.type)
-  return G.AXIWriteBurst{"out/"..outfile,noc.write}(offset)
+  return G.AXIWriteBurst{"out/"..outfile,noc.write,R.Unoptimized}(offset)
 end}
 
-harness({regs.start, TopModule, regs.done},nil,{regs})
+harness({regs.start, TopModule, regs.done},{cooldown=J.sel(size1080p,1000000,10000)},{regs})

@@ -150,7 +150,7 @@ function CT.tokenCounter( res, A, str, X )
   
   local struct TokenCounter { cnt:uint, ready:bool }
   terra TokenCounter:reset() self.cnt=0 end
-  terra TokenCounter:process( a : &A:toTerraType(), out : &A:toTerraType() )
+  terra TokenCounter:process( a : &A:lower():toTerraType(), out : &A:lower():toTerraType() )
     @out = @a
 
     if valid(a) and self.ready then
@@ -661,6 +661,21 @@ function CT.CMPF( res, exp, sig, op )
   end
 
   return MT.new( CMPF, res )
+end
+
+function CT.flatten( res )
+  local struct Flatten {ready:bool}
+
+  assert( rigel.lower(res.inputType):sizeof() == rigel.lower(res.outputType):sizeof() )
+  
+  terra Flatten:process( inp:&rigel.lower(res.inputType):toTerraType(), out:&rigel.lower(res.outputType):toTerraType())
+    @out = @([&rigel.lower(res.outputType):toTerraType()](inp))
+  end
+
+  terra Flatten:calculateReady( readyDownstream: bool )
+    self.ready = readyDownstream
+  end
+  return MT.new( Flatten, res )
 end
 
 return CT

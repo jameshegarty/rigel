@@ -504,7 +504,7 @@ int masterWriteDataLatchFlops(
     cyclesSinceWrite[port]++;
     //    slaveState->BVALID = false;
 
-    if( cyclesSinceWrite[port]>200000 && QSize(&writeQ[port])>0 ){
+    if( cyclesSinceWrite[port]>1500000 && QSize(&writeQ[port])>0 ){
       Transaction* t = (Transaction*)QPeek(&writeQ[port]);
       printf("MAXI%d write port is stalled out? No data sent for %d cycles (%d outstanding write requests, top addr %d)\n",port,cyclesSinceWrite[port],QSize(&writeQ[port]),t->addr);
       return 2;

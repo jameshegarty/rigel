@@ -1143,15 +1143,13 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, allo
   local G = require "generators.core"
   local C = require "generators.examplescommon"
   
-  if fn.inputType:isRV() or fn.outputType:isRV() then
-    -- special case
-    err( Vw:toNumber()==1 and Vh:toNumber()==1,"mapParSeq: if RV, vector width must be 1! but was Vw:",Vw_orig," Vh:",Vh_orig," fn:",fn.name)
+  if (fn.inputType:isRV() or fn.outputType:isRV()) and Vw:toNumber()==1 and Vh:toNumber()==1 then
 
     assert( fn.inputType:deInterface():isData() )
     local ty = fn.inputType:extractData()
     
     res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig),
-                     types.RV(types.Array2d(ty,1,1)), SDF{1,1}, function(inp) return fn(G.Index{0}(inp)) end}
+                     types.RV(types.Array2d(ty,1,1)), fn.sdfInput, function(inp) return fn(G.Index{0}(inp)) end}
 
     assert( rigel.isPlainFunction(res) )
         
@@ -1165,6 +1163,34 @@ modules.mapParSeq = memoize(function( fn, Vw_orig, Vh_orig, W_orig, H_orig, allo
       -- fix: technically, we want this to return a parseq, I guess? But this also works...
       res.outputType = types.RV( types.Seq(fn.outputType.over,W_orig,H_orig) )
     end
+  elseif fn.inputType:isRV() or fn.outputType:isRV() then
+
+    assert( fn.inputType:deInterface():isData() )
+    local ty = fn.inputType:extractData()
+
+    local fnMapped
+    fnMapped = C.MapRV( fn, Vw_orig, Vh_orig, allowStateful )
+
+    res = G.Function{"MapParSeq_fn"..fn.name.."_Vw"..tostring(Vw_orig).."_Vh"..tostring(Vh_orig).."_W"..tostring(W_orig).."_H"..tostring(H_orig), types.RV(types.Array2d(ty,Vw_orig,Vh_orig)), fnMapped.sdfInput,
+                     function(inp) return fnMapped(inp) end}
+
+    assert( rigel.isPlainFunction(res) )
+        
+    -- hackity hack
+    if fn.inputType~=types.Interface() then
+      err( res.inputType:extractData():isArray(), "mapParSeq: internal error, function input type should be an array? but was: ",res.inputType)
+      local newType = fn.inputType:replaceVar("over",types.ParSeq(res.inputType:extractData(),W_orig,H_orig))
+      J.err( newType:lower()== res.inputType:lower(), "type hack error ",newType,res.inputType )
+      res.inputType = newType
+    end
+    
+    if fn.outputType~=types.Interface() then
+      -- fix: technically, we want this to return a parseq, I guess? But this also works...
+      local newType = fn.outputType:replaceVar("over",types.ParSeq(res.outputType:extractData(),W_orig,H_orig))
+      J.err(newType:lower()== res.outputType:lower(), "type hack error ",newType,res.outputType)
+      res.outputType = newType
+    end
+
   else
     err( fn.inputType:isrv(),"mapParSeq: input must be rv, but is: ",fn.inputType )
     err( fn.outputType==types.Interface() or fn.outputType:isrv(),"mapParSeq: output must be rv, but is: ",fn.outputType )
@@ -1361,7 +1387,7 @@ end)
 -- type {A,bool}->A
 -- rate: {n,d} format frac. If coerce=true, 1/rate must be integer.
 -- if rate={1,16}, filterSeq will return W*H/16 pixels
-modules.filterSeq = memoize(function( A, W_orig, H, rate, fifoSize, coerce, framed, X )
+modules.filterSeq = memoize(function( A, W_orig, H, rate, fifoSize, coerce, framed, annotateBurstiness, X )
   assert(types.isType(A))
   local W = Uniform(W_orig):toNumber()
   --err(type(W)=="number", "filterSeq: W must be number, but is: ",W)
@@ -1391,6 +1417,10 @@ modules.filterSeq = memoize(function( A, W_orig, H, rate, fifoSize, coerce, fram
   res.sdfOutput = SDF{rate}
   res.name = sanitize("FilterSeq_"..tostring(A))
 
+  if annotateBurstiness~=false then
+    res.outputBurstiness = fifoSize
+  end
+  
   if coerce then
     local outTokens = ((W*H)*rate[1])/rate[2]
     err(outTokens==math.ceil(outTokens),"FilterSeq error: number of resulting tokens is non integer ("..tonumber(outTokens)..")")
@@ -2774,7 +2804,7 @@ modules.cropSeq = memoize(function( A, W_orig, H, V, L, R_orig, B, Top, framed, 
       if indexMode then
         ot = types.rvV(res.outputType:deInterface().list[1]:arrayOver())
       end
-      assert( ot:lower()==res.outputType:lower() )
+      J.err( ot:lower()==res.outputType:lower(),"CropSeq Internal Type error",ot,res.outputType )
       res.outputType = ot
     end
   else
@@ -3035,6 +3065,8 @@ modules.changeRate = memoize(function(A, H, inputRate, outputRate, framed, frame
 
   local maxRate = math.max(math.max(inputRate,outputRate),1)
   local minRate = math.max(math.min(inputRate,outputRate),1)
+
+  assert(outputRate<1000)
   
   err( inputRate==0 or maxRate % inputRate == 0, "maxRate ("..tostring(maxRate)..") % inputRate ("..tostring(inputRate)..") ~= 0")
   err( outputRate==0 or maxRate % outputRate == 0, "maxRate ("..tostring(maxRate)..") % outputRate ("..tostring(outputRate)..") ~=0")
@@ -5005,7 +5037,6 @@ local function lambdaSDFNormalize( input, output, name, X )
   assert( X==nil, "lambdaSDFNormalize: too many arguments")
   assert( type(name)=="string")
   
-
   if input~=nil and input.sdfRate~=nil then
     err( SDFRate.isSDFRate(input.sdfRate),"SDF input rate is not a valid SDF rate")
 
@@ -5044,13 +5075,11 @@ local function lambdaSDFNormalize( input, output, name, X )
 
           n.rate = SDF(SDFRate.multiply(n.rate,tr[1][2],tr[1][1]))
           assert( SDFRate.isSDFRate(n.rate))
-
-          --output:visitEach(function(n) print(n) end)
-          --J.err( n.rate:allLE1(), "Error? somehow lambda SDF normalize resulted in a function input with rate>1? rate:",n.rate," originalRate:",orig," maxRate:",sdfMaxRate[1],"/",sdfMaxRate[2])
         end
 
         if orig:le(n.rate)==false then
-          print("Warning: Module rate ended up being less than what the user requested. Function ",name," requested:",orig," but solved rate was:", n.rate)
+          print("* Warning: ",name," requested rate:",orig," but solved rate was:", n.rate)
+          --print(maxNode)
         end
         
         newInput = rigel.newIR(n)
@@ -5454,7 +5483,14 @@ local function insertFIFOs( out, delayTable, moduleName, X )
                 end
                 stout[st] = C.fifo( ity:deInterface(), d, nil, nil, nil, nil, "DELAY_"..moduleName.."_"..n.name )(n.inputs[i][st-1])
               end
-              ntmp.inputs[i] = rigel.concat(stout)
+
+              if n.inputs[i].type:isTuple() then
+                ntmp.inputs[i] = rigel.concat(stout)
+              elseif n.inputs[i].type:isArray() then
+                ntmp.inputs[i] = rigel.concatArray2d("Delayfifo",stout,n.inputs[i].W,n.inputs[i].H)
+              else
+                assert(false)
+              end
               J.err( n.inputs[i].type == ntmp.inputs[i].type, "BADTYPE",n.inputs[i].type," ",ntmp.inputs[i].type, n.inputs[i].type:streamCount() )
             end
 
@@ -5619,7 +5655,7 @@ local function calculateDelaysZ3( output, moduleName )
         -- todo fix: it looks like all streams in a concat get the same delay? is that good enough behavior?
         for k,i in ipairs(inputs) do
           table.insert( statements, "(assert (>= "..name.." "..i.."))" )
-          table.insert( ofTerms, "(* (- "..name.." "..i..") "..(n.inputs[k].type:extractData():verilogBits())..")" )
+          table.insert( ofTerms, "(* (- "..name.." "..i..") "..(n.inputs[k].type:lower():verilogBits())..")" )
         end
         res = name
       elseif n.kind=="apply" or (n.kind=="applyMethod" and rigel.isPlainFunction(n.inst.module)) then
@@ -5643,7 +5679,7 @@ local function calculateDelaysZ3( output, moduleName )
           --res = inputs[1] + fn.delay + extra
           --assert(false)
           table.insert( statements, "(assert (>= "..name.." (+ "..inputs[1].." "..(fn.delay+extra)..")))" )
-          local bts = n.inputs[1].type:extractData():verilogBits()
+          local bts = Uniform(n.inputs[1].type:lower():verilogBits()):toNumber()
           if bts>0 then table.insert( ofTerms, "(* (- "..name.." "..inputs[1]..") "..bts..")" ) end
           res = name
         end
@@ -5655,7 +5691,7 @@ local function calculateDelaysZ3( output, moduleName )
           res = name
         else
           table.insert( statements, "(assert (>= "..name.." (+ "..inputs[1].." "..n.inst.module.functions[n.fnname].delay..")))" )
-          local bts = n.inputs[1].type:extractData():verilogBits()
+          local bts = n.inputs[1].type:lower():verilogBits()
           if bts>0 then table.insert( ofTerms, "(* (- "..name.." "..inputs[1]..") "..bts..")" ) end
           res = name
           --res = inputs[1] + n.inst.module.functions[n.fnname].delay
@@ -5800,7 +5836,7 @@ local function calculateDelaysZ3( output, moduleName )
   if #ofTerms==0 then
     table.insert(z3str,"(assert (>= MINVAR 0))")
   else
-    table.insert(z3str,"(assert (>= MINVAR (+ "..table.concat(ofTerms," ")..")))")
+    table.insert(z3str,"(assert (>= MINVAR (+ "..table.concat(ofTerms,"\n")..")))")
   end
   table.insert(z3str, "(minimize MINVAR )")
   table.insert(z3str, "(check-sat)")
@@ -5850,8 +5886,10 @@ local function calculateDelaysZ3( output, moduleName )
   if verbose then
     print("** TOTALBITS",totalbits)
     print("** DELAYTABLE")
+    print("|value|delay|bits|")
+    
     for k,v in pairs(delayTable) do
-      print("|"..k.."|"..v.."|")
+      print("|"..k.."|"..v.."|"..(seenNames[k].type:lower():verilogBits()))
     end
   end
   
@@ -7040,6 +7078,148 @@ endmodule
     return s
   end
   
+  return res
+end)
+
+modules.FanOutRoundRobin = J.memoize(function( ty, N )
+  assert( types.isType(ty) )
+  assert( ty:isSchedule() )
+  assert( type(N)=="number" )
+  err( N>1, "fan out round robin must have at least 2 streams" )
+
+  local res = rigel.newFunction{ name=J.sanitize("FanOutRoundRobin_"..tostring(ty).."_N"..tostring(N)), inputType = types.RV(ty), outputType = types.Array2d(types.RV(ty),N), delay=0, stateful=true, sdfInput=SDF{1,1}, sdfOutput=SDF(J.broadcast({1,N},N)) }
+
+  if terralib~=nil then res.terraModule = MT.FanOutRoundRobin( res, ty, N ) end
+  
+  function res.makeSystolic()
+    local C = require "generators.examplescommon"
+    local s = C.automaticSystolicStub(res)
+    
+    local verilog = {res:vHeader()}
+
+    table.insert(verilog,[[  reg [7:0] phase;
+  reg [31:0] cnt;
+
+//  wire []]..((N*ty:verilogBits())-1)..[[:0] process_output_data;
+//  wire []]..(N-1)..[[:0] process_output_valid;
+//  assign process_output = {process_output_valid,process_output_data};
+]])
+
+    local readyDS = res:vOutputReady().."[0]"
+    local processOutputList = {}
+    for i=0,N-1 do
+      table.insert(processOutputList,res:vInputData())
+      table.insert(processOutputList,"("..res:vInputValid().." && phase==8'd"..i..")")
+      if i>0 then
+        readyDS = "(phase==8'd"..i..")?("..res:vOutputReady().."["..i.."]):("..readyDS..")"
+      end
+    end
+    
+table.insert(verilog,[[    
+  assign ]]..res:vInputReady()..[[ = ]]..readyDS..[[;
+  assign ]]..res:vOutput()..[[ = {]]..table.concat(J.reverse(processOutputList),",")..[[};
+  always @(posedge CLK) begin
+    if (reset) begin
+      phase <= 8'd0;
+      cnt <= 32'd0;
+    end else begin
+      if (]]..res:vInputValid()..[[ && ]]..res:vInputReady()..[[ ) begin
+        cnt <= cnt + 32'd1;
+        if ( phase == 8'd]]..(N-1)..[[ ) begin
+          phase <= 8'd0;
+        end else begin
+          phase <= phase + 8'd1;
+        end
+//        $display("FanOut Advance to Phase %d cnt %d",phase, cnt);
+      end
+        
+//      $display("FANOUT ph %d vi %d rds %b",phase,]]..res:vInputValid()..[[,]]..res:vOutputReady()..[[);
+    end
+  end
+]])
+    
+    table.insert(verilog,[[
+endmodule
+
+]])
+
+    s:verilog(table.concat(verilog))
+    return s
+  end
+
+  return res
+end)
+
+modules.FanInRoundRobin = J.memoize(function( ty, N )
+  assert( types.isType(ty) )
+  assert( ty:isSchedule() )
+  assert( type(N)=="number" )
+  err( N>1, "fan in round robin must have at least 2 streams" )
+
+  local res = rigel.newFunction{ name=J.sanitize("FanInRoundRobin_"..tostring(ty).."_N"..tostring(N)), inputType = types.Array2d(types.RV(ty),N), outputType = types.RV(ty), delay=0, stateful=true, sdfInput=SDF(J.broadcast({1,N},N)), sdfOutput=SDF{1,1} }
+
+  if terralib~=nil then res.terraModule = MT.FanInRoundRobin( res, ty, N ) end
+  
+  function res.makeSystolic()
+    local C = require "generators.examplescommon"
+    local s = C.automaticSystolicStub(res)
+    
+    local verilog = {res:vHeader()}
+
+    table.insert(verilog,[[  reg [7:0] phase;
+  reg [31:0] cnt;
+//  wire []]..((N*ty:verilogBits())-1)..[[:0] process_input_data;
+//  assign process_input_data = process_input[]]..((N*ty:verilogBits())-1)..[[:0];
+//  wire []]..(N-1)..[[:0] process_input_valid;
+//  assign process_input_valid = process_input[]]..((N*ty:verilogBits())+N-1)..[[:]]..((N*ty:verilogBits()))..[[];
+]])
+
+    local outputValid = "process_input["..(ty:verilogBits()).."]"
+    local outputData = "process_input["..(ty:verilogBits()-1)..":0]"
+
+    for i=0,N-1 do
+      table.insert(verilog,"  assign "..res:vInputReady().."["..i.."] = "..res:vOutputReady().." && (phase==8'd"..i..");\n")
+      
+      if i>0 then
+        outputValid = "(phase==8'd"..i..")?(process_input["..((i+1)*(ty:verilogBits()+1)-1).."]):("..outputValid..")"
+        outputData = "(phase==8'd"..i..")?(process_input["..((ty:verilogBits()+1)*(i+1)-2)..":"..((ty:verilogBits()+1)*i).."]):("..outputData..")"
+      end
+    end
+    
+table.insert(verilog,[[    
+  assign ]]..res:vOutputValid()..[[ = ]]..outputValid..[[;
+  assign ]]..res:vOutputData()..[[ = ]]..outputData..[[;
+
+  always @(posedge CLK) begin
+    if (reset) begin
+      phase <= 8'd0;
+      cnt <= 32'd0;
+    end else begin
+      if (]]..res:vOutputReady()..[[ && ]]..res:vOutputValid()..[[ ) begin
+        if ( phase == 8'd]]..(N-1)..[[ ) begin
+          phase <= 8'd0;
+        end else begin
+          phase <= phase + 8'd1;
+        end
+        cnt <= cnt + 32'd1;
+//        $display("FanIn advance to Phase %d cnt %d",phase,cnt);
+      end 
+
+//      $display("FANIN ph %d ri %b vo %d ro %d", phase, ]]..res:vInputReady()..","..res:vOutputValid()..","..res:vOutputReady()..[[);
+
+    end
+  end
+]])
+    
+    table.insert(verilog,[[
+endmodule
+
+]])
+
+    s:verilog(table.concat(verilog))
+    return s
+  end
+
   return res
 end)
 

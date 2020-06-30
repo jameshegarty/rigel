@@ -121,17 +121,25 @@ void readReg(VERILATORCLASS* top, bool verbose, unsigned int addr, unsigned int*
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv); 
 
-  printf("Usage: XXX.verilator simCycles --memoryStart ADDR --memoryEnd ADDR [--verbose] --inputs file1.raw address1 file2.raw address2 --outputs ofile1.raw address w h bitsPerPixel\n");
+  printf("Usage: XXX.verilator simCycles cooldown --memoryStart ADDR --memoryEnd ADDR [--verbose] --inputs file1.raw address1 file2.raw address2 --outputs ofile1.raw address w h bitsPerPixel\n");
 
   int simCycles = atoi(argv[1]);
   int simCyclesSlack = simCycles/10;
-
+  unsigned long totalCycles = simCycles+simCyclesSlack;
+    
   if(simCycles<=0){
     std::cout << "requested sim cycles is <= 0? is: " << simCycles << std::endl;
     exit(1);
   }
+
+  // run for a few extra cycles after the done bit is set, to make sure nothing crazy happens
+  int cooldownCycles = atoi(argv[2]);
+  if(cooldownCycles<0){
+    cooldownCycles = 1000;
+    if(totalCycles/10<cooldownCycles){cooldownCycles=totalCycles/10;}
+  }
   
-  int curArg = 2;
+  int curArg = 3;
 
   unsigned int MEMBASE = 0;
   if(strcmp(argv[curArg],"--memoryStart")==0){
@@ -205,7 +213,6 @@ int main(int argc, char** argv) {
     printf("ROUND %d\n",round);
     
     unsigned long cycle = 0;
-    unsigned long totalCycles = simCycles+simCyclesSlack;
     
     if(verbose){printSlave(S0LIST);}
 
@@ -283,8 +290,6 @@ int main(int argc, char** argv) {
 
     bool doneBitSet = false;
     cyclesToDoneSignal = -1;
-    int cooldownCycles = 1000; // run for a few extra cycles after the done bit is set, to make sure nothing crazy happens
-    if(totalCycles/10<cooldownCycles){cooldownCycles=totalCycles/10;}
     bool cooldownPrinted = false;
 
     top->IP_ARESET_N = true;
@@ -313,9 +318,9 @@ int main(int argc, char** argv) {
       masterReadDataLatchFlops( verbose, memory, 1, M1READ_SLAVEIN );
 
       int er0 = masterWriteDataLatchFlops( verbose, memory, &slaveState0, 0, round==1, M0WRITE_SLAVEIN );
-      if(er0!=0){if(er0==1){errored=true;}else{goto WRITEOUT;}}
+      if(er0!=0){if(er0==1){errored=true;}else{errored=true;goto WRITEOUT;}}
       int er1 = masterWriteDataLatchFlops( verbose, memory, &slaveState1, 1, round==1, M1WRITE_SLAVEIN );
-      if(er1!=0){if(er1==1){errored=true;}else{goto WRITEOUT;}}
+      if(er1!=0){if(er1==1){errored=true;}else{errored=true;goto WRITEOUT;}}
       
       masterReadReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0READ_SLAVEIN );
       masterWriteReqLatchFlops( verbose, MEMBASE, MEMSIZE, 0, M0WRITE_SLAVEIN );

@@ -398,7 +398,8 @@ functionGeneratorMT.__index = functionGeneratorFunctions
 
 -- this will specialize the generator to the given type. It must return a plain function.
 -- This function may fail to return you exactly what you want, but it will try, and return something.
-function functionGeneratorFunctions:specializeToType( ty, rate )
+-- convert: should we add conversion functions to get exactly what you want? default true
+function functionGeneratorFunctions:specializeToType( ty, rate, convert )
   err( types.isType(ty),"specializeToType: first arg should be a type, but is: ",ty)
   err( ty:isInterface(),"specializeToType: first arg should be interface type, but is: ",ty)
   err( SDFRate.isSDFRate(rate),"specializeToType: second arg should be a rate, but is: ",rate)
@@ -441,7 +442,7 @@ function functionGeneratorFunctions:specializeToType( ty, rate )
   end
   
 
-  return self:complete( arglist )
+  return self:complete( arglist, nil, convert )
 end
 
 -- return true if done, false if not done
@@ -523,27 +524,41 @@ return fn
 
         local resStack = {}
 
-        if fnType:rowMajor() and targetType:rowMajor() then
-          table.insert( resStack, C.ChangeRateRowMajor( targetType:arrayOver(), targetType.V[1], targetType.V[2],
-                                        fnType.V[1]*fnType.V[2],
-                                        targetType.size[1], targetType.size[2] ) )
-        elseif fnType:columnMajor() or targetType:columnMajor() then
-          --err( false,"NYI - convertInterface to a column major array converting:",targetType," to:",fnType," for:",fn,loc)
-          err( targetType.V[2]==fnType.V[2],"NYI - column major change rate with different array height. Converting ",targetType," to ",fnType)
-          table.insert( resStack, RM.changeRate( targetType:arrayOver(), fnType.V[2], targetType.V[1], fnType.V[1], true, fnType.size[1], fnType.size[2] ) )
-        else
-          J.err("converting between strange vector sizes! ",targetType," to ",fnType)
+        local fnTypeShadow, targetTypeShadow = fnType, targetType
+
+        -- we're deser: need to go from inner to outer
+        if targetTypeShadow:arrayOver()~=fnTypeShadow:arrayOver() and fnTypeShadow.V[1]*fnTypeShadow.V[2]>targetTypeShadow.V[1]*targetTypeShadow.V[2] then
+          table.insert( resStack, RM.mapSeq(reshape( fnTypeShadow.over, targetTypeShadow.over ), fnType.size[1], fnType.size[2]) )
+          assert( darkroom.isPlainFunction(resStack[#resStack]) )
+          targetTypeShadow = resStack[#resStack].outputType:deInterface()
         end
-        
-        if targetType:arrayOver()~=fnType:arrayOver() then
-          local FT, TT = fnType.over, resStack[#resStack].outputType:deInterface():arrayOver()
-          table.insert( resStack, RM.mapSeq(reshape( FT, TT ), fnType.size[1], fnType.size[2]) )
+
+        if fnTypeShadow:rowMajor() and targetTypeShadow:rowMajor() then
+          table.insert( resStack, C.ChangeRateRowMajor( targetTypeShadow:arrayOver(), targetTypeShadow.V[1], targetTypeShadow.V[2],
+                                        fnTypeShadow.V[1]*fnTypeShadow.V[2],
+                                        targetTypeShadow.size[1], targetTypeShadow.size[2] ) )
+          assert( darkroom.isPlainFunction(resStack[#resStack]) )
+        elseif fnTypeShadow:columnMajor() or targetTypeShadow:columnMajor() then
+          --err( false,"NYI - convertInterface to a column major array converting:",targetType," to:",fnType," for:",fn,loc)
+          err( targetTypeShadow.V[2]==fnTypeShadow.V[2],"NYI - column major change rate with different array height. Converting ",targetTypeShadow," to ",fnTypeShadow)
+          table.insert( resStack, RM.changeRate( targetTypeShadow:arrayOver(), fnTypeShadow.V[2], targetTypeShadow.V[1], fnTypeShadow.V[1], true, fnTypeShadow.size[1], fnTypeShadow.size[2] ) )
+          assert( darkroom.isPlainFunction(resStack[#resStack]) )
+        else
+          J.err("converting between strange vector sizes! ",targetTypeShadow," to ",fnTypeShadow)
+        end
+
+        -- we're ser: need to go from outer to inner
+        if targetTypeShadow:arrayOver()~=fnTypeShadow:arrayOver()  and fnTypeShadow.V[1]*fnTypeShadow.V[2]<targetTypeShadow.V[1]*targetTypeShadow.V[2] then
+          table.insert( resStack, RM.mapSeq(reshape( fnTypeShadow.over, targetTypeShadow.over ), fnTypeShadow.size[1], fnTypeShadow.size[2]) )
+          assert( darkroom.isPlainFunction(resStack[#resStack]) )
+          targetTypeShadow = resStack[#resStack].outputType:deInterface()
         end
 
         if #resStack==1 then
           res = resStack[1]
         else
-          res = C.linearPipeline(resStack,"ConvertInterface_Ser_stack")
+          J.err( #resStack>0,"bad fn stack? converting ",fnType," to ",targetType )
+          res = C.linearPipeline(resStack,"ConvertInterface_Ser_stack_"..tostring(fnType).."_"..tostring(targetType))
         end
       elseif fnType.V==targetType.V  and  fnType:arrayOver()~=targetType:arrayOver() then
         -- recurse
@@ -707,7 +722,8 @@ end)
 
 -- this function either returns a plain function, or fails
 -- This may not return a function with exactly the type you asked for! You need to check for that!
-function functionGeneratorFunctions:complete( arglist, loc, X )
+-- convert: should we add conversion functions to get exactly the type you want? default true
+function functionGeneratorFunctions:complete( arglist, loc, convert, X )
   assert( X==nil )
   
   if DARKROOM_VERBOSE then print("FunctionGenerator:complete() ",self.name) end
@@ -750,7 +766,7 @@ function functionGeneratorFunctions:complete( arglist, loc, X )
   local fn = self.completeFn( a )
   J.err( darkroom.isPlainFunction(fn), "function generator '",self.name,"' returned something other than a plain rigel function? returned:",fn )
 
-  if self.requiredArgs.type~=nil and self.requiredArgs.rate~=nil then -- if we don't know type, we can't lift
+  if self.requiredArgs.type~=nil and self.requiredArgs.rate~=nil and convert~=false then -- if we don't know type, we can't lift
     fn = darkroom.convertInterface( fn, arglist.type, arglist.rate )
     --J.err( fn.inputType == arglist.type, "convertInterface Fail wanted: ",arglist.type," returned: ",fn.inputType )
   end
@@ -1326,14 +1342,14 @@ function darkroomModuleFunctions:vInput( fnname )
 end
 
 function darkroomFunctionFunctions:vInputData()
-  assert(types.isHandshakeAny(self.inputType))
+  assert(self.inputType:isRV())
   assert( self.inputType~=types.HandshakeTrigger )
   return "process_input["..(types.extractData(self.inputType):verilogBits()-1)..":0]"
 end
 
 -- verilog value of input valid (if handshaked)
 function darkroomFunctionFunctions:vInputValid()
-  assert(types.isHandshakeAny(self.inputType))
+  assert(self.inputType:isRV())
   return "process_input["..(types.lower(self.inputType):verilogBits()-1)..":"..types.extractData(self.inputType):verilogBits().."]"
 end
 
@@ -1359,14 +1375,14 @@ end
 
 -- verilog value of output data (if handshaked)
 function darkroomFunctionFunctions:vOutputData()
-  assert(types.isHandshakeAny(self.outputType))
+  assert(self.outputType:isRV())
   err( self.outputType~=types.HandshakeTrigger, "vOutputData(): attempting to get data channel of a HandshakeTrigger" )
   return "process_output["..(types.extractData(self.outputType):verilogBits()-1)..":0]"
 end
 
 -- verilog value of output valid (if handshaked)
 function darkroomFunctionFunctions:vOutputValid()
-  assert(types.isHandshakeAny(self.outputType))
+  assert(self.outputType:isRV())
   return "process_output["..(types.lower(self.outputType):verilogBits()-1)..":"..types.extractData(self.outputType):verilogBits().."]"
 end
 
@@ -1420,11 +1436,11 @@ local function checkRigelFunction(tab)
   err( type(tab.name)=="string", "rigel.newFunction: name must be string, but is: ",tab.name )
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfInput), "rigel.newFunction: sdf input is not valid SDF rate" )
   err( darkroom.SDF==false or SDF.isSDF(tab.sdfOutput), "rigel.newFunction: sdf input is not valid SDF rate" )
-  err( darkroom.SDF==false or tab.sdfInput:allLE1(), "rigel.newFunction: sdf input rate is not <=1, but is: "..tostring(tab.sdfInput) )
-  err( darkroom.SDF==false or tab.sdfOutput:allLE1(), "rigel.newFunction: sdf output rate is not <=1, but is: "..tostring(tab.sdfOutput) )
+  err( darkroom.SDF==false or tab.sdfInput:allLE1(), "rigel.newFunction: sdf input rate is not <=1, but is: ",tab.sdfInput )
+  err( darkroom.SDF==false or tab.sdfOutput:allLE1(), "rigel.newFunction: sdf output rate is not <=1, but is: ",tab.sdfOutput )
 
-  err( darkroom.SDF==false or tab.sdfInput:nonzero(), "rigel.newFunction: sdf input rate is not >0, but is: "..tostring(tab.sdfInput) )
-  err( darkroom.SDF==false or tab.sdfOutput:nonzero(), "rigel.newFunction: sdf output rate is not >0, but is: "..tostring(tab.sdfOutput) )
+  err( darkroom.SDF==false or tab.sdfInput:nonzero(), "rigel.newFunction: sdf input rate is not >0, but is: ",tab.sdfInput )
+  err( darkroom.SDF==false or tab.sdfOutput:nonzero(), "rigel.newFunction: sdf output rate is not >0, but is: ",tab.sdfOutput )
 
   err( types.isType(tab.inputType), "rigel.newFunction: input type must be type, but is: ",tab.inputType )
   err( types.isType(tab.outputType), "rigel.newFunction: output type must be type, but is ",tab.outputType," (",tab.name,")" )
@@ -1838,7 +1854,8 @@ darkroomIRMT.__tostring = function(tab,prefix)
   if darkroom.SDF then
     res = res .."\nRate:"..tostring(tab.rate)
     local util = tab:utilization()
-    if util~=nil then res=res.."\nUtilization:"..tostring(util[1]).."/"..tostring(util[2]) end
+    local Uniform = require "uniform"
+    if util~=nil then res=res.."\nUtilization: "..tostring(util[1]).."/"..tostring(util[2])..", "..(Uniform(util[1]):toNumber()*100/Uniform(util[2]):toNumber()).."%" end
   end
 
   if true then

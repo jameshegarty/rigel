@@ -397,6 +397,22 @@ generators.Neg = R.FunctionGenerator("core.Neg", {}, {"async"},
 function(a) return C.neg( a.T.precision, a.T.exp ) end,
 P.IntType("T") )
 
+generators.Pow2 = R.FunctionGenerator("core.Pow2", {"type","rate"}, {"async"},
+function(a)
+  if a.type:deInterface():isFloatRec() then
+    local res = generators.Function{"Power2F",types.rv(a.type:deInterface()),SDF{1,1},
+                  function(i)
+                    return generators.MulF(i,i)
+                  end}
+    return res
+  elseif a.type:deInterface():isInt() then
+    return C.Pow2( a.type:deInterface().precision, a.type:deInterface().exp )
+  else
+    print("NYI - pow2 on type ",a.type)
+    assert(false)
+  end
+end)
+
 generators.Sub = R.FunctionGenerator("core.Sub",{"type","rate"},{"async","number"},
 function(args)
   if args.number~=nil then
@@ -683,8 +699,8 @@ T.Array2d( T.Trigger, P.SizeValue("size"), P.SizeValue("V") ) )
 -- this takes an Seq of arrays, and flattens it into a parseq
 generators.Flatten = R.FunctionGenerator("core.Flatten",{"type","rate"},{},
 function(args)
-  J.err( args.outerV:eq(0,0), "Flatten NYI - outer array must be fully sequential, but outer V was:",args.outerV," and input type was: ", args.type)
-  return C.flatten( args.innerT, args.innerSize, args.innerV, args.outerSize )
+--  J.err( args.outerV:eq(0,0), "Flatten NYI - outer array must be fully sequential, but outer V was:",args.outerV," and input type was: ", args.type)
+  return C.flatten( args.innerT, args.innerSize, args.innerV, args.outerSize, args.outerV )
 end,
 T.Array2d( T.Array2d(P.DataType("innerT"),P.SizeValue("innerSize"),P.SizeValue("innerV")), P.SizeValue("outerSize"), P.SizeValue("outerV") )  )
 
@@ -706,16 +722,26 @@ function(args)
 
   -- NOTE: we send the fn we are mapping over the original (non-optimized) type, b/c it may not
   -- want to optimize the type!
+  -- so we sort of have to just optimize our own type...
   local S = args.type:deInterface():arrayOver()
+  local innerRate = args.rate
 
+  if args.unoptimized~=true then
+    local AR = args.type:deInterface()
+    local startRate = SDF{args.rate[1][1]*math.max(1,Uniform(AR.V[1]):toNumber())*math.max(1,Uniform(AR.V[2]):toNumber()),args.rate[1][2]*math.max(1,Uniform(AR.size[1]):toNumber())*math.max(1,Uniform(AR.size[2]):toNumber())}
+    local outerV = J.canonicalV( startRate, AR.size, AR:columnMajor() )
+    innerRate = SDF{args.rate[1][1]*math.max(1,AR.V[1])*math.max(1,AR.V[2]),args.rate[1][2]*math.max(1,outerV[1])*math.max(1,outerV[2])}
+--    print("MAP_ONE_OPT",args.type,args.rate,"S",S,"INNERRATE",innerRate,"OUTERV",outerV)
+  end
+  
   --print( "MAP:SPECIALIZE TO TYPE", args.rigelFunction.name,types.rv(S))
-  local fn = args.rigelFunction:specializeToType( types.rv(S), args.rate )
+  local fn = args.rigelFunction:specializeToType( types.rv(S), innerRate, false )
   J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.rv(S))
 
   if ((fn.inputType:isrv() and fn.outputType:isrv()) or (fn.inputType:isRV() and fn.outputType:isRV()))==false then
     --print("Map: fn returned unsupported types",fn.inputType,fn.outputType," - trying again with RV...")
     -- NYI - we basically only support rv or RV (ie no rvV etc), so if it can't be rv, ask for RV
-    fn = args.rigelFunction:specializeToType( types.RV(S), args.rate )
+    fn = args.rigelFunction:specializeToType( types.RV(S), innerRate )
     J.err( fn~=nil, "Map: failed to specialize mapped function ",args.rigelFunction.name," to type:",types.RV(S))
   end
 
@@ -724,27 +750,30 @@ function(args)
     ty,rate = args.type,args.rate
   else
     ty,rate = args.type:optimize(args.rate)
+--    print("OPTIMIZE_MAP",args.type,args.rate,ty,rate)
   end
   
   local S, size, V, var = ty:deInterface():arrayOver(), ty:deInterface().size, ty:deInterface().V, ty:deInterface().var
 
+  local res
   if var then
     if V:eq(R.Size(0,0)) then
-      return RM.mapVarSeq(fn, size[1], size[2] )
+      res = RM.mapVarSeq(fn, size[1], size[2] )
     else
       assert(false)
     end
   else
     if size==V then
-      return RM.map( fn, size[1], size[2], args.bool )
+      res = RM.map( fn, size[1], size[2], args.bool )
     elseif V:eq(R.Size(0,0)) then
-      return RM.mapSeq( fn, size[1], size[2] )
+      res = RM.mapSeq( fn, size[1], size[2] )
     else -- parseq
-      return RM.mapParSeq( fn, V[1], V[2], size[1], size[2], args.bool )
+      res = RM.mapParSeq( fn, V[1], V[2], size[1], size[2], args.bool )
     end
   end
-  
-  assert(false)
+
+--  print("MAPDONE",ty,rate,res.inputType,res.outputType,"SIZE",size,"V",V,"VAR",var,"FN",fn.inputType,fn.outputType,fn.name)
+  return res
 end,
 nil,false)
 
@@ -779,14 +808,23 @@ function(args)
   local fn = args.rigelFunction:specializeToType( T.rv(types.Tuple{tyOver,tyOver}), SDF{1,1} )
 
   J.err( fn.inputType:isrv() and fn.outputType:isrv(),"Reduce: error, reduce can only operator over rv functions, but fn had type: ",fn.inputType,"->",fn.outputType)
-  
-  if args.V[1]==0 and args.V[2]==0 then
-    return RM.reduceSeq( fn, args.size[1], args.size[2], true)
-  elseif args.V[1]<args.size[1] or args.V[2]<args.size[2] then
-    return RM.reduceParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2] )
-  else
-    return RM.reduce( fn, args.size[1],args.size[2])
-  end
+
+    if fn.delay>0 then
+      -- we need to go parallel
+      if args.V[1]<args.size[1] or args.V[2]<args.size[2] then
+        print("WARNING: non-async function passed to reduce (ie delay>0), so we must go parallel!")
+      end
+      
+      return RM.reduce( fn, args.size[1],args.size[2])
+    else
+      if args.V[1]==0 and args.V[2]==0 then
+        return RM.reduceSeq( fn, args.size[1], args.size[2], true)
+      elseif args.V[1]<args.size[1] or args.V[2]<args.size[2] then
+        return RM.reduceParSeq( fn, args.V[1], args.V[2], args.size[1], args.size[2] )
+      else
+        return RM.reduce( fn, args.size[1],args.size[2])
+      end
+    end
 end,
 T.Array2d(P.ScheduleType("S"),P.SizeValue("size"),P.SizeValue("V")))
 
@@ -866,7 +904,7 @@ generators.DeserSeq = R.FunctionGenerator("core.DeserSeq",{"number"},{},
 function(args)
   return RM.changeRate( args.T, args.size[2], args.size[1], args.size[1]*args.number )
 end,
-types.rV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))), false )
+types.array2d(P.DataType("T"),P.SizeValue("size")), false )
 
 
 -- Number: this is the factor of # of parallel tokens we should concat.
@@ -874,12 +912,12 @@ types.rV(types.Par(types.array2d(P.DataType("T"),P.SizeValue("size")))), false )
 -- [1,4;4,4} with factor 4 would end up [4,4]
 generators.Deser = R.FunctionGenerator("core.Deser",{"number"},{},
 function(args)
-  if args.V:eq(0,0) then
+  if args.V:eq(0,0) or args.V:eq(1,1) then
     -- change T{W,H} to T[W,H]
     assert(args.size[2]==1)
     assert(args.size[1]*args.size[2]==args.number)
 
-    return RM.changeRate( args.T, 1, 0, args.number, true, args.size[1], args.size[2] )
+    return RM.changeRate( args.T, 1, args.V[1], args.number, true, args.size[1], args.size[2] )
   else
     print( "NYI - deser on type: ", args.type )
     assert(false)
@@ -910,7 +948,7 @@ function(args)
     J.err( args.type:deInterface():isArray() )
     local S, size, V = args.type:deInterface():arrayOver(), args.type:deInterface().size, args.type:deInterface().V
     print("WRITEPGM",size)
-    assert( S:deSchedule():verilogBits()%8 == 0)
+    J.err( S:deSchedule():verilogBits()%8 == 0, "FwritePGM: type must be byte aligned? ", args.type)
     assert( V:eq(0,0) )
     local W = Uniform(size[1]):toNumber() * (S:deSchedule():verilogBits()/8)
     local H = Uniform(size[2]):toNumber()
@@ -1005,7 +1043,7 @@ function(args)
         print("!!!!!!!! rate mismatch into SchedulableFunction ",args.string," forcing RV! ",optType,SDF{optRate[1]},SDF{r})
         RVMode = true
         assert( optType:isTuple() or optType:isArray() )
-        input = R.input( optType, optRate)
+        input = R.input( optType, optRate )
         break
       end
     end
@@ -1068,7 +1106,7 @@ types.array2d( P.ScheduleType("T"), P.SizeValue("size"), P.SizeValue("V") ) )
 generators.ReshapeArray = R.FunctionGenerator("core.ReshapeArray",{"size","type"},{},
 function(args)
   J.err( args.size[1]*args.size[2]==args.insize[1]*args.insize[2], "ReshapeArray: total number of items must not change. Input size: ",args.insize," requested reshape: ",args.size )
-
+  
   if args.V:eq(0,0) then
     local tmp = C.identity( args.type:deInterface(), "ReshapeArray_"..tostring(args.type:deInterface()) )
 
@@ -1081,11 +1119,20 @@ function(args)
     tmp.outputType = OT
     
     return tmp
+  elseif args.size[1]%args.V[1]==0 and args.size[2]%args.V[2]==0 then
+    -- trivial reshape of parseq
+    local tmp = C.identity( args.type:deInterface(), "ReshapeArray_"..tostring(args.type:deInterface()) )
+
+    local OT = types.rv( types.Array2d(args.T, args.size, args.V) )
+    assert( tmp.outputType:lower()==OT:lower() )
+    tmp.outputType = OT
+
+    return tmp
   else
     return C.cast( T.Array2d(args.T,args.insize), T.Array2d(args.T,args.size) )
   end
 end,
-types.array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V")) )
+types.array2d(P.DataType("T"),P.SizeValue("insize"),P.SizeValue("V")),false )
 
 generators.Reshape = generators.ReshapeArray
 
@@ -1100,12 +1147,24 @@ generators.Identity = R.FunctionGenerator("core.Identity",{},{},
 function(args) return C.identity(args.T) end,
 P.ScheduleType("T") )
 
-generators.Sel = R.FunctionGenerator("core.Sel",{},{},
+generators.Sel = R.FunctionGenerator("core.Sel",{"type","rate"},{"type1","number","number1"},
 function(args)
-  return C.select(args.T)
-end,
-types.tuple{types.bool(),P.DataType("T"),P.DataType("T")} )
-
+  if args.number~=nil then
+    assert( args.type:deInterface():isBool() )
+    local res = generators.Function{"Sel_Unary_"..tostring(args.type1).."_"..args.number.."_"..args.number1,types.rv(types.Bool),SDF{1,1},
+                  function(inp)
+                    return C.select(args.type1)(inp,R.c(args.type1,args.number),R.c(args.type1,args.number1))
+                  end}
+    assert(R.isPlainFunction(res))
+    print(res)
+    return res
+  else
+    assert( args.type:deInterface():isTuple() )
+    assert( #args.type:deInterface().list==3 )
+    assert( args.type:deInterface().list[2]==args.type:deInterface().list[3] )
+    return C.select(args.type:deInterface().list[2])
+  end
+end)
 
 generators.Slice = R.FunctionGenerator("core.Slice",{"type","rate"},{"bounds","size"},
 function(args)
@@ -1145,13 +1204,15 @@ function(a)
 end,
 T.Array2d(P.DataType("D"),P.SizeValue("size"),P.SizeValue("V")) )
 
-generators.Filter = R.FunctionGenerator("core.Filter",{"size"},{},
+generators.Filter = R.FunctionGenerator("core.Filter",{"size"},{"number"},
 function(args)
   if args.opt==1 then
     assert(args.V[2]==1)
     return C.FilterSeqPar( args.T, args.V[1], SDF(args.size), true, args.insize[1], args.insize[2] )
   else
-    return RM.filterSeq( args.T, args.insize[1], args.insize[2], args.size, 0, false, true )
+    local fifosize = 0
+    if args.number~=nil then fifosize=args.number end
+    return RM.filterSeq( args.T, args.insize[1], args.insize[2], args.size, fifosize, false, true )
   end
 end,
 T.ParSeq( T.Array2d( T.tuple{P.DataType("T"),T.bool()},P.SizeValue("V")),P.SizeValue("insize") ) )
@@ -1268,7 +1329,7 @@ end)
 
 -- add floats
 -- we intentionally named this something different than regular add, to clearly indicate it is float
-generators.AddF = R.FunctionGenerator("core.AddF",{"type","rate"},{"async","number"},
+generators.AddF = R.FunctionGenerator("core.AddF",{"type","rate"},{"number"},
 function(args)
   
   local res = {}
@@ -1283,7 +1344,7 @@ function(args)
   end
 end)
 
-generators.SubF = R.FunctionGenerator("core.AddF",{"type","rate"},{"async","number"},
+generators.SubF = R.FunctionGenerator("core.AddF",{"type","rate"},{"number"},
 function(args)
   
   local res = {}
@@ -1344,6 +1405,19 @@ function(args)
   end
 end)
 
+generators.EQF = R.FunctionGenerator("core.EQF",{"type","rate"},{"async","number"},
+function(args)
+  local res = {}
+  if args.number~=nil then
+    assert(false)
+  else
+    J.err( args.type:deInterface():isTuple(), "GTF: expected tuple input, but was: ",args.type )
+    J.err( args.type:deInterface().list[1]==args.type:deInterface().list[2], "GTF: lhs and rhs must have same types! but input type is: ",args.type )
+    J.err( args.type:deInterface().list[1]:isFloatRec() )
+    return C.CMPF( args.type:deInterface().list[1].exp, args.type:deInterface().list[1].sig, "=" )
+  end
+end)
+
 generators.LTF = R.FunctionGenerator("core.LTF",{"type","rate"},{"async","number"},
 function(args)
   local res = {}
@@ -1393,6 +1467,36 @@ generators.RateMonitor = R.FunctionGenerator("core.RateMonitor",{"type","rate","
 function(args)
   local fn = args.rigelFunction:specializeToType( args.type, args.rate )
   return C.RateMonitor( fn, args.rate, args.string )
+end,nil,false)
+
+generators.TokenCounter = R.FunctionGenerator("core.TokenCounter",{"type","rate"},{"string"},
+function(args)
+  return C.tokenCounter( args.type, args.string )
+end,nil,false)
+
+generators.BoostRate = R.FunctionGenerator("core.BoostRate",{"type","rate","rigelFunction"},{"number"},
+function(args)
+  local fn = args.rigelFunction:specializeToType( args.type, args.rate )
+
+  local N = Uniform(args.rate[1][1]):toNumber()*Uniform(fn.sdfInput[1][2]):toNumber()
+  local D = Uniform(args.rate[1][2]):toNumber()*Uniform(fn.sdfInput[1][1]):toNumber()
+  local factor = math.ceil( N/D )
+  local origFactor = factor
+  -- for sanity, never boost rate above 100%!
+  local maxFactor = math.ceil(Uniform(fn.sdfInput[1][2]):toNumber()/Uniform(fn.sdfInput[1][1]):toNumber())
+  factor = math.min( factor, maxFactor )
+
+  if args.number~=nil then
+    factor = args.number
+  end
+
+  print("Boost Rate",fn.name,args.rate, fn.sdfInput, factor, origFactor, args.number )
+  
+  if factor<=1 then
+    return fn
+  else
+    return C.BoostRate( fn, factor )
+  end
 end,nil,false)
 
 function generators.export(t)
