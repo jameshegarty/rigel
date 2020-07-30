@@ -80,7 +80,7 @@ function(i)
   local padZip = G.Zip(padFanIn)
 
   padZip = G.Map{G.Zip}(padZip)
-  res = G.Map{ConvInner}(padZip)
+  local res = G.Map{ConvInner}(padZip)
   res = Crop{{PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0}}(res)
 
   return res
