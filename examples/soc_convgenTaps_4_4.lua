@@ -60,39 +60,34 @@ function(inp)
   return RemoveMSBs{sft.type:deInterface().precision-8}(sft)
 end}
 
---local Conv = G.Function{ "Conv", SDF{1,cycles}, T.HandshakeTrigger,
-local Conv = G.SchedulableFunction{ "Conv", T.Trigger,
-  function(i)
-    local ii = G.FanOut{2}(i)
-    local ii0 = ii[0]
-    ii0 = G.NAUTOFIFO{128}(ii0)
-    local ii1 = ii[1]
-    ii1 = G.NAUTOFIFO{128}(ii1)
-    
-    local res = G.AXIReadBurst{"1080p.raw",{1920,1080},u(8),noc.read}(ii0)
+local ConvTop = G.SchedulableFunction{ "ConvTop", T.Array2d(T.U8,1920,1080),
+function(i)
+  local pad = Pad{{PadRadius, PadRadius, ConvRadius, ConvRadius}}(i)
 
-    --local T = Uniform(res.type:deInterface().V[1]*res.type:deInterface().V[2]):toNumber()
-    --local PadRadius = J.upToNearest(T, ConvRadius)
+  local padFO = G.FanOut{2}(pad)
+  local pad0 = padFO[0]
+  pad0 = G.NAUTOFIFO{128}(pad0)
+  local pad1 = padFO[1]
+  pad1 = G.NAUTOFIFO{128}(pad1)
 
-    local pad = Pad{{PadRadius, PadRadius, ConvRadius, ConvRadius}}(res)
-    print("PAD",pad.type,pad.rate)
-    local st = Stencil{{-ConvWidth+1,0,-ConvWidth+1,0}}(pad)
-    print("ST",st.type,st.rate)
-    --st = G.Map{G.Map{AddMSBs{24}}}(st)
-    -----
-    local trig = G.Broadcast{R.Size(Uniform(1920+PadRadius*2),1080+ConvRadius*2)}(ii1)
-    local coeffs = G.Map{RM.Storv(regs.coeffs)}(trig)
-    print("TOCOL",coeffs.type,coeffs.rate)
-    coeffs = G.Map{G.ToColumns}(coeffs)
-    -----
-    print("STCOEFFS",st.type,coeffs.type)
-    local padFanIn = G.FanIn(st,coeffs)
-    local padZip = G.Zip(padFanIn)
-    print("PadSip",padZip.type,padZip.rate)
-    padZip = G.Map{G.Zip}(padZip)
-    res = G.Map{ConvInner}(padZip)
-    res = Crop{{PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0}}(res)
-    return AXIWriteBurst{"out/"..outfile,noc.write}(res)
-  end}
+  local st = Stencil{{-ConvWidth+1,0,-ConvWidth+1,0}}(pad0)
 
-harness({regs.start,Conv,regs.done},nil,{regs})
+  local trig = G.Map{G.ValueToTrigger}(pad1)
+  local coeffs = G.Map{RM.Storv(regs.coeffs)}(trig)
+  coeffs = G.Map{G.ToColumns}(coeffs)
+
+  local padFanIn = G.FanIn(st,coeffs)
+  local padZip = G.Zip(padFanIn)
+
+  padZip = G.Map{G.Zip}(padZip)
+  local res = G.Map{ConvInner}(padZip)
+  res = Crop{{PadRadius+ConvRadius, PadRadius-ConvRadius, ConvRadius*2, 0}}(res)
+
+  return res
+end}
+
+harness({regs.start,
+         G.AXIReadBurst{"1080p.raw",{1920,1080},u(8),noc.read},
+         ConvTop,
+         AXIWriteBurst{"out/"..outfile,noc.write},
+         regs.done},nil,{regs})
