@@ -39,7 +39,7 @@ public:
   RigelType* over;
   int W;
   int H;
-  virtual std::string toLua() const{return std::string("T.Array2d()");}
+  virtual std::string toLua() const{return std::string("T.Array2d("+over->toLua()+","+std::to_string(W)+","+std::to_string(H)+")");}
 };
 
 Array2dType* Array2d( RigelType* over, int W, int H){
@@ -48,10 +48,21 @@ Array2dType* Array2d( RigelType* over, int W, int H){
 
 class TupleType : public RigelType{
 public:
-  TupleType( RigelType* lhs, RigelType* rhs ):lhs(lhs),rhs(rhs){}
-  RigelType* lhs;
-  RigelType* rhs;
-  virtual std::string toLua() const{return std::string("T.Tuple{}");}
+  TupleType( RigelType* lhs, RigelType* rhs ){
+    list.push_back(lhs);
+    list.push_back(rhs);
+  }
+  std::vector<RigelType*> list;
+  virtual std::string toLua() const{
+    std::string t = std::string("T.Tuple{");
+    for(int i=0; i<list.size(); i++){
+      t += list[i]->toLua();
+      if(i<list.size()-1){
+        t+=",";
+      }
+    }
+    return t+"}";
+  }
 };
 
 TupleType* Tuple( RigelType* lhs, RigelType* rhs){

@@ -1,13 +1,21 @@
+LUA = ../rigelLuajit
+LUAJIT = ../rigelLuajit
+TERRA = ../rigelTerra
+
 SRCS = soc_simple.cpp
 SRCS += soc_convgenTaps_4_4.cpp
 
-LUA = $(patsubst %.cpp,out/%.lua,$(SRCS))
-LUA += $(patsubst %.cpp,out/%,$(SRCS))
+LUAOUT = $(patsubst %.cpp,out/%.lua,$(SRCS))
+LUAOUT += $(patsubst %.cpp,out/%,$(SRCS))
 
+VERILOG = $(patsubst %.cpp,out/%.v,$(SRCS))
 
-all: $(LUA)
+VERILATORSOC = $(patsubst %.cpp,out/%.verilatorSOC.raw,$(SRCS))
+VERILATORSOC += $(patsubst %.cpp,out/%.verilatorSOC.correct.txt,$(SRCS))
 
-lua: $(LUA)
+all: $(LUAOUT) $(VERILOG) $(VERILATORSOC)
+
+lua: $(LUAOUT)
 
 clean:
 	rm -Rf out/*
@@ -17,3 +25,8 @@ out/%: %.cpp
 
 out/%.lua: out/%
 	./out/$*
+
+out/%.v: out/%.lua
+	../rigelLuajit $^
+
+include ../platform/platform.mk
