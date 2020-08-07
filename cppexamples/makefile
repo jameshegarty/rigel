@@ -2,20 +2,23 @@ LUA = ../rigelLuajit
 LUAJIT = ../rigelLuajit
 TERRA = ../rigelTerra
 
-SRCS = soc_simple.cpp
-SRCS += soc_convgenTaps_4_4.cpp
+SRCSCPP = soc_simple.cpp
+SRCSCPP += soc_convgenTaps.cpp
 
-LUAOUT = $(patsubst %.cpp,out/%.lua,$(SRCS))
-LUAOUT += $(patsubst %.cpp,out/%,$(SRCS))
+SRCSLUA = out/soc_simple.lua
+SRCSLUA += out/soc_convgenTaps_8_1.lua out/soc_convgenTaps_8_2.lua out/soc_convgenTaps_8_4.lua out/soc_convgenTaps_8_8.lua
+SRCSLUA += out/soc_convgenTaps_8_1_autofifo.lua out/soc_convgenTaps_8_2_autofifo.lua out/soc_convgenTaps_8_4_autofifo.lua out/soc_convgenTaps_8_8_autofifo.lua
+SRCSLUA += out/soc_stereo_full_64_4.lua out/soc_stereo_full_64_8.lua out/soc_stereo_full_64_16.lua out/soc_stereo_full_64_32.lua out/soc_stereo_full_64_64.lua
+SRCSLUA += out/soc_stereo_full_64_4_autofifo.lua out/soc_stereo_full_64_8_autofifo.lua out/soc_stereo_full_64_16_autofifo.lua out/soc_stereo_full_64_32_autofifo.lua out/soc_stereo_full_64_64_autofifo.lua
 
-VERILOG = $(patsubst %.cpp,out/%.v,$(SRCS))
+CPP += $(patsubst %.cpp,out/%,$(SRCSCPP))
 
-VERILATORSOC = $(patsubst %.cpp,out/%.verilatorSOC.raw,$(SRCS))
-VERILATORSOC += $(patsubst %.cpp,out/%.verilatorSOC.correct.txt,$(SRCS))
+VERILOG = $(patsubst out/%.lua,out/%.v,$(SRCSLUA))
 
-all: $(LUAOUT) $(VERILOG) $(VERILATORSOC)
+VERILATORSOC = $(patsubst out/%.lua,out/%.verilatorSOC.raw,$(SRCSLUA))
+VERILATORSOC += $(patsubst out/%.lua,out/%.verilatorSOC.correct.txt,$(SRCSLUA))
 
-lua: $(LUAOUT)
+all: $(CPP) $(SRCSLUA) $(VERILOG) $(VERILATORSOC)
 
 clean:
 	rm -Rf out/*
@@ -25,6 +28,12 @@ out/%: %.cpp
 
 out/%.lua: out/%
 	./out/$*
+
+out/soc_convgenTaps_8_1.lua out/soc_convgenTaps_8_2.lua out/soc_convgenTaps_8_4.lua out/soc_convgenTaps_8_8.lua: out/soc_convgenTaps
+	./out/soc_convgenTaps
+
+out/soc_stereo_full_64_4.lua out/soc_stereo_full_64_8.lua out/soc_stereo_full_64_16.lua out/soc_stereo_full_64_32.lua out/soc_stereo_full_64_64.lua: out/soc_stereo
+	./out/soc_stereo
 
 out/%.v: out/%.lua
 	../rigelLuajit $^

@@ -8,15 +8,14 @@
 using namespace Rigel;
 using namespace Rigel::Lib;
 
-constexpr unsigned int V = 4;
-constexpr float VF = 4;
+constexpr unsigned int V = 8;
+constexpr float VF = 8;
 constexpr float ConvWidthF = 8;
 constexpr int ConvWidth = 8;
-constexpr float ConvRadiusF = ConvWidthF/2.f;
-constexpr unsigned int ConvRadius = ConvRadiusF;
+constexpr unsigned int ConvRadius = 4;
 
-constexpr unsigned int PadRadius = upToNearest(V, ConvRadius);
-constexpr float cycles = ((1920.f+PadRadius*2)*(1080.f+ConvWidthF))/(VF/ConvWidthF);
+constexpr unsigned int PadRadius = 8; //upToNearest(V, ConvRadius);
+
 
 class ConvInner:public UserFunction{
 public:
@@ -69,21 +68,37 @@ int main(){
   ConvTop convTop;
   std::string convTopLua = convTop.luaDefinition();
 
-  std::ofstream out("out/soc_convgenTaps_4_4.lua");
-  out << header;
-  out << "local regs = SOC.axiRegs({{\"coeffs\",RM.reg(T.Array2d(T.Uint(8),8,8),J.range(8*8))}},SDF{1,"+std::to_string(cycles)+"}):instantiate(\"regs\")\n"
-"local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate(\"ZynqNOC\")\n"
-"noc.extern=true\n";
+  for(int autofifo=0; autofifo<=1; autofifo++){
+    for(int V=1; V<=64; V*=2){
+      float VF = V;
+      float cycles = ((1920.f+PadRadius*2)*(1080.f+ConvWidthF))/(VF/ConvWidthF);
+  
+      std::ofstream out("out/soc_convgenTaps_8_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+".lua");
+      out << header;
+      if(autofifo==0){
+        out << "R.AUTO_FIFOS = false\n";
+      }else{
+        out << "R.AUTO_FIFOS = true\n";
+        out << "R.Z3_FIFOS = true\n";
+      }
+      
+      out << "local regs = SOC.axiRegs({{\"coeffs\",RM.reg(T.Array2d(T.Uint(8),8,8),J.range(8*8))}},SDF{1,"+std::to_string(cycles)+"}):instantiate(\"regs\")\n"
+        "local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate(\"ZynqNOC\")\n"
+        "noc.extern=true\n";
 
-  out << convInnerLua;
-  out << convTopLua;
-  out << "harness({regs.start,\n"
-"         G.AXIReadBurst{\"1080p.raw\",{1920,1080},T.Uint(8),noc.read},\n"
-"         ConvTop,\n"
-"         G.AXIWriteBurst{\"out/soc_convgenTaps_4_4\",noc.write},\n"
-"         regs.done},{filename=\"out/soc_convgenTaps_4_4\"},{regs})\n";
+      out << convInnerLua;
+      out << convTopLua;
+      out << "harness({regs.start,\n"
+        "         G.AXIReadBurst{\"1080p.raw\",{1920,1080},T.Uint(8),noc.read},\n"
+        "         ConvTop,\n"
+        "         G.AXIWriteBurst{\"out/soc_convgenTaps_8_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+"\",noc.write},\n"
+        "         regs.done},{filename=\"out/soc_convgenTaps_8_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+"\"},{regs})\n";
 
-  out.close();
-
+      out.close();
+    }
+  }
+  
   return 0;
 }
+
+

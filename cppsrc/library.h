@@ -1,6 +1,7 @@
 #pragma once
 #include <rigel.h>
 #include <types.h>
+#include <sdf.h>
 
 using namespace Rigel;
 
@@ -21,6 +22,19 @@ namespace Rigel::Lib{
   template< int l, int r, int b, int t>
   Val Stencil(Val i){
     CoreFunction fn( std::string("G.Stencil{{")+std::to_string(l)+","+std::to_string(r)+","+std::to_string(b)+","+std::to_string(t)+"}}" );
+    return new ApplyValue(fn,i);
+  }
+
+  template< int l, int r, int b, int t, int W, int H>
+  Val StencilOfStencils(Val i){
+    CoreFunction fn( std::string("G.StencilOfStencils{{")+std::to_string(l)+","+std::to_string(r)+","+std::to_string(b)+","+std::to_string(t)+"},{"+std::to_string(W)+","+std::to_string(H)+"}}" );
+    return new ApplyValue(fn,i);
+  }
+
+  template< int l, int r, int b, int t, class SDF>
+  Val Stencil(Val i){
+    SDF sdf;
+    CoreFunction fn( std::string("G.Stencil{{")+std::to_string(l)+","+std::to_string(r)+","+std::to_string(b)+","+std::to_string(t)+"},"+sdf.toLua()+"}" );
     return new ApplyValue(fn,i);
   }
 
@@ -53,14 +67,68 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  template< class T, int W, int H, int (*FN)(int)>
+  Val Const( Val i ){
+    T ty;
+    std::string inst = std::string("G.Const{T.Array2d(")+ty.toLua()+","+std::to_string(W)+","+std::to_string(H)+"),value={";
+    for(int y=0; y<H; y++){
+      for(int x=0; x<W; x++){
+        inst += std::to_string(FN(y*W+x))+",";
+      }
+    }
+    inst += "}}";
+      
+    CoreFunction fn( inst );
+    return new ApplyValue(fn,i);
+  }
+    
+  template< class T, int C >
+  Val Const( Val i ){
+    T ty;
+    CoreFunction fn( std::string("G.Const{"+ty.toLua()+","+std::to_string(C)+"}") );
+    return new ApplyValue(fn,i);
+  }
+
   template< unsigned int C >
   Val Add( Val i ){
     CoreFunction fn( std::string("G.Add{"+std::to_string(C)+"}") );
     return new ApplyValue(fn,i);
   }
 
+  template< unsigned int C >
+  Val Index( Val i ){
+    CoreFunction fn( std::string("G.Index{"+std::to_string(C)+"}") );
+    return new ApplyValue(fn,i);
+  }
+
+  template< unsigned int W, unsigned int H >
+  Val Broadcast( Val i ){
+    CoreFunction fn( std::string("G.Broadcast{{"+std::to_string(W)+","+std::to_string(H)+"}}") );
+    return new ApplyValue(fn,i);
+  }
+
   Val AddAsync( Val i ){
     CoreFunction fn( std::string("G.Add{R.Async}") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val GT( Val i ){
+    CoreFunction fn( std::string("G.GT") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val Sel( Val i ){
+    CoreFunction fn( std::string("G.Sel") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val SAD( Val i ){
+    CoreFunction fn( std::string("G.SAD{T.Uint(16)}") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val ArgMin( Val i ){
+    CoreFunction fn( std::string("G.ArgMin") );
     return new ApplyValue(fn,i);
   }
 
@@ -71,6 +139,11 @@ namespace Rigel::Lib{
 
   Val Zip( Val i ){
     CoreFunction fn( std::string("G.Zip") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val ZipToArray( Val i ){
+    CoreFunction fn( std::string("G.ZipToArray") );
     return new ApplyValue(fn,i);
   }
 

@@ -15,6 +15,7 @@ namespace Rigel{
     Value():name(std::string("val")+std::to_string(valCount)){valCount++;}
     static int valCount;
     virtual std::string toLua( std::vector<std::string>& lst, std::set<Value*>& seen ) const{return "UNDEFVAL?";}
+    void setName(std::string nam){name=nam;}
     std::string name;
   protected:   
     std::vector<Value*> inputs;
@@ -42,6 +43,10 @@ namespace Rigel{
     operator Value*() const { return v; }
     Val operator[](int i){
       return Val(new IndexValue( v, i));
+    }
+    Val& setName( std::string name ){
+      v->setName(name);
+      return *this;
     }
   private:
     Value* v;
@@ -110,7 +115,10 @@ namespace Rigel{
     ApplyValue( Function f, Value* inp ):fn(f),Value(inp){}
     virtual std::string toLua( std::vector<std::string>& lst, std::set<Value*>& seen ) const{
       std::string inp = inputs[0]->toLua(lst,seen);
-      lst.push_back(std::string("  local ")+name+" = "+fn.callstring+"("+inp+")\n" );
+      if(seen.count((Value*)this)==0){
+        lst.push_back(std::string("  local ")+name+" = "+fn.callstring+"("+inp+")\n" );
+      }
+      seen.insert((Value*)this);
       return name;
     }
     Function fn;
@@ -124,17 +132,24 @@ namespace Rigel{
       inputs.push_back(lhs);
       inputs.push_back(rhs);
     }
+
+    ConcatValue( Value* lhs, Value* rhs, Value* rhs2 ){
+      inputs.push_back(lhs);
+      inputs.push_back(rhs);
+      inputs.push_back(rhs2);
+    }
     
     virtual std::string toLua( std::vector<std::string>& lst, std::set<Value*>& seen ) const{
-      
-      std::string out = std::string("  local ")+name+" = R.concat{";
-      for( const Value* v: inputs ){
-        std::string inp = v->toLua(lst,seen);
-        out += inp+", ";
+      if(seen.count((Value*)this)==0){
+        std::string out = std::string("  local ")+name+" = R.concat{";
+        for( const Value* v: inputs ){
+          std::string inp = v->toLua(lst,seen);
+          out += inp+", ";
+        }
+        out += "}\n";
+        lst.push_back( out );
       }
-      out += "}\n";
-        
-      lst.push_back( out );
+      seen.insert((Value*)this);
       return name;
     }
   private:
@@ -143,6 +158,10 @@ namespace Rigel{
 
   Val Concat( Val lhs, Val rhs ){
     return Val(new ConcatValue(lhs,rhs));
+  }
+
+  Val Concat( Val lhs, Val rhs, Val rhs2 ){
+    return Val(new ConcatValue(lhs,rhs,rhs2));
   }
 
   const char* header = "local R = require \"rigel\"\n"

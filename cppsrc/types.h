@@ -6,6 +6,13 @@ public:
   virtual std::string toLua() const = 0;
 };
 
+template< unsigned int prec, unsigned int exp>
+class UintValue : public RigelType{
+public:
+  UintValue(){}
+  virtual std::string toLua() const{return std::string("T.Uint(")+std::to_string(prec)+","+std::to_string(exp)+")";}
+private:
+};
 
 class UintType : public RigelType{
 public:
@@ -31,6 +38,16 @@ public:
 private:
   unsigned int prec;
   unsigned int exp;
+};
+
+template< class Ty, unsigned int W, unsigned int H>
+class Array2dValue : public RigelType{
+public:
+  Array2dValue(){}
+  virtual std::string toLua() const{
+    Ty over;
+    return std::string("T.Array2d("+over.toLua()+","+std::to_string(W)+","+std::to_string(H)+")");
+  }
 };
 
 class Array2dType : public RigelType{
