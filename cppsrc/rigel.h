@@ -56,9 +56,7 @@ namespace Rigel{
   public:
     Function( std::string callstr ):callstring(callstr){}
     std::string callstring;
-    //    Val operator()( Val inp ) {
-    //      return inp;
-    //    }
+    Val operator()( Val inp );
   };
 
   class ParameterValue : public Value{
@@ -72,15 +70,20 @@ namespace Rigel{
   // user defined function
   class UserFunction : public Function{
     public:
-    UserFunction( std::string name, RigelType* ty ):inputType(ty),Function(name){
-    }
-      
+    UserFunction( std::string name, RigelType* ty ):inputType(ty),Function(name),staticInterface(false){}
+    UserFunction( std::string name, RigelType* ty, bool sfn ):inputType(ty),Function(name),staticInterface(sfn){}
+    
     std::string luaDefinition(){
       Value* inp = new ParameterValue( inputType );
       out = define(inp);
 
-      std::string res = std::string("local ")+callstring+" = G.SchedulableFunction{ \""+callstring+"\", "+inputType->toLua()+std::string(",\nfunction("+inp->name+")\n");
-
+      std::string res;
+      if(staticInterface){
+        res = std::string("local ")+callstring+" = G.Fmap{G.Function{ \""+callstring+"\", T.rv("+inputType->toLua()+std::string("),\nfunction("+inp->name+")\n");
+      }else{
+        res = std::string("local ")+callstring+" = G.SchedulableFunction{ \""+callstring+"\", "+inputType->toLua()+std::string(",\nfunction("+inp->name+")\n");
+      }
+      
       std::vector<std::string> lst;
       std::set<Value*> seen;
 
@@ -91,7 +94,12 @@ namespace Rigel{
       }
 
       res += std::string("  return ")+outName+"\n";
-      res += "end}\n";
+      
+      if(staticInterface){
+        res += "end}}\n";
+      }else{
+        res += "end}\n";
+      }
       
       return res;
     }
@@ -100,6 +108,7 @@ namespace Rigel{
   private:
     const RigelType* inputType;
     const Value* out;
+    const bool staticInterface;
   };
 
   class CoreFunction : public Function{
@@ -126,6 +135,10 @@ namespace Rigel{
 
   };
 
+  Val Function::operator()( Val inp ) {
+    return new ApplyValue( *this, inp );
+  }
+
   class ConcatValue : public Value{
   public:
     ConcatValue( Value* lhs, Value* rhs ){
@@ -138,7 +151,14 @@ namespace Rigel{
       inputs.push_back(rhs);
       inputs.push_back(rhs2);
     }
-    
+
+    ConcatValue( Value* lhs, Value* rhs, Value* rhs2, Value* rhs3 ){
+      inputs.push_back(lhs);
+      inputs.push_back(rhs);
+      inputs.push_back(rhs2);
+      inputs.push_back(rhs3);
+    }
+
     virtual std::string toLua( std::vector<std::string>& lst, std::set<Value*>& seen ) const{
       if(seen.count((Value*)this)==0){
         std::string out = std::string("  local ")+name+" = R.concat{";
@@ -162,6 +182,10 @@ namespace Rigel{
 
   Val Concat( Val lhs, Val rhs, Val rhs2 ){
     return Val(new ConcatValue(lhs,rhs,rhs2));
+  }
+
+  Val Concat( Val lhs, Val rhs, Val rhs2, Val rhs3 ){
+    return Val(new ConcatValue(lhs,rhs,rhs2,rhs3));
   }
 
   const char* header = "local R = require \"rigel\"\n"

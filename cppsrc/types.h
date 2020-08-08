@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <uniform.h>
 
 class RigelType{
 public:
@@ -16,15 +17,15 @@ private:
 
 class UintType : public RigelType{
 public:
-  UintType( unsigned int prec, unsigned int exp):prec(prec),exp(exp){}
+  UintType( unsigned int prec, int exp):prec(prec),exp(exp){}
   virtual std::string toLua() const{return std::string("T.Uint(")+std::to_string(prec)+","+std::to_string(exp)+")";}
 private:
   unsigned int prec;
-  unsigned int exp;
+  int exp;
 };
 
-UintType* Uint( unsigned int prec, unsigned int exp ){
-  return new UintType(prec,exp);
+UintType* Uint( unsigned int prec, int exp ){
+  return new UintType( prec, exp );
 }
 
 UintType* Uint( unsigned int prec ){
@@ -33,12 +34,20 @@ UintType* Uint( unsigned int prec ){
 
 class IntType : public RigelType{
 public:
-  IntType( unsigned int prec, unsigned int exp):prec(prec),exp(exp){}
+  IntType( unsigned int prec, int exp):prec(prec),exp(exp){}
   virtual std::string toLua() const{return std::string("T.Int(")+std::to_string(prec)+","+std::to_string(exp)+")";}
 private:
   unsigned int prec;
-  unsigned int exp;
+  int exp;
 };
+
+IntType* Int( unsigned int prec, int exp ){
+  return new IntType(prec,exp);
+}
+
+IntType* Int( unsigned int prec ){
+  return new IntType(prec,0);
+}
 
 template< class Ty, unsigned int W, unsigned int H>
 class Array2dValue : public RigelType{
@@ -52,15 +61,32 @@ public:
 
 class Array2dType : public RigelType{
 public:
-  Array2dType(  RigelType* over,int W,int H):over(over),W(W),H(H){}
+  Array2dType(  RigelType* over,int W,int H):over(over),W(W),H(H),Wuni(Uniform(0)),Wisuni(false){}
+  Array2dType(  RigelType* over,Uniform W,int H):over(over),Wuni(W),H(H),Wisuni(true){}
   RigelType* over;
   int W;
+  Uniform Wuni;
+  bool Wisuni;
   int H;
-  virtual std::string toLua() const{return std::string("T.Array2d("+over->toLua()+","+std::to_string(W)+","+std::to_string(H)+")");}
+  virtual std::string toLua() const{
+    if( Wisuni ){
+      return std::string("T.Array2d("+over->toLua()+","+Wuni.toLua()+","+std::to_string(H)+")");
+    }else{
+      return std::string("T.Array2d("+over->toLua()+","+std::to_string(W)+","+std::to_string(H)+")");
+    }
+  }
 };
+
+Array2dType* Array2d( RigelType* over, Uniform W, int H){
+  return new Array2dType( over, W, H);
+}
 
 Array2dType* Array2d( RigelType* over, int W, int H){
   return new Array2dType( over, W, H);
+}
+
+Array2dType* Array2d( RigelType* over, int W ){
+  return new Array2dType( over, W, 1);
 }
 
 class TupleType : public RigelType{
@@ -69,6 +95,14 @@ public:
     list.push_back(lhs);
     list.push_back(rhs);
   }
+
+  TupleType( RigelType* lhs, RigelType* rhs, RigelType* rhs1, RigelType* rhs2 ){
+    list.push_back(lhs);
+    list.push_back(rhs);
+    list.push_back(rhs1);
+    list.push_back(rhs2);
+  }
+
   std::vector<RigelType*> list;
   virtual std::string toLua() const{
     std::string t = std::string("T.Tuple{");
@@ -84,6 +118,10 @@ public:
 
 TupleType* Tuple( RigelType* lhs, RigelType* rhs){
   return new TupleType(lhs,rhs);
+}
+
+TupleType* Tuple( RigelType* lhs, RigelType* rhs, RigelType* rhs1, RigelType* rhs2){
+  return new TupleType(lhs,rhs,rhs1,rhs2);
 }
 
 class TriggerType : public RigelType{
