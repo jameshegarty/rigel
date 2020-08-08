@@ -15,6 +15,9 @@ SRCSLUA += out/soc_stereo_full_64_4_autofifo.lua out/soc_stereo_full_64_8_autofi
 
 SRCSLUA += out/soc_lk_12_1.lua out/soc_lk_12_2.lua out/soc_lk_12_3.lua out/soc_lk_12_4.lua out/soc_lk_12_6.lua out/soc_lk_12_12.lua out/soc_lk_12_24.lua out/soc_lk_12_48.lua
 
+SRCSLUA += out/soc_sift_4_64_1080p.lua out/soc_sift_4_128_1080p.lua out/soc_sift_4_256_1080p.lua
+SRCSLUA += out/soc_sift_4_64_1080p_autofifo.lua out/soc_sift_4_128_1080p_autofifo.lua out/soc_sift_4_256_1080p_autofifo.lua
+
 CPP += $(patsubst %.cpp,out/%,$(SRCSCPP))
 
 VERILOG = $(patsubst out/%.lua,out/%.v,$(SRCSLUA))
@@ -41,6 +44,9 @@ out/soc_stereo_full_64_4.lua out/soc_stereo_full_64_8.lua out/soc_stereo_full_64
 
 out/soc_lk_12_1.lua out/soc_lk_12_2.lua out/soc_lk_12_3.lua out/soc_lk_12_4.lua out/soc_lk_12_6.lua out/soc_lk_12_12.lua out/soc_lk_12_24.lua out/soc_lk_12_48.lua: out/soc_lk
 	./out/soc_lk
+
+out/soc_sift_4_64_1080p.lua out/soc_sift_4_128_1080p.lua out/soc_sift_4_256_1080p.lua: out/soc_sift
+	./out/soc_sift
 
 out/%.v: out/%.lua
 	../rigelLuajit $^

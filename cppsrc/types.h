@@ -49,6 +49,40 @@ IntType* Int( unsigned int prec ){
   return new IntType(prec,0);
 }
 
+class FloatRecType : public RigelType{
+public:
+  FloatRecType( int exp, int sig):exp(exp),sig(sig){}
+  virtual std::string toLua() const{return std::string("T.FloatRec(")+std::to_string(exp)+","+std::to_string(sig)+")";}
+private:
+  int exp;
+  int sig;
+};
+
+FloatRecType* FloatRec( unsigned int prec ){
+  return new FloatRecType( 8, 24 );
+}
+
+template< unsigned int exp, unsigned int sig>
+class FloatValue : public RigelType{
+public:
+  FloatValue(){}
+  virtual std::string toLua() const{return std::string("T.Float(")+std::to_string(exp)+","+std::to_string(sig)+")";}
+private:
+};
+
+class FloatType : public RigelType{
+public:
+  FloatType( int exp, int sig):exp(exp),sig(sig){}
+  virtual std::string toLua() const{return std::string("T.Float(")+std::to_string(exp)+","+std::to_string(sig)+")";}
+private:
+  int exp;
+  int sig;
+};
+
+FloatType* Float( unsigned int prec ){
+  return new FloatType( 8, 24 );
+}
+
 template< class Ty, unsigned int W, unsigned int H>
 class Array2dValue : public RigelType{
 public:

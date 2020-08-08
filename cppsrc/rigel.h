@@ -188,6 +188,26 @@ namespace Rigel{
     return Val(new ConcatValue(lhs,rhs,rhs2,rhs3));
   }
 
+  class ConstValue : public Value{
+  public:
+    ConstValue( RigelType* ty, int val ):type(ty),value(val){}
+    virtual std::string toLua( std::vector<std::string>& lst, std::set<Value*>& seen ) const{
+      if(seen.count((Value*)this)==0){
+        lst.push_back(std::string("  local ")+name+" = R.c("+type->toLua()+","+std::to_string(value)+")\n" );
+      }
+      seen.insert((Value*)this);
+      return name;
+    }
+
+  private:
+    RigelType* type;
+    int value;
+  };
+
+  Val Const( RigelType* ty, int val ){
+    return Val( new ConstValue( ty, val) );
+  }
+  
   const char* header = "local R = require \"rigel\"\n"
 "local SOC = require \"generators.soc\"\n"
 "local harness = require \"generators.harnessSOC\"\n"

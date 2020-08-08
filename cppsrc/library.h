@@ -125,6 +125,17 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  template< unsigned int C >
+  Val FRtoI( Val i ){
+    CoreFunction fn( std::string("G.FRtoI{"+std::to_string(C)+"}") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val FtoFR( Val i ){
+    CoreFunction fn( std::string("G.FtoFR") );
+    return new ApplyValue(fn,i);
+  }
+
   Val AddAsync( Val i ){
     CoreFunction fn( std::string("G.Add{R.Async}") );
     return new ApplyValue(fn,i);
@@ -132,6 +143,16 @@ namespace Rigel::Lib{
 
   Val GT( Val i ){
     CoreFunction fn( std::string("G.GT") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val GTF( Val i ){
+    CoreFunction fn( std::string("G.GTF") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val LTF( Val i ){
+    CoreFunction fn( std::string("G.LTF") );
     return new ApplyValue(fn,i);
   }
 
@@ -155,6 +176,11 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  Val MulF( Val i ){
+    CoreFunction fn( std::string("G.MulF") );
+    return new ApplyValue(fn,i);
+  }
+
   Val MulE( Val i ){
     CoreFunction fn( std::string("G.MulE") );
     return new ApplyValue(fn,i);
@@ -166,9 +192,21 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  template< int N, int D >
+  Val MulF( Val i ){
+    CoreFunction fn( std::string("G.MulF{"+std::to_string(N)+"/"+std::to_string(D)+"}") );
+    return new ApplyValue(fn,i);
+  }
+
   template< unsigned int C >
   Val AddE( Val i ){
     CoreFunction fn( std::string("G.AddE{"+std::to_string(C)+"}") );
+    return new ApplyValue(fn,i);
+  }
+
+  template< unsigned int C >
+  Val ToFloatRec( Val i ){
+    CoreFunction fn( std::string("G.FloatRec{"+std::to_string(C)+"}") );
     return new ApplyValue(fn,i);
   }
 
@@ -177,8 +215,18 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  Val AddF( Val i ){
+    CoreFunction fn( std::string("G.AddF") );
+    return new ApplyValue(fn,i);
+  }
+
   Val SubE( Val i ){
     CoreFunction fn( std::string("G.SubE") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val SubF( Val i ){
+    CoreFunction fn( std::string("G.SubF") );
     return new ApplyValue(fn,i);
   }
 
