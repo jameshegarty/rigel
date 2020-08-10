@@ -95,16 +95,25 @@ public:
 
 class Array2dType : public RigelType{
 public:
-  Array2dType(  RigelType* over,int W,int H):over(over),W(W),H(H),Wuni(Uniform(0)),Wisuni(false){}
-  Array2dType(  RigelType* over,Uniform W,int H):over(over),Wuni(W),H(H),Wisuni(true){}
+  Array2dType(  RigelType* over,int W,int H):over(over),W(W),H(H),Wuni(Uniform(0)),Wisuni(false),Vwisuni(false),Vw(W),Vh(H),Vwuni(Uniform(0)){}
+  Array2dType(  RigelType* over,Uniform W,int H):over(over),Wuni(W),H(H),Wisuni(true),Vh(H),Vwisuni(true),Vwuni(W){}
+  Array2dType(  RigelType* over,Uniform W,int H, int Vw, int Vh):over(over),Wuni(W),H(H),Wisuni(true),Vw(Vw),Vh(Vh),Vwisuni(false),Vwuni(Uniform(0)){}
   RigelType* over;
   int W;
   Uniform Wuni;
   bool Wisuni;
   int H;
+  int Vw;
+  Uniform Vwuni;
+  bool Vwisuni;
+  int Vh;
   virtual std::string toLua() const{
     if( Wisuni ){
-      return std::string("T.Array2d("+over->toLua()+","+Wuni.toLua()+","+std::to_string(H)+")");
+      if( Vwisuni ){
+        return std::string("T.Array2d("+over->toLua()+","+Wuni.toLua()+","+std::to_string(H)+","+Vwuni.toLua()+","+std::to_string(Vh)+")");
+      }else{
+        return std::string("T.Array2d("+over->toLua()+","+Wuni.toLua()+","+std::to_string(H)+","+std::to_string(Vw)+","+std::to_string(Vh)+")");
+      }
     }else{
       return std::string("T.Array2d("+over->toLua()+","+std::to_string(W)+","+std::to_string(H)+")");
     }
@@ -113,6 +122,10 @@ public:
 
 Array2dType* Array2d( RigelType* over, Uniform W, int H){
   return new Array2dType( over, W, H);
+}
+
+Array2dType* Array2d( RigelType* over, Uniform W, int H, int Vw, int Vh){
+  return new Array2dType( over, W, H, Vw, Vh );
 }
 
 Array2dType* Array2d( RigelType* over, int W, int H){
@@ -128,6 +141,12 @@ public:
   TupleType( RigelType* lhs, RigelType* rhs ){
     list.push_back(lhs);
     list.push_back(rhs);
+  }
+
+  TupleType( RigelType* lhs, RigelType* rhs, RigelType* rhs1 ){
+    list.push_back(lhs);
+    list.push_back(rhs);
+    list.push_back(rhs1);
   }
 
   TupleType( RigelType* lhs, RigelType* rhs, RigelType* rhs1, RigelType* rhs2 ){
@@ -154,6 +173,10 @@ TupleType* Tuple( RigelType* lhs, RigelType* rhs){
   return new TupleType(lhs,rhs);
 }
 
+TupleType* Tuple( RigelType* lhs, RigelType* rhs, RigelType* rhs1){
+  return new TupleType(lhs,rhs, rhs1);
+}
+
 TupleType* Tuple( RigelType* lhs, RigelType* rhs, RigelType* rhs1, RigelType* rhs2){
   return new TupleType(lhs,rhs,rhs1,rhs2);
 }
@@ -164,3 +187,10 @@ public:
 };
 
 TriggerType* Trigger(){ return new TriggerType; }
+
+class BoolType : public RigelType{
+public:
+  virtual std::string toLua() const{return std::string("T.Bool");}
+};
+
+BoolType* Bool(){ return new BoolType; }

@@ -2,6 +2,7 @@
 #include <rigel.h>
 #include <types.h>
 #include <sdf.h>
+#include <size.h>
 
 using namespace Rigel;
 
@@ -35,6 +36,13 @@ namespace Rigel::Lib{
   Val Stencil(Val i){
     SDF sdf;
     CoreFunction fn( std::string("G.Stencil{{")+std::to_string(l)+","+std::to_string(r)+","+std::to_string(b)+","+std::to_string(t)+"},"+sdf.toLua()+"}" );
+    return new ApplyValue(fn,i);
+  }
+
+  template< class SDF, int FIFO_SIZE>
+  Val Filter(Val i){
+    SDF sdf;
+    CoreFunction fn( std::string("G.Filter{"+sdf.toLua()+","+std::to_string(FIFO_SIZE)+"}") );
     return new ApplyValue(fn,i);
   }
 
@@ -87,11 +95,41 @@ namespace Rigel::Lib{
     CoreFunction fn( inst );
     return new ApplyValue(fn,i);
   }
-    
+
+  template< class T, int W, int H, float (*FN)(int)>
+  Val Const( Val i ){
+    T ty;
+    std::string inst = std::string("G.Const{T.Array2d(")+ty.toLua()+","+std::to_string(W)+","+std::to_string(H)+"),value={";
+    for(int y=0; y<H; y++){
+      for(int x=0; x<W; x++){
+        inst += std::to_string(FN(y*W+x))+",";
+      }
+    }
+    inst += "}}";
+      
+    CoreFunction fn( inst );
+    return new ApplyValue(fn,i);
+  }
+
   template< class T, int C >
   Val Const( Val i ){
     T ty;
     CoreFunction fn( std::string("G.Const{"+ty.toLua()+","+std::to_string(C)+"}") );
+    return new ApplyValue(fn,i);
+  }
+
+  // for floats
+  template< class T, int N, int D >
+  Val Const( Val i ){
+    T ty;
+    CoreFunction fn( std::string("G.Const{"+ty.toLua()+","+std::to_string(N)+"/"+std::to_string(D)+"}") );
+    return new ApplyValue(fn,i);
+  }
+
+  template<class T>
+  Val Bitcast( Val i ){
+    T ty;
+    CoreFunction fn( std::string("G.Bitcast{"+ty.toLua()+"}") );
     return new ApplyValue(fn,i);
   }
 
@@ -113,9 +151,21 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  template< unsigned int W, unsigned int H >
+  Val ReshapeArray( Val i ){
+    CoreFunction fn( std::string("G.ReshapeArray{{"+std::to_string(W)+","+std::to_string(H)+"}}") );
+    return new ApplyValue(fn,i);
+  }
+
   template< unsigned int xl, unsigned int xh, unsigned int yl, unsigned int yh >
   Val Slice( Val i ){
     CoreFunction fn( std::string("G.Slice{{"+std::to_string(xl)+","+std::to_string(xh)+","+std::to_string(yl)+","+std::to_string(yh)+"}}") );
+    return new ApplyValue(fn,i);
+  }
+
+  template< unsigned int l, unsigned int h >
+  Val Slice( Val i ){
+    CoreFunction fn( std::string("G.Slice{{"+std::to_string(l)+","+std::to_string(h)+"}}") );
     return new ApplyValue(fn,i);
   }
 
@@ -125,9 +175,26 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  template< unsigned int W, unsigned int H >
+  Val Tile( Val i ){
+    CoreFunction fn( std::string("G.Tile{{"+std::to_string(W)+","+std::to_string(H)+"}}") );
+    return new ApplyValue(fn,i);
+  }
+
+  template< unsigned int W, unsigned int H >
+  Val ClampToSize( Val i ){
+    CoreFunction fn( std::string("G.ClampToSize{{"+std::to_string(W)+","+std::to_string(H)+"}}") );
+    return new ApplyValue(fn,i);
+  }
+
   template< unsigned int C >
   Val FRtoI( Val i ){
     CoreFunction fn( std::string("G.FRtoI{"+std::to_string(C)+"}") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val Identity( Val i ){
+    CoreFunction fn( std::string("G.Identity") );
     return new ApplyValue(fn,i);
   }
 
@@ -136,8 +203,24 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  Val UtoFR( Val i ){
+    CoreFunction fn( std::string("G.UtoFR") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val ItoFR( Val i ){
+    CoreFunction fn( std::string("G.ItoFR") );
+    return new ApplyValue(fn,i);
+  }
+
   Val AddAsync( Val i ){
     CoreFunction fn( std::string("G.Add{R.Async}") );
+    return new ApplyValue(fn,i);
+  }
+
+  template< unsigned int C >
+  Val GT( Val i ){
+    CoreFunction fn( std::string("G.GT{"+std::to_string(C)+"}") );
     return new ApplyValue(fn,i);
   }
 
@@ -151,8 +234,28 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  Val GEF( Val i ){
+    CoreFunction fn( std::string("G.GEF") );
+    return new ApplyValue(fn,i);
+  }
+
   Val LTF( Val i ){
     CoreFunction fn( std::string("G.LTF") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val And( Val i ){
+    CoreFunction fn( std::string("G.And") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val SqrtF( Val i ){
+    CoreFunction fn( std::string("G.SqrtF") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val Not( Val i ){
+    CoreFunction fn( std::string("G.Not") );
     return new ApplyValue(fn,i);
   }
 
@@ -178,6 +281,11 @@ namespace Rigel::Lib{
 
   Val MulF( Val i ){
     CoreFunction fn( std::string("G.MulF") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val DivF( Val i ){
+    CoreFunction fn( std::string("G.DivF") );
     return new ApplyValue(fn,i);
   }
 
@@ -210,6 +318,11 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  Val ToFloat( Val i ){
+    CoreFunction fn( std::string("G.Float") );
+    return new ApplyValue(fn,i);
+  }
+
   Val AddE( Val i ){
     CoreFunction fn( std::string("G.AddE") );
     return new ApplyValue(fn,i);
@@ -217,6 +330,12 @@ namespace Rigel::Lib{
 
   Val AddF( Val i ){
     CoreFunction fn( std::string("G.AddF") );
+    return new ApplyValue(fn,i);
+  }
+
+  template< unsigned int C >
+  Val Sub( Val i ){
+    CoreFunction fn( std::string("G.Sub{"+std::to_string(C)+"}") );
     return new ApplyValue(fn,i);
   }
 
@@ -255,6 +374,16 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  Val NegF( Val i ){
+    CoreFunction fn( std::string("G.NegF") );
+    return new ApplyValue(fn,i);
+  }
+
+  Val Flatten( Val i ){
+    CoreFunction fn( std::string("G.Flatten") );
+    return new ApplyValue(fn,i);
+  }
+
   Val Zip( Val i ){
     CoreFunction fn( std::string("G.Zip") );
     return new ApplyValue(fn,i);
@@ -275,6 +404,11 @@ namespace Rigel::Lib{
     return new ApplyValue(fn,i);
   }
 
+  Val Pow2( Val i ){
+    CoreFunction fn( std::string("G.Pow2") );
+    return new ApplyValue(fn,i);
+  }
+
   template< unsigned int C >
   Val AddMSBs( Val i ){
     CoreFunction fn( std::string("G.AddMSBs{"+std::to_string(C)+"}") );
@@ -290,6 +424,18 @@ namespace Rigel::Lib{
   template< unsigned int C >
   Val RemoveLSBsE( Val i ){
     CoreFunction fn( std::string("G.RemoveLSBsE{"+std::to_string(C)+"}") );
+    return new ApplyValue(fn,i);
+  }
+
+  template< bool C >
+  Val PosCounter( Val i ){
+    std::string t;
+    if(C){
+      t = std::string("G.PosCounter{true}");
+    }else{
+      t = std::string("G.PosCounter{false}");
+    }
+    CoreFunction fn( t );
     return new ApplyValue(fn,i);
   }
 
@@ -330,9 +476,6 @@ namespace Rigel::Lib{
   template<class T>
   Val Map( Val i ){
     T ifn;
-    //    Val tmp = FN(i);
-    //    ApplyValue* tmpa = dynamic_cast<ApplyValue*>((Value*)tmp);
-    
     CoreFunction fn( std::string("G.Map{"+ifn.callstring+"}") );
     return new ApplyValue(fn,i);
   }
@@ -343,6 +486,22 @@ namespace Rigel::Lib{
     ApplyValue* tmpa = dynamic_cast<ApplyValue*>((Value*)tmp);
     
     CoreFunction fn( std::string("G.Reduce{"+tmpa->fn.callstring+"}") );
+    return new ApplyValue(fn,i);
+  }
+
+  template< class T >
+  Val Reduce( Val i ){
+    T ifn;
+    CoreFunction fn( std::string("G.Reduce{"+ifn.callstring+"}") );
+    return new ApplyValue(fn,i);
+  }
+
+  template<Val (*FN)(Val)>
+  Val BoostRate( Val i ){
+    Val tmp = FN(i);
+    ApplyValue* tmpa = dynamic_cast<ApplyValue*>((Value*)tmp);
+    
+    CoreFunction fn( std::string("G.BoostRate{"+tmpa->fn.callstring+"}") );
     return new ApplyValue(fn,i);
   }
 

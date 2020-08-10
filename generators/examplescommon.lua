@@ -3946,7 +3946,7 @@ C.Tile = J.memoize(function( A, W, H, TileW, TileH, X )
 
   local fin = R.concatArray2d("fin",outarr,(W/TileW),(H/TileH))
 
-  return RM.lambda("tile", inp, fin )
+  return RM.lambda("tile_"..tostring(A).."_W"..tostring(W).."_H"..tostring(H).."_tileW"..tostring(TileW).."_tileH"..tostring(TileH), inp, fin )
 end)
 
 C.RateMonitor = J.memoize( function( fn, rate, name )
