@@ -102,7 +102,12 @@ namespace Rigel::Lib{
     std::string inst = std::string("G.Const{T.Array2d(")+ty.toLua()+","+std::to_string(W)+","+std::to_string(H)+"),value={";
     for(int y=0; y<H; y++){
       for(int x=0; x<W; x++){
-        inst += std::to_string(FN(y*W+x))+",";
+        char tmp[100];
+        float tf = FN(y*W+x);
+        snprintf(tmp, 100, "%1.15f",tf);
+        inst += std::string(tmp)+", ";
+
+        //inst += std::to_string(FN(y*W+x))+",";
       }
     }
     inst += "}}";

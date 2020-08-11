@@ -221,7 +221,10 @@ namespace Rigel{
         if( array2dType!=0 ){
           std::string t = std::string("  local ")+name+" = R.c("+type->toLua()+",{";
           for(int i=0; i< array2dType->W * array2dType->H; i++){
-            t += std::to_string(floatArrayValue[i])+", ";
+            //t += std::to_string(floatArrayValue[i])+", ";
+            char tmp[100];
+            snprintf(tmp, 100, "%1.15f",floatArrayValue[i]);
+            t += std::string(tmp)+", ";
           }
           t+="})\n";
           lst.push_back( t );

@@ -2,6 +2,8 @@ LUA = ../rigelLuajit
 LUAJIT = ../rigelLuajit
 TERRA = ../rigelTerra
 
+BUILDDIR ?= out
+
 SRCSCPP = soc_simple.cpp
 SRCSCPP += soc_convgenTaps.cpp
 
@@ -50,5 +52,13 @@ out/soc_sift_4_64_1080p.lua out/soc_sift_4_128_1080p.lua out/soc_sift_4_256_1080
 
 out/%.v: out/%.lua
 	../rigelLuajit $^
+
+out/%.terra.raw: out/%.lua
+	{ time -p $(TERRA) $< terra; } 2>&1 | tee $(BUILDDIR)/$*.terra.terratimeraw.txt; exit "$${PIPESTATUS[0]}"
+	printf '$*,' > $(BUILDDIR)/$*.terra.terratime.txt
+	cat $(BUILDDIR)/$*.terra.terratimeraw.txt | grep user | grep -Eo "[0-9\.]+" >> $(BUILDDIR)/$*.terra.terratime.txt
+	rm $(BUILDDIR)/$*.terra.terratimeraw.txt
+	# keep copy for future reference
+	mkdir -p $(BUILDDIR)/$*_build
 
 include ../platform/platform.mk
