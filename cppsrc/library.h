@@ -116,6 +116,28 @@ namespace RigelLibrary{
     return new ApplyValue(fn,i);
   }
 
+  template< class T, int iW, int iH, int oW, int oH, float (*FN)(int)>
+  Val Const( Val i ){
+    T ty;
+    std::string inst = std::string("G.Const{T.Array2d(T.Array2d(")+ty.toLua()+","+std::to_string(iW)+","+std::to_string(iH)+"),"+std::to_string(oW)+","+std::to_string(oH)+"),value={";
+    for(int oI; oI<oW*oH; oI++){
+      inst += "{";
+      for(int iI=0; iI<iW*iH; iI++){
+        char tmp[100];
+        float tf = FN( (oI*(iW*iH)) + iI );
+        snprintf(tmp, 100, "%1.15f",tf);
+        inst += std::string(tmp)+", ";
+
+        //inst += std::to_string(FN(y*W+x))+",";
+      }
+      inst += "},";
+    }
+    inst += "}}";
+      
+    CoreFunction fn( inst );
+    return new ApplyValue(fn,i);
+  }
+
   template< class T, int C >
   Val Const( Val i ){
     T ty;
