@@ -6,7 +6,7 @@
 
 using namespace Rigel;
 
-namespace Rigel::Lib{
+namespace RigelLibrary{
 
   template< unsigned int l, unsigned int r, unsigned int b, unsigned int t>
   Val Crop(Val i){

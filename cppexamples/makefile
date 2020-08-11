@@ -33,7 +33,7 @@ clean:
 	rm -Rf out/*
 
 out/%: %.cpp
-	g++ -o $@ -I../cppsrc -std=c++17 $^
+	g++ -o $@ -I../cppsrc -std=c++11 $^
 
 out/%.lua: out/%
 	./out/$*
@@ -60,5 +60,18 @@ out/%.terra.raw: out/%.lua
 	rm $(BUILDDIR)/$*.terra.terratimeraw.txt
 	# keep copy for future reference
 	mkdir -p $(BUILDDIR)/$*_build
+
+$(BUILDDIR)/%.zu9vivadoSOC.clbs.txt: $(BUILDDIR)/%.zu9vivadoSOC.bit
+	 cat $(BUILDDIR)/$*_zu9vivadoSOC/utilization.txt | grep "CLB\s*|" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.zu9vivadoSOC.dsps.txt: $(BUILDDIR)/%.zu9vivadoSOC.bit
+	 cat $(BUILDDIR)/$*_zu9vivadoSOC/utilization.txt | grep "DSPs" | grep -P -o "[0-9]+" | head -1 | tr -d '\n' > $@
+
+$(BUILDDIR)/%.zu9vivadoSOC.brams.txt: $(BUILDDIR)/%.zu9vivadoSOC.bit
+	 cat $(BUILDDIR)/$*_zu9vivadoSOC/utilization.txt | grep "Block RAM Tile" | grep -P -o "\d*\.?\d*" | head -1 | tr -d '\n' > $@
+
+
+$(BUILDDIR)/%.zu9vivadoSOC.stats2020.txt : $(BUILDDIR)/%.zu9vivadoSOC.brams.txt $(BUILDDIR)/%.zu9vivadoSOC.clbs.txt $(BUILDDIR)/%.zu9vivadoSOC.dsps.txt $(BUILDDIR)/%.verilatorSOC.correct.txt
+	../misc/stats2020.sh $* SOC
 
 include ../platform/platform.mk

@@ -5,7 +5,7 @@
 #include <string>
 
 using namespace Rigel;
-using namespace Rigel::Lib;
+using namespace RigelLibrary;
 
 class Add200:public UserFunction{
 public:

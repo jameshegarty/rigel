@@ -6,7 +6,7 @@
 #include <string>
 
 using namespace Rigel;
-using namespace Rigel::Lib;
+using namespace RigelLibrary;
 
 constexpr int SearchWindow = 64;
 constexpr int OffsetX = 20; // search the range [-OffsetX-SearchWindow, -OffsetX]
@@ -109,7 +109,21 @@ int main(){
       float VF = V;
       float cycles = ((W+OffsetX+SearchWindow+SADWidth)*(H+7))*((float)SearchWindow/VF);
     
-      std::ofstream out("out/soc_stereo_full_64_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+".lua");
+      std::string outfile = "soc_stereo_full_64_"+std::to_string(V)+((autofifo==0)?"":"_autofifo");
+
+      std::ofstream outdesign("out/"+outfile+".design.txt");
+      outdesign << std::string("Stereo ")+std::to_string(SearchWindow)+" "+std::to_string(SADWidth)+"x"+std::to_string(SADWidth)+" full";
+      outdesign.close();
+
+      std::ofstream outdesignT("out/"+outfile+".designT.txt");
+      outdesignT << VF/(float)SearchWindow;
+      outdesignT.close();
+
+      std::ofstream outdataset("out/"+outfile+".dataset.txt");
+      if(autofifo==0){outdataset << "cpp";}else{outdataset << "cpp_autofifo";}
+      outdataset.close();
+
+      std::ofstream out("out/"+outfile+".lua");
       out << header;
       if(autofifo==0){
         out << "R.AUTO_FIFOS = false\n";
@@ -128,8 +142,8 @@ int main(){
       out << "harness({regs.start,\n"
         "         G.AXIReadBurst{\"stereo0000.raw\",{720,400},T.Tuple{T.Uint(8),T.Uint(8)},4,noc.read},\n"
         "         StereoTop,\n"
-        "         G.AXIWriteBurst{\"out/soc_stereo_full_64_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+"\",noc.write},\n"
-        "         regs.done},{filename=\"out/soc_stereo_full_64_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+"\"},{regs})\n";
+        "         G.AXIWriteBurst{\"out/"+outfile+"\",noc.write},\n"
+        "         regs.done},{filename=\"out/"+outfile+"\"},{regs})\n";
 
       out.close();
     }

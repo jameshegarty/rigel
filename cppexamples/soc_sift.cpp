@@ -6,7 +6,7 @@
 #include <string>
 
 using namespace Rigel;
-using namespace Rigel::Lib;
+using namespace RigelLibrary;
 
 constexpr unsigned int V = 8;
 constexpr float VF = 8;
@@ -573,7 +573,21 @@ int main(){
       float invV = float(TILES_X*TILES_Y*TILE_W*TILE_H)/VF;
       float cycles = (W+15)*(H+15)*invV;
   
-      std::ofstream out("out/soc_sift_4_"+std::to_string(V)+"_1080p"+((autofifo==0)?"":"_autofifo")+".lua");
+      std::string outfile = "soc_sift_4_"+std::to_string(V)+"_1080p"+((autofifo==0)?"":"_autofifo");
+
+      std::ofstream outdesign("out/"+outfile+".design.txt");
+      outdesign << std::string("SIFT 4 1080p");
+      outdesign.close();
+
+      std::ofstream outdesignT("out/"+outfile+".designT.txt");
+      outdesignT << VF/256.f;
+      outdesignT.close();
+
+      std::ofstream outdataset("out/"+outfile+".dataset.txt");
+      if(autofifo==0){outdataset << "cpp";}else{outdataset << "cpp_autofifo";}
+      outdataset.close();
+
+      std::ofstream out("out/"+outfile+".lua");
       out << header;
       if(autofifo==0){
         out << "R.AUTO_FIFOS = false\n";
@@ -581,7 +595,8 @@ int main(){
         out << "R.AUTO_FIFOS = true\n";
         out << "R.Z3_FIFOS = true\n";
       }
-      
+
+      out << "R.default_nettype_none = false\n";
       out << "local regs = SOC.axiRegs({},SDF{1,"+std::to_string(cycles)+"}):instantiate(\"regs\")\n"
         "local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate(\"ZynqNOC\")\n"
         "noc.extern=true\n";
@@ -608,8 +623,8 @@ int main(){
       out << "harness({regs.start,\n"
         "         G.AXIReadBurst{\"boxanim0000.raw\",{1920,1080},T.Uint(8),8,noc.read},\n"
         "         SiftTop,\n"
-        "         G.AXIWriteBurst{\"out/soc_sift_4_"+std::to_string(V)+"_1080p"+((autofifo==0)?"":"_autofifo")+"\",noc.write,R.Unoptimized},\n"
-        "         regs.done},{filename=\"out/soc_sift_4_"+std::to_string(V)+"_1080p"+((autofifo==0)?"":"_autofifo")+"\"},{regs})\n";
+        "         G.AXIWriteBurst{\"out/"+outfile+"\",noc.write,R.Unoptimized},\n"
+        "         regs.done},{filename=\"out/"+outfile+"\"},{regs})\n";
 
       out.close();
     }

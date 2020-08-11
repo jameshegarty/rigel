@@ -6,7 +6,7 @@
 #include <string>
 
 using namespace Rigel;
-using namespace Rigel::Lib;
+using namespace RigelLibrary;
 
 constexpr unsigned int V = 8;
 constexpr float VF = 8;
@@ -72,8 +72,22 @@ int main(){
     for(int V=1; V<=64; V*=2){
       float VF = V;
       float cycles = ((1920.f+PadRadius*2)*(1080.f+ConvWidthF))/(VF/ConvWidthF);
-  
-      std::ofstream out("out/soc_convgenTaps_8_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+".lua");
+
+      std::string outfile = std::string("soc_convgenTaps_8_")+std::to_string(V)+((autofifo==0)?"":"_autofifo");
+
+      std::ofstream outdesign("out/"+outfile+".design.txt");
+      outdesign << "Convolution 1080p 8x8";
+      outdesign.close();
+
+      std::ofstream outdesignT("out/"+outfile+".designT.txt");
+      outdesignT << VF/8.f;
+      outdesignT.close();
+
+      std::ofstream outdataset("out/"+outfile+".dataset.txt");
+      if(autofifo==0){outdataset << "cpp";}else{outdataset << "cpp_autofifo";}
+      outdataset.close();
+
+      std::ofstream out("out/"+outfile+".lua");
       out << header;
       if(autofifo==0){
         out << "R.AUTO_FIFOS = false\n";
@@ -91,8 +105,8 @@ int main(){
       out << "harness({regs.start,\n"
         "         G.AXIReadBurst{\"1080p.raw\",{1920,1080},T.Uint(8),noc.read},\n"
         "         ConvTop,\n"
-        "         G.AXIWriteBurst{\"out/soc_convgenTaps_8_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+"\",noc.write},\n"
-        "         regs.done},{filename=\"out/soc_convgenTaps_8_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+"\"},{regs})\n";
+        "         G.AXIWriteBurst{\"out/"+outfile+"\",noc.write},\n"
+        "         regs.done},{filename=\"out/"+outfile+"\"},{regs})\n";
 
       out.close();
     }

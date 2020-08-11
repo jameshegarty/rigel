@@ -7,7 +7,7 @@
 #include <math.h>
 
 using namespace Rigel;
-using namespace Rigel::Lib;
+using namespace RigelLibrary;
 
 //constexpr unsigned int V = 8;
 //constexpr float VF = 8;
@@ -390,7 +390,22 @@ int main(){
       int PadExtra = PadRadiusAligned - PadRadius;
       float cycles = float((W+PadRadiusAligned*2)*(H+PadRadius*2+1))/invVF;
       
-      std::ofstream out("out/soc_lk_12_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+".lua");
+      std::string outfile = "soc_lk_12_"+std::to_string(V)+((autofifo==0)?"":"_autofifo");
+
+      std::ofstream outdesign("out/"+outfile+".design.txt");
+      outdesign << "Lucas Kanade 1080 12x12";
+      outdesign.close();
+
+      std::ofstream outdesignT("out/"+outfile+".designT.txt");
+      outdesignT << VF/12.f;
+      outdesignT.close();
+
+      std::ofstream outdataset("out/"+outfile+".dataset.txt");
+      if(autofifo==0){outdataset << "cpp";}else{outdataset << "cpp_autofifo";}
+      outdataset.close();
+
+
+      std::ofstream out("out/"+outfile+".lua");
       out << header;
       if(autofifo==0){
         out << "R.AUTO_FIFOS = false\n";
@@ -424,8 +439,8 @@ int main(){
         "         G.Pad{{"+std::to_string(PadRadiusAligned)+", "+std::to_string(PadRadiusAligned)+", "+std::to_string(PadRadius+1)+", "+std::to_string(PadRadius)+"}},\n"
         "         LK,\n"
         "         G.Crop{{"+std::to_string(PadRadius*2+PadExtra)+", "+std::to_string(PadExtra)+", "+std::to_string(PadRadius*2+1)+", 0}},\n"
-        "         G.AXIWriteBurst{\"out/soc_lk_12_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+"\",noc.write},\n"
-        "         regs.done},{filename=\"out/soc_lk_12_"+std::to_string(V)+((autofifo==0)?"":"_autofifo")+"\"},{regs})\n";
+        "         G.AXIWriteBurst{\"out/"+outfile+"\",noc.write},\n"
+        "         regs.done},{filename=\"out/"+outfile+"\"},{regs})\n";
 
       out.close();
     }
