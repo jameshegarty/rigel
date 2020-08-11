@@ -22,6 +22,7 @@ SIG20_TODO += $(patsubst %.lua,$(BUILDDIR)/%.zu9vivadoSOC.stats2020.launch,$(SIG
 
 # CPP version
 SIG20CPP = out/soc_convgenTaps_8_1.lua out/soc_convgenTaps_8_2.lua out/soc_convgenTaps_8_4.lua  out/soc_convgenTaps_8_8.lua out/soc_convgenTaps_8_16.lua out/soc_convgenTaps_8_32.lua out/soc_convgenTaps_8_64.lua
+SIG20CPP += out/soc_convgenTaps_8_1_autofifo.lua out/soc_convgenTaps_8_2_autofifo.lua out/soc_convgenTaps_8_4_autofifo.lua  out/soc_convgenTaps_8_8_autofifo.lua out/soc_convgenTaps_8_16_autofifo.lua out/soc_convgenTaps_8_32_autofifo.lua out/soc_convgenTaps_8_64_autofifo.lua
 SIG20CPP += out/soc_sift_4_64_1080p.lua out/soc_sift_4_128_1080p.lua out/soc_sift_4_256_1080p.lua
 SIG20CPP += out/soc_sift_4_64_1080p_autofifo.lua out/soc_sift_4_128_1080p_autofifo.lua out/soc_sift_4_256_1080p_autofifo.lua
 SIG20CPP += out/soc_stereo_full_64_64.lua out/soc_stereo_full_64_32.lua out/soc_stereo_full_64_16.lua out/soc_stereo_full_64_8.lua out/soc_stereo_full_64_4.lua
@@ -94,7 +95,7 @@ $(BUILDDIR)/%.zu9vivado.stats2020.launch: $(BUILDDIR)/%.zu9vivado.launch $(BUILD
 
 ############
 # C++
-out/soc_convgenTaps_8_1.lua out/soc_convgenTaps_8_2.lua out/soc_convgenTaps_8_4.lua  out/soc_convgenTaps_8_8.lua out/soc_convgenTaps_8_16.lua out/soc_convgenTaps_8_32.lua out/soc_convgenTaps_8_64.lua: soc_convgenTaps.cpp
+out/soc_convgenTaps_8_1_autofifo.lua out/soc_convgenTaps_8_2_autofifo.lua out/soc_convgenTaps_8_4_autofifo.lua  out/soc_convgenTaps_8_8_autofifo.lua out/soc_convgenTaps_8_16_autofifo.lua out/soc_convgenTaps_8_32_autofifo.lua out/soc_convgenTaps_8_64_autofifo.lua out/soc_convgenTaps_8_1.lua out/soc_convgenTaps_8_2.lua out/soc_convgenTaps_8_4.lua  out/soc_convgenTaps_8_8.lua out/soc_convgenTaps_8_16.lua out/soc_convgenTaps_8_32.lua out/soc_convgenTaps_8_64.lua: soc_convgenTaps.cpp
 	make out/soc_convgenTaps
 	./out/soc_convgenTaps
 

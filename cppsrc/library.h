@@ -120,7 +120,7 @@ namespace RigelLibrary{
   Val Const( Val i ){
     T ty;
     std::string inst = std::string("G.Const{T.Array2d(T.Array2d(")+ty.toLua()+","+std::to_string(iW)+","+std::to_string(iH)+"),"+std::to_string(oW)+","+std::to_string(oH)+"),value={";
-    for(int oI; oI<oW*oH; oI++){
+    for(int oI=0; oI<oW*oH; oI++){
       inst += "{";
       for(int iI=0; iI<iW*iH; iI++){
         char tmp[100];
