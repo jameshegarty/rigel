@@ -1474,6 +1474,11 @@ function(args)
   return C.tokenCounter( args.type, args.string )
 end,nil,false)
 
+generators.LUTInvert = R.FunctionGenerator("core.LUTInvert",{"type","rate"},{},
+function(args)
+  return C.lutinvert(args.type:deInterface())
+end)
+
 generators.BoostRate = R.FunctionGenerator("core.BoostRate",{"type","rate","rigelFunction"},{"number"},
 function(args)
   local fn = args.rigelFunction:specializeToType( args.type, args.rate )
