@@ -55,6 +55,8 @@ VERILATORSOC += $(patsubst %.lua,$(BUILDDIR)/%.v.launch,$(SIG20))
 
 all: $(SIG20_TODO) $(SIG16_TODO)
 
+sig16: $(SIG16_TODO)
+
 sig20: $(SIG20_TODO)
 
 sig20cpp: $(SIG20CPP_TODO)

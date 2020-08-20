@@ -20,7 +20,7 @@ darkroom.SDF = true
 darkroom.default_nettype_none = true
 
 darkroom.MONITOR_FIFOS = false
-darkroom.AUTO_FIFOS = true
+darkroom.AUTO_FIFOS = false
 darkroom.THROTTLE_FIFOS = false
 darkroom.Z3_FIFOS = false -- use z3 to alloc fifos
 
