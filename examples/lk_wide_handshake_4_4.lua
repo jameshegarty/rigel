@@ -28,6 +28,8 @@ function makeLK(T,window)
   local W = 64
   local H = 64
 
+  local MHz = nil
+
   if window==6 then
     W,H = 128,128
   elseif window==12 then
@@ -60,14 +62,18 @@ function makeLK(T,window)
     inputFilename = "packed_v0000.raw"
   end
 
+  if window==12 then
+    MHz = 120
+  end
+
   local externalT = 4
 
   if f.FLOAT then
-    harness{ outFile="lk_wide_handshake_"..tostring(window).."_"..tostring(T).."_float", fn=LKTop(T,W,H,window,bits,NOSTALL), inFile=inputFilename, inSize={W,H}, outSize={W,H} }
+    harness{ outFile="lk_wide_handshake_"..tostring(window).."_"..tostring(T).."_float", fn=LKTop(T,W,H,window,bits,NOSTALL), inFile=inputFilename, inSize={W,H}, outSize={W,H}, MHz=MHz }
   else
     local outfile = "lk_wide_handshake_"..tostring(window).."_"..tostring(T)..J.sel(f.DEEP_MULTIPLY,"_axi","")..J.sel(NOSTALL,"_nostall","")
 
-    harness{ outFile=outfile, fn=LKTop(T,W,H,window,bits,NOSTALL), inFile=inputFilename, inSize={W,H}, outSize={W,H} }
+    harness{ outFile=outfile, fn=LKTop(T,W,H,window,bits,NOSTALL), inFile=inputFilename, inSize={W,H}, outSize={W,H}, MHz=MHz }
     
     io.output("out/"..outfile..".design.txt"); io.write("Lucas Kanade "..H.." "..window.."x"..window); io.close()
     io.output("out/"..outfile..".designT.txt"); io.write(T); io.close()

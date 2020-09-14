@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# exit when any command fails
+set -e
+
 echo "usage: examplename"
 
 examplename=$1
@@ -9,6 +12,14 @@ examplepath=out/$examplename
 
 #format: | file | design | designT | dataset | image_size |   clock | expected_cycles | sim_cycles | axi_cycles | CLBs | DSPs | BRAMs | slices | fifo_size | extra |
 
+# check for clock violation
+if grep VIOLATED ${examplepath}_zu9vivado$SOC/vivado.log
+then
+    echo "BAD CLOCK"
+    exit 1
+else
+    echo "GOOD CLOCK"
+fi
 
 printf "| " > $output
 printf $examplename >> $output

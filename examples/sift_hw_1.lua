@@ -19,6 +19,8 @@ function doit( full, TILES )
   local W = 256
   local H = 256
 
+  local MHz = nil
+
   if full then W,H = 1920,1080 end
 
   local T = 8
@@ -33,8 +35,12 @@ function doit( full, TILES )
   local siftFn, siftType = sift.siftTop( W, H, T, FILTER_RATE, FILTER_FIFO, TILES, TILES )
   local OTYPE = types.array2d(siftType,2)
 
+  if full and TILES==4 then
+    MHz = 115
+  end
+  
   local outfile = "sift_hw_"..tostring(TILES)..J.sel(full,"_1080p","")
-  harness{ outFile=outfile, fn=siftFn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={(TILES*TILES*8+2)*4,OUTPUT_COUNT}, outP=8 }
+  harness{ outFile=outfile, fn=siftFn, inFile=J.sel(full,"boxanim0000.raw","boxanim_256.raw"), inSize={W,H}, outSize={(TILES*TILES*8+2)*4,OUTPUT_COUNT}, outP=8, MHz=MHz }
 
   io.output("out/"..outfile..".design.txt"); io.write("SIFT "..TILES..J.sel(full," 1080p","")); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write( 0.5 ); io.close()
