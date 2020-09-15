@@ -434,13 +434,20 @@ int main(){
         out << lkhighLua;
       }
 
+      std::string MHz="";
+      if(V==12){
+	MHz=",MHz=120";
+      }else if(V==24){
+	MHz=",MHz=100";
+      }
+      
       out << "harness({regs.start,\n"
         "         G.AXIReadBurst{\"packed_v0000.raw\",{1920,1080},T.Tuple{T.Uint(8),T.Uint(8)},4,noc.read},\n"
         "         G.Pad{{"+std::to_string(PadRadiusAligned)+", "+std::to_string(PadRadiusAligned)+", "+std::to_string(PadRadius+1)+", "+std::to_string(PadRadius)+"}},\n"
         "         LK,\n"
         "         G.Crop{{"+std::to_string(PadRadius*2+PadExtra)+", "+std::to_string(PadExtra)+", "+std::to_string(PadRadius*2+1)+", 0}},\n"
         "         G.AXIWriteBurst{\"out/"+outfile+"\",noc.write},\n"
-        "         regs.done},{filename=\"out/"+outfile+"\"},{regs})\n";
+        "         regs.done},{filename=\"out/"+outfile+"\""+MHz+"},{regs})\n";
 
       out.close();
     }

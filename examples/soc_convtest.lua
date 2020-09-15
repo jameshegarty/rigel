@@ -25,4 +25,5 @@ ConvTop = G.Function{ "ConvTop", T.HandshakeTrigger, SDF{1,128*64},
     return G.AXIWriteBurst{"out/soc_convtest",noc.write}(OM)
   end}
 
-harness({regs.start, ConvTop, regs.done},nil,{regs})
+-- extra cooldown: since we throw out last few rows, we aren't actually done when done bit is set...
+harness({regs.start, ConvTop, regs.done},{cooldown=1500},{regs})

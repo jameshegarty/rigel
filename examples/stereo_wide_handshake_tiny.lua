@@ -25,6 +25,8 @@ function make(filename)
   local H = 203
   local SearchWindow = 64
 
+  local MHz = nil
+
   local infile
   local THRESH = 0
   if filename=="tiny" then
@@ -41,6 +43,7 @@ function make(filename)
     SearchWindow = 64
     infile = "stereo0000.raw"
     THRESH = 1000
+    MHz=105
   else
     print("UNKNOWN FILENAME "..filename)
     assert(false)
@@ -48,13 +51,13 @@ function make(filename)
 
   local hsfn = makeStereo(W,H,OffsetX,SearchWindow,SADWidth,NOSTALL,THRESH)
 
---  local OUT_TYPE = types.array2d(types.tuple{types.uint(8),types.uint(16)},4)
   local ITYPE = types.array2d(types.array2d(types.uint(8),2),4)
   local OUT_TYPE = types.array2d(types.uint(8),8)
+  
   -- output rate is half input rate, b/c we remove one channel.
   local outfile = "stereo_wide_handshake_"..sel(NOSTALL,"nostall_","")..filename
 
-  harness{ inFile=infile, outFile=outfile, fn=hsfn, inSize={W,H}, outSize={W,H} }
+  harness{ inFile=infile, outFile=outfile, fn=hsfn, inSize={W,H}, outSize={W,H}, MHz=MHz }
 
   io.output("out/"..outfile..".design.txt"); io.write("Stereo "..SearchWindow.." "..SADWidth.."x"..SADWidth.." "..filename); io.close()
   io.output("out/"..outfile..".designT.txt"); io.write(1); io.close()

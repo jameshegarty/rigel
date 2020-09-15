@@ -51,6 +51,12 @@ return function(top, options)
   end
   
   local extraCycles = math.max(math.floor(simCycles/10),1024)
+
+  local cooldownTarget = -1
+  if options~=nil and options.cooldown~=nil then
+    assert( type(options.cooldown)=="number" )
+    cooldownTarget = options.cooldown
+  end
   
   local Module = top:toTerra()
 
@@ -298,6 +304,14 @@ return function(top, options)
 
     V.init()
 
+    var totalCycles = simCycles+extraCycles
+    
+    var cooldownTarget : int = [cooldownTarget]
+    if cooldownTarget<0 then
+      cooldownTarget = 1000
+      if(totalCycles/10<cooldownTarget) then cooldownTarget=totalCycles/10; end
+    end
+    
     var ROUNDS = 2
     for round=0,ROUNDS do
       if verbose then cstdio.printf("ROUND %d\n",round) end
@@ -324,15 +338,13 @@ return function(top, options)
       [ (function() if MAX_READ_PORT>=1 then return quote V.activateMasterRead([MREAD_SLAVEOUT[1]]) end else return quote end end end)() ];
       [ (function() if MAX_WRITE_PORT>=1 then return quote V.activateMasteWrite([MWRITE_SLAVEOUT[1]]) end else return quote end end end)() ];
 
-      var totalCycles = simCycles+extraCycles
       cstdio.printf( "SimCycles %d extraCycles %d\n", simCycles, extraCycles )
       
       var lastPct : int = -1
 
       var startSec = currentTimeInSeconds()
 
-      var cooldownCycles = 1000
-      if(totalCycles/10<cooldownCycles) then cooldownCycles=totalCycles/10; end
+      var cooldownCycles = cooldownTarget
       var cooldownTime = false
 
       var cyclesToDoneSignal = -1

@@ -136,6 +136,15 @@ int main(){
         "local noc = Zynq.SimpleNOC(nil,nil,{{regs.read,regs.write}}):instantiate(\"ZynqNOC\")\n"
         "noc.extern=true\n";
 
+      std::string MHz = "";
+      if(V==16){
+	MHz=",MHz=130";
+      }else if(V==32){
+	MHz=",MHz=95";
+      }else if(V==64){
+	MHz=",MHz=105";
+      }
+      
       out << displayOutputLua;
       out << findBestMatchLua;
       out << stereoTopLua;
@@ -143,7 +152,7 @@ int main(){
         "         G.AXIReadBurst{\"stereo0000.raw\",{720,400},T.Tuple{T.Uint(8),T.Uint(8)},4,noc.read},\n"
         "         StereoTop,\n"
         "         G.AXIWriteBurst{\"out/"+outfile+"\",noc.write},\n"
-        "         regs.done},{filename=\"out/"+outfile+"\"},{regs})\n";
+        "         regs.done},{filename=\"out/"+outfile+"\""+MHz+"},{regs})\n";
 
       out.close();
     }

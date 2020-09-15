@@ -618,12 +618,22 @@ int main(){
       out << siftKernelLua;
       out << addImagePosLua;
       out << siftTopLua;
+
+      std::string MHz = "";
+
+      if(V==128){
+	MHz = ",MHz=115";
+      }else if(V==64){
+	MHz = ",MHz=145";
+      }else if(V==256){
+	MHz = ",MHz=145";
+      }
       
       out << "harness({regs.start,\n"
         "         G.AXIReadBurst{\"boxanim0000.raw\",{1920,1080},T.Uint(8),8,noc.read},\n"
         "         SiftTop,\n"
         "         G.AXIWriteBurst{\"out/"+outfile+"\",noc.write,R.Unoptimized},\n"
-        "         regs.done},{filename=\"out/"+outfile+"\"},{regs})\n";
+        "         regs.done},{filename=\"out/"+outfile+"\""+MHz+"},{regs})\n";
 
       out.close();
     }
