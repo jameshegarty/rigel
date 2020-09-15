@@ -133,10 +133,10 @@ int main(int argc, char** argv) {
   }
 
   // run for a few extra cycles after the done bit is set, to make sure nothing crazy happens
-  int cooldownCycles = atoi(argv[2]);
-  if(cooldownCycles<0){
-    cooldownCycles = 1000;
-    if(totalCycles/10<cooldownCycles){cooldownCycles=totalCycles/10;}
+  int cooldownTarget = atoi(argv[2]);
+  if(cooldownTarget<0){
+    cooldownTarget = 1000;
+    if(totalCycles/10<cooldownTarget){cooldownTarget=totalCycles/10;}
   }
   
   int curArg = 3;
@@ -290,6 +290,7 @@ int main(int argc, char** argv) {
 
     bool doneBitSet = false;
     cyclesToDoneSignal = -1;
+    int cooldownCycles = cooldownTarget;
     bool cooldownPrinted = false;
 
     top->IP_ARESET_N = true;
@@ -393,7 +394,7 @@ int main(int argc, char** argv) {
     
     if(errored){
       //exit(1);
-      //-goto WRITEOUT;
+      goto WRITEOUT;
     }
   } // rounds
 
