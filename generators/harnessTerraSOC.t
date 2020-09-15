@@ -53,7 +53,7 @@ return function(top, options)
   local extraCycles = math.max(math.floor(simCycles/10),1024)
 
   local cooldownTarget = -1
-  if options.cooldown~=nil then
+  if options~=nil and options.cooldown~=nil then
     assert( type(options.cooldown)=="number" )
     cooldownTarget = options.cooldown
   end
@@ -306,7 +306,7 @@ return function(top, options)
 
     var totalCycles = simCycles+extraCycles
     
-    var cooldownTarget = [cooldownTarget]
+    var cooldownTarget : int = [cooldownTarget]
     if cooldownTarget<0 then
       cooldownTarget = 1000
       if(totalCycles/10<cooldownTarget) then cooldownTarget=totalCycles/10; end
