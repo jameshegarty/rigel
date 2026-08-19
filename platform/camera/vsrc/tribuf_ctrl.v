@@ -50,15 +50,24 @@ module tribuf_ctrl(
     reg [1:0] wr_ptr_next;
     reg [1:0] rd_ptr_next;
     reg [1:0] wr_ptr_prev;
+    reg [1:0] wr_offer_ptr;
+    reg [1:0] rd_offer_ptr;
+    reg wr_offer_pending;
+    reg rd_offer_pending;
+
+    wire [1:0] wr_selected_ptr;
+    wire [1:0] rd_selected_ptr;
+    assign wr_selected_ptr = wr_offer_pending ? wr_offer_ptr : wr_ptr_next;
+    assign rd_selected_ptr = rd_offer_pending ? rd_offer_ptr : rd_ptr_next;
     
     assign debug_wr_ptr = wr_ptr;
     assign debug_rd_ptr = rd_ptr;
 
     assign wr_FRAME_BYTES = FRAME_BYTES[31:0];
-    assign wr_BUF_ADDR = (wr_ptr==2'h0) ? buf0 : (wr_ptr==2'h1) ? buf1 : buf2 ;
+    assign wr_BUF_ADDR = (wr_selected_ptr==2'h0) ? buf0 : (wr_selected_ptr==2'h1) ? buf1 : buf2 ;
     
     assign rd_FRAME_BYTES = FRAME_BYTES[31:0];
-    assign rd_BUF_ADDR = (rd_ptr==2'h0) ? buf0 : (rd_ptr==2'h1) ? buf1 : buf2 ;
+    assign rd_BUF_ADDR = (rd_selected_ptr==2'h0) ? buf0 : (rd_selected_ptr==2'h1) ? buf1 : buf2 ;
     
     reg [1:0] wr_cs;
     reg [1:0] wr_ns;
@@ -77,7 +86,7 @@ module tribuf_ctrl(
             end 
             WAIT : begin
                 wr_ns = stopping ? STOPPED : (wr_frame_ready && wr_sync ? WORKING : WAIT);
-                wr_frame_valid = !stopping && wr_frame_ready && wr_sync ? 1 : 0 ;
+                wr_frame_valid = !stopping && wr_sync ? 1 : 0 ;
                 wr_frame_done = 0;
             end 
             WORKING : begin
@@ -94,7 +103,9 @@ module tribuf_ctrl(
         endcase
     end
     `REG(fclk, wr_cs, STOPPED, wr_ns)
-    `REG(fclk, wr_ptr, 2'h0, wr_frame_valid ? wr_ptr_next : wr_ptr)
+    `REG(fclk, wr_offer_pending, 1'b0, wr_frame_valid && !wr_frame_ready)
+    `REG(fclk, wr_offer_ptr, 2'h0, wr_frame_valid && !wr_frame_ready && !wr_offer_pending ? wr_ptr_next : wr_offer_ptr)
+    `REG(fclk, wr_ptr, 2'h0, wr_frame_valid && wr_frame_ready ? wr_selected_ptr : wr_ptr)
     `REG(fclk, wr_ptr_prev, 2'h0, wr_frame_done ? wr_ptr : wr_ptr_prev)
     
     reg [1:0] rd_cs;
@@ -110,7 +121,7 @@ module tribuf_ctrl(
             end 
             WAIT : begin
                 rd_ns = rd_sync && rd_frame_ready ? WORKING : WAIT;
-                rd_frame_valid = rd_sync && rd_frame_ready ? 1 : 0 ;
+                rd_frame_valid = rd_sync ? 1 : 0 ;
                 rd_frame_done = 0;
             end 
             WORKING : begin
@@ -126,7 +137,9 @@ module tribuf_ctrl(
         endcase
     end
     `REG(fclk, rd_cs, STOPPED, rd_ns)
-    `REG(fclk, rd_ptr, 2'h0, rd_frame_valid ? rd_ptr_next : rd_ptr)
+    `REG(fclk, rd_offer_pending, 1'b0, rd_frame_valid && !rd_frame_ready)
+    `REG(fclk, rd_offer_ptr, 2'h0, rd_frame_valid && !rd_frame_ready && !rd_offer_pending ? rd_ptr_next : rd_offer_ptr)
+    `REG(fclk, rd_ptr, 2'h0, rd_frame_valid && rd_frame_ready ? rd_selected_ptr : rd_ptr)
 
     localparam READ=2'h0, READING=2'h1, WRITTEN=2'h2, WRITING=2'h3;
     reg [1:0] buf_state[2:0]; 
@@ -137,8 +150,8 @@ module tribuf_ctrl(
             buf_state[2] <= READ;
         end
         else begin
-            if (wr_frame_valid) begin
-                buf_state[wr_ptr_next] <= WRITING ;
+            if (wr_frame_valid && wr_frame_ready) begin
+                buf_state[wr_selected_ptr] <= WRITING ;
             end
             if (wr_frame_done) begin
                 buf_state[wr_ptr] <= WRITTEN ;
@@ -148,8 +161,8 @@ module tribuf_ctrl(
                     buf_state[wr_ptr_prev] <= READ ;
                 end
             end
-            if (rd_frame_valid) begin
-                buf_state[rd_ptr_next] <= READING ;
+            if (rd_frame_valid && rd_frame_ready) begin
+                buf_state[rd_selected_ptr] <= READING ;
             end
             if (rd_frame_done) begin
                 buf_state[rd_ptr] <= READ ;
